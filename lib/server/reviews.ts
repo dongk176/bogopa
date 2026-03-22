@@ -8,6 +8,10 @@ export type StoredReview = {
   createdAt: string;
 };
 
+declare global {
+  var __bogopaEnsureReviewTablePromise: Promise<void> | undefined;
+}
+
 const CREATE_SCHEMA_SQL = `
 CREATE SCHEMA IF NOT EXISTS bogopa;
 `;
@@ -32,9 +36,17 @@ export function maskKoreanName(name: string) {
 }
 
 async function ensureReviewTable() {
-  const pool = getDbPool();
-  await pool.query(CREATE_SCHEMA_SQL);
-  await pool.query(CREATE_TABLE_SQL);
+  if (!global.__bogopaEnsureReviewTablePromise) {
+    global.__bogopaEnsureReviewTablePromise = (async () => {
+      const pool = getDbPool();
+      await pool.query(CREATE_SCHEMA_SQL);
+      await pool.query(CREATE_TABLE_SQL);
+    })().catch((error) => {
+      global.__bogopaEnsureReviewTablePromise = undefined;
+      throw error;
+    });
+  }
+  await global.__bogopaEnsureReviewTablePromise;
 }
 
 export async function insertUserReview(params: { nameMasked: string; reviewText: string; feedbackText?: string | null }) {
@@ -109,4 +121,3 @@ export async function listRecentUserReviews(limit = 120): Promise<StoredReview[]
     createdAt: row.created_at,
   }));
 }
-

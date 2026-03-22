@@ -29,6 +29,22 @@ const CREATE_SCHEMA_SQL = `
 CREATE SCHEMA IF NOT EXISTS bogopa;
 `;
 
+let ensureOnboardingTablePromise: Promise<void> | null = null;
+
+async function ensureOnboardingTable() {
+  if (!ensureOnboardingTablePromise) {
+    ensureOnboardingTablePromise = (async () => {
+      const pool = getDbPool();
+      await pool.query(CREATE_SCHEMA_SQL);
+      await pool.query(CREATE_TABLE_SQL);
+    })().catch((error) => {
+      ensureOnboardingTablePromise = null;
+      throw error;
+    });
+  }
+  await ensureOnboardingTablePromise;
+}
+
 export async function POST(request: NextRequest) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "DATABASE_URL이 설정되지 않았습니다." }, { status: 500 });
@@ -49,8 +65,7 @@ export async function POST(request: NextRequest) {
   const pool = getDbPool();
 
   try {
-    await pool.query(CREATE_SCHEMA_SQL);
-    await pool.query(CREATE_TABLE_SQL);
+    await ensureOnboardingTable();
 
     const now = new Date().toISOString();
     const clientIp = getClientIp(request);

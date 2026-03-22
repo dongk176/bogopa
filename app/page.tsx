@@ -6,7 +6,10 @@ type ReflectionItem = {
   text: string;
 };
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
+
+const HOME_REVIEW_QUERY_LIMIT = 60;
+const HOME_REVIEW_RENDER_LIMIT = 36;
 
 const baseReflections: ReflectionItem[] = [
   {
@@ -339,7 +342,7 @@ export default async function Home() {
   let liveReflections: ReflectionItem[] = [];
 
   try {
-    const storedReviews = await listRecentUserReviews(180);
+    const storedReviews = await listRecentUserReviews(HOME_REVIEW_QUERY_LIMIT);
     liveReflections = storedReviews.map((item) => ({
       name: item.nameMasked,
       text: item.reviewText,
@@ -348,14 +351,17 @@ export default async function Home() {
     console.error("[home] failed to load stored reviews", error);
   }
 
+  const dedupeKeySet = new Set<string>();
   const mergedReflections = [...baseReflections, ...liveReflections].reduce<ReflectionItem[]>((acc, item) => {
     const name = item.name.trim();
     const text = item.text.trim();
     if (!name || !text) return acc;
-    if (acc.some((existing) => existing.name === name && existing.text === text)) return acc;
+    const key = `${name}__${text}`;
+    if (dedupeKeySet.has(key)) return acc;
+    dedupeKeySet.add(key);
     acc.push({ name, text });
     return acc;
-  }, []);
+  }, []).slice(0, HOME_REVIEW_RENDER_LIMIT);
 
   const reflectionRowTop = mergedReflections.filter((_, index) => index % 3 === 0);
   const reflectionRowMiddle = mergedReflections.filter((_, index) => index % 3 === 1);
