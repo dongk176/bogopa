@@ -113,15 +113,10 @@ export default function StepOnePage() {
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 
-    try {
-      await persistOnboardingStep(1, payload, { forceNewSession: true });
-    } catch (error) {
+    void persistOnboardingStep(1, payload, { forceNewSession: true }).catch((error) => {
       console.error("[step-1] remote save failed, continue local flow", error);
-    }
-
-    window.setTimeout(() => {
-      router.push("/step-2");
-    }, 800);
+    });
+    router.push("/step-2");
   }
 
   return (

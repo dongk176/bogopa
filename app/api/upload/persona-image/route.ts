@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isS3Configured, uploadPersonaImage } from "@/lib/server/s3";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   if (!isS3Configured()) {
@@ -16,8 +16,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "파일이 필요합니다." }, { status: 400 });
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "이미지 파일은 5MB 이하만 업로드할 수 있습니다." }, { status: 400 });
+    if (file.size >= MAX_FILE_SIZE) {
+      return NextResponse.json({ error: "이미지 파일은 10MB 미만만 업로드할 수 있습니다." }, { status: 400 });
     }
 
     const uploaded = await uploadPersonaImage(file);

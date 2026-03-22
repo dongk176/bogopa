@@ -149,15 +149,10 @@ export default function StepTwoPage() {
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 
-    try {
-      await persistOnboardingStep(2, payload);
-    } catch (error) {
+    void persistOnboardingStep(2, payload).catch((error) => {
       console.error("[step-2] remote save failed, continue local flow", error);
-    }
-
-    window.setTimeout(() => {
-      router.push("/step-3");
-    }, 800);
+    });
+    router.push("/step-3");
   }
 
   return (

@@ -23,6 +23,9 @@ type StepThreeData = {
 
 const STORAGE_KEY = "bogopa_profile_step3";
 const STEP_ONE_STORAGE_KEY = "bogopa_profile_step1";
+const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 1600;
+const TARGET_IMAGE_BYTES = 900 * 1024;
 const RELATIONSHIP_KEYS: RelationshipKey[] = [
   "mother",
   "father",
@@ -158,9 +161,84 @@ function UserIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function toWebpFileName(name: string) {
+  const base = name.replace(/\.[a-z0-9]+$/i, "").trim() || "persona";
+  return `${base}.webp`;
+}
+
+function loadImageElement(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("이미지를 불러오지 못했습니다."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("이미지 변환에 실패했습니다."));
+          return;
+        }
+        resolve(blob);
+      },
+      "image/webp",
+      quality,
+    );
+  });
+}
+
+async function compressPersonaImage(file: File) {
+  if (!file.type.startsWith("image/")) return file;
+
+  const image = await loadImageElement(file);
+  const longerSide = Math.max(image.naturalWidth, image.naturalHeight);
+  const scale = longerSide > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / longerSide : 1;
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) return file;
+  context.drawImage(image, 0, 0, width, height);
+
+  let quality = 0.86;
+  let blob = await canvasToBlob(canvas, quality);
+
+  while (blob.size > TARGET_IMAGE_BYTES && quality > 0.52) {
+    quality -= 0.08;
+    blob = await canvasToBlob(canvas, quality);
+  }
+
+  const optimized = new File([blob], toWebpFileName(file.name), {
+    type: "image/webp",
+    lastModified: Date.now(),
+  });
+
+  if (optimized.size >= file.size && file.size <= TARGET_IMAGE_BYTES) {
+    return file;
+  }
+  return optimized;
+}
+
 export default function StepThreePage() {
   const router = useRouter();
   const [personaImageName, setPersonaImageName] = useState("");
+  const [personaImageKey, setPersonaImageKey] = useState("");
+  const [personaImageUrl, setPersonaImageUrl] = useState("");
   const [personaFile, setPersonaFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [relationship, setRelationship] = useState<RelationshipKey | null>(null);
@@ -176,6 +254,8 @@ export default function StepThreePage() {
   const [nameError, setNameError] = useState("");
   const [nicknameError, setNicknameError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [imageError, setImageError] = useState("");
+  const [isImageProcessing, setIsImageProcessing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const shouldShowGenderSelector = relationship === "youngerSibling" || relationship === "custom";
 
@@ -209,7 +289,11 @@ export default function StepThreePage() {
       if (typeof saved.personaName === "string") setPersonaName(saved.personaName);
       if (typeof saved.personaOccupation === "string") setPersonaOccupation(saved.personaOccupation);
       if (typeof saved.personaImageName === "string") setPersonaImageName(saved.personaImageName);
-      if (typeof saved.personaImageUrl === "string") setPreviewUrl(saved.personaImageUrl);
+      if (typeof saved.personaImageKey === "string") setPersonaImageKey(saved.personaImageKey);
+      if (typeof saved.personaImageUrl === "string") {
+        setPersonaImageUrl(saved.personaImageUrl);
+        setPreviewUrl(saved.personaImageUrl);
+      }
       if (saved.personaGender === "male" || saved.personaGender === "female") setPersonaGender(saved.personaGender);
       if (typeof saved.userNickname === "string") setUserNickname(saved.userNickname);
       if (typeof saved.userNickname !== "string" && typeof (saved as { memo?: string }).memo === "string") {
@@ -228,19 +312,52 @@ export default function StepThreePage() {
     }
   }, []);
 
-  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+  async function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
-    const nextUrl = URL.createObjectURL(file);
-    setPreviewUrl(nextUrl);
-    setPersonaFile(file);
-    setPersonaImageName(file.name);
+    if (!file.type.startsWith("image/")) {
+      setImageError("이미지 파일만 업로드할 수 있습니다.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size >= MAX_IMAGE_FILE_SIZE) {
+      setImageError("이미지 파일은 10MB 미만만 업로드할 수 있습니다.");
+      event.target.value = "";
+      return;
+    }
+
+    setImageError("");
+    setIsImageProcessing(true);
+
+    try {
+      const optimized = await compressPersonaImage(file);
+      if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+      const nextUrl = URL.createObjectURL(optimized);
+      setPreviewUrl(nextUrl);
+      setPersonaFile(optimized);
+      setPersonaImageName(optimized.name);
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "이미지 처리에 실패했습니다.");
+      event.target.value = "";
+    } finally {
+      setIsImageProcessing(false);
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isImageProcessing) {
+      setSaveError("이미지를 처리 중입니다. 잠시만 기다려주세요.");
+      return;
+    }
+
+    if (imageError) {
+      setSaveError(imageError);
+      return;
+    }
 
     const finalRelationship =
       relationship === "custom"
@@ -267,8 +384,8 @@ export default function StepThreePage() {
 
     setIsSubmitting(true);
 
-    let uploadedImageKey = "";
-    let uploadedImageUrl = "";
+    let finalImageKey = personaImageKey;
+    let finalImageUrl = personaImageUrl;
 
     if (personaFile) {
       const formData = new FormData();
@@ -286,8 +403,8 @@ export default function StepThreePage() {
         }
 
         const uploadBody = (await uploadResponse.json()) as { key: string; url: string };
-        uploadedImageKey = uploadBody.key;
-        uploadedImageUrl = uploadBody.url;
+        finalImageKey = uploadBody.key;
+        finalImageUrl = uploadBody.url;
       } catch (error) {
         setIsSubmitting(false);
         setSaveError(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
@@ -297,8 +414,8 @@ export default function StepThreePage() {
 
     const payload: StepThreeData = {
       personaImageName: personaImageName || undefined,
-      personaImageKey: uploadedImageKey || undefined,
-      personaImageUrl: uploadedImageUrl || undefined,
+      personaImageKey: finalImageKey || undefined,
+      personaImageUrl: finalImageUrl || undefined,
       relationship: finalRelationship,
       personaName: trimmedName,
       personaGender,
@@ -309,16 +426,13 @@ export default function StepThreePage() {
     };
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    setPersonaImageKey(finalImageKey);
+    setPersonaImageUrl(finalImageUrl);
 
-    try {
-      await persistOnboardingStep(3, payload);
-    } catch (error) {
+    void persistOnboardingStep(3, payload).catch((error) => {
       console.error("[step-3] remote save failed, continue local flow", error);
-    }
-
-    window.setTimeout(() => {
-      router.push("/step-4");
-    }, 800);
+    });
+    router.push("/step-4");
   }
 
   return (
@@ -366,8 +480,9 @@ export default function StepThreePage() {
 
                   <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                 </label>
-                <p className="text-sm font-medium text-[#655d5a]">사진을 등록해주세요 (선택)</p>
+                <p className="text-sm font-medium text-[#655d5a]">사진을 등록해주세요 (선택, 10MB 미만 · 자동 압축)</p>
                 {personaImageName ? <p className="text-xs text-[#787c75]">{personaImageName}</p> : null}
+                {imageError ? <p className="text-xs text-[#9f403d]">{imageError}</p> : null}
               </div>
 
               <div className="space-y-3">
@@ -583,10 +698,10 @@ export default function StepThreePage() {
                     disabled={isSubmitting}
                     className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                   >
-                    {isSubmitting ? (
+                    {isSubmitting || isImageProcessing ? (
                       <>
                         <SpinnerIcon />
-                        저장 중...
+                        {isImageProcessing ? "이미지 처리 중..." : "저장 중..."}
                       </>
                     ) : (
                       <>
