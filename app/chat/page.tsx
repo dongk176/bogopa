@@ -218,7 +218,7 @@ function normalizeAddressAlias(value: string) {
   return trimmed;
 }
 
-export default function ChatPage() {
+function ChatContainer() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const chatId = searchParams.get("id");
@@ -967,5 +967,19 @@ export default function ChatPage() {
         </div>
       )}
     </div>
+  );
+}
+
+import { Suspense } from "react";
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-[#faf9f5]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
+      </div>
+    }>
+      <ChatContainer />
+    </Suspense>
   );
 }

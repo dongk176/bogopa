@@ -72,7 +72,7 @@ function MoreVerticalIcon({ className }: { className?: string }) {
   );
 }
 
-export default function Navigation() {
+function NavigationContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeChatId = searchParams.get("id");
@@ -382,5 +382,15 @@ export default function Navigation() {
 
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
     </>
+  );
+}
+
+import { Suspense } from "react";
+
+export default function Navigation() {
+  return (
+    <Suspense fallback={null}>
+      <NavigationContent />
+    </Suspense>
   );
 }
