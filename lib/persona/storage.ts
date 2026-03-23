@@ -148,11 +148,15 @@ export function loadStepInputsFromLocalStorage(): PersonaAnalyzeInput | null {
 export function savePersonaAnalysis(analysis: PersonaAnalysis) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(PERSONA_ANALYSIS_STORAGE_KEY, JSON.stringify(analysis));
+  if (analysis.personaId) {
+    window.localStorage.setItem(`${PERSONA_ANALYSIS_STORAGE_KEY}_${analysis.personaId}`, JSON.stringify(analysis));
+  }
 }
 
-export function loadPersonaAnalysis(): PersonaAnalysis | null {
+export function loadPersonaAnalysis(id?: string): PersonaAnalysis | null {
   if (typeof window === "undefined") return null;
-  const parsed = safeParse<PersonaAnalysis>(window.localStorage.getItem(PERSONA_ANALYSIS_STORAGE_KEY));
+  const key = id ? `${PERSONA_ANALYSIS_STORAGE_KEY}_${id}` : PERSONA_ANALYSIS_STORAGE_KEY;
+  const parsed = safeParse<PersonaAnalysis>(window.localStorage.getItem(key));
   if (!parsed) return null;
 
   if (!parsed.personaInput.avatarUrl) {
@@ -174,11 +178,15 @@ export function loadPersonaAnalysis(): PersonaAnalysis | null {
 export function savePersonaRuntime(runtime: PersonaRuntime) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(PERSONA_RUNTIME_STORAGE_KEY, JSON.stringify(runtime));
+  if (runtime.personaId) {
+    window.localStorage.setItem(`${PERSONA_RUNTIME_STORAGE_KEY}_${runtime.personaId}`, JSON.stringify(runtime));
+  }
 }
 
-export function loadPersonaRuntime(): PersonaRuntime | null {
+export function loadPersonaRuntime(id?: string): PersonaRuntime | null {
   if (typeof window === "undefined") return null;
-  const parsed = safeParse<PersonaRuntime>(window.localStorage.getItem(PERSONA_RUNTIME_STORAGE_KEY));
+  const key = id ? `${PERSONA_RUNTIME_STORAGE_KEY}_${id}` : PERSONA_RUNTIME_STORAGE_KEY;
+  const parsed = safeParse<PersonaRuntime>(window.localStorage.getItem(key));
   if (!parsed) return null;
 
   const normalized: PersonaRuntime = {
@@ -199,8 +207,12 @@ export function loadPersonaRuntime(): PersonaRuntime | null {
   return normalized;
 }
 
-export function clearPersonaArtifacts() {
+export function clearPersonaArtifacts(id?: string) {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(PERSONA_ANALYSIS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONA_RUNTIME_STORAGE_KEY);
+  if (id) {
+    window.localStorage.removeItem(`${PERSONA_ANALYSIS_STORAGE_KEY}_${id}`);
+    window.localStorage.removeItem(`${PERSONA_RUNTIME_STORAGE_KEY}_${id}`);
+  }
 }

@@ -1,14 +1,16 @@
 import Link from "next/link";
+import UserProfileMenu from "@/app/_components/UserProfileMenu";
 
 export default function PrivacyPage() {
     return (
         <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
             <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
-                <div className="mx-auto flex h-16 w-full max-w-3xl items-center px-6">
+                <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-6">
                     <Link href="/" className="flex items-center gap-2">
                         <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-6 w-auto object-contain" />
                         <span className="font-headline text-xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
                     </Link>
+                    <UserProfileMenu />
                 </div>
             </header>
 

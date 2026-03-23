@@ -33,6 +33,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className={rootClassName}>
+      <head>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+      </head>
       <body className="min-h-full flex flex-col bg-[#faf9f5] text-[#2f342e]">
         <AuthProvider>
           {children}

@@ -5,6 +5,9 @@ import {
   OPENAI_REPLY_MODEL,
   OPENAI_COMPRESSION_MODEL,
 } from "@/lib/ai/createOpenAIClient";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { getOrCreateSession, saveMessageToDb, saveAssistantGreetingToDb, getMessagesForSession } from "@/lib/server/chat-db";
 import { PersonaAnalysis, PersonaRuntime } from "@/types/persona";
 
 export const runtime = "nodejs";
@@ -280,7 +283,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const client = createOpenAIClient();
+    const session = await getServerSession(authOptions);
+    const sessionUser = session?.user as any;
+
     if (action === "first_greeting") {
+      // [DB Check] First, check if a session and greeting already exist
+      if (sessionUser?.id && runtimeData.personaId) {
+        try {
+          const chatSession = await getOrCreateSession(sessionUser.id, runtimeData.personaId);
+          const existingMessages = await getMessagesForSession(chatSession.id);
+          const existingGreeting = existingMessages.find((m: any) => m.role === "assistant");
+          if (existingGreeting) {
+            return NextResponse.json({ ok: true, greeting: existingGreeting.content });
+          }
+        } catch (dbErr) {
+          console.warn("[chat-api] pre-check for greeting failed", dbErr);
+        }
+      }
+
       const alias = normalizeAddressAlias((body.alias || runtimeData.addressing.callsUserAs[0] || "너").trim()) || "너";
       const customGoalText = body.analysis?.conversationIntent.customGoalText?.trim() || "";
       const toneSummary = (body.styleSummary || runtimeData.style.tone[0] || "").trim();
@@ -311,6 +331,17 @@ export async function POST(request: NextRequest) {
       if (!greeting) {
         return NextResponse.json({ error: "첫 인사 생성 결과가 비어 있습니다." }, { status: 502 });
       }
+
+      // [New] Save to DB if session exists
+      if (sessionUser?.id && runtimeData.personaId) {
+        try {
+          const chatSession = await getOrCreateSession(sessionUser.id, runtimeData.personaId);
+          await saveAssistantGreetingToDb(chatSession.id, greeting);
+        } catch (dbError) {
+          console.error("[chat-api] first_greeting db save failed for persona:", runtimeData.personaId, dbError);
+        }
+      }
+
       return NextResponse.json({ ok: true, greeting });
     }
 
@@ -387,11 +418,27 @@ export async function POST(request: NextRequest) {
       ?.replace(/ㅜ{3,}/g, "ㅜㅜ")
       ?.replace(/(ㅋㅋ){2,}/g, "ㅋㅋ")
       ?.replace(/(ㅎㅎ){2,}/g, "ㅎㅎ");
-    if (!reply) {
+      
+    const finalReply = clipAssistantReply(reply || "");
+
+    if (!finalReply) {
       return NextResponse.json({ error: "모델 응답이 비어 있습니다." }, { status: 502 });
     }
 
-    return NextResponse.json({ ok: true, reply: clipAssistantReply(reply) });
+    // [New] Save to DB if session exists
+    if (sessionUser?.id && runtimeData.personaId) {
+      try {
+        const chatSession = await getOrCreateSession(sessionUser.id, runtimeData.personaId);
+        // Save user message (the last one in history)
+        await saveMessageToDb(chatSession.id, "user", lastUserMessage.content);
+        // Save assistant reply
+        await saveMessageToDb(chatSession.id, "assistant", finalReply);
+      } catch (dbError) {
+        console.error("[chat-api] failed to save to db", dbError);
+      }
+    }
+
+    return NextResponse.json({ ok: true, reply: finalReply });
   } catch (error) {
     console.error("[chat-api] openai call failed", error);
     return NextResponse.json({ error: "AI 응답 생성 중 오류가 발생했습니다." }, { status: 500 });

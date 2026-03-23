@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import UserProfileMenu from "@/app/_components/UserProfileMenu";
 import { persistOnboardingStep } from "@/lib/onboarding-client";
+import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 
 type StepOneGender = "Male" | "Female";
 type RelationshipKey = "mother" | "father" | "olderSister" | "youngerSibling" | "olderBrother" | "partner" | "custom";
@@ -271,6 +273,7 @@ export default function StepThreePage() {
   const [imageError, setImageError] = useState("");
   const [isImageProcessing, setIsImageProcessing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
   const shouldShowGenderSelector = relationship === "youngerSibling" || relationship === "partner" || relationship === "custom";
 
   useEffect(() => {
@@ -490,10 +493,14 @@ export default function StepThreePage() {
     <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
-          <div className="flex items-center gap-2">
+          <button 
+            type="button"
+            onClick={() => setIsHomeModalOpen(true)}
+            className="flex items-center gap-2 transition-opacity hover:opacity-80"
+          >
             <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
             <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
-          </div>
+          </button>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 3/4</span>
             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
@@ -766,6 +773,10 @@ export default function StepThreePage() {
           </div>
         </div>
       </main>
+      <HomeConfirmModal 
+        isOpen={isHomeModalOpen} 
+        onClose={() => setIsHomeModalOpen(false)} 
+      />
     </div>
   );
 }

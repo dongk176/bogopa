@@ -530,9 +530,9 @@ export function analyzePersonaMock(input: PersonaAnalyzeInput): PersonaAnalysis 
   const confidenceBase = hasConversationText ? (lines.length >= 25 ? 0.84 : lines.length >= 8 ? 0.72 : 0.58) : 0.46;
   const confidence = clamp(
     confidenceBase +
-      (hasManualSettings ? 0.06 : 0) +
-      (callsUserAs.length > 0 ? 0.04 : -0.05) +
-      (addressingInference.strongAlias ? 0.05 : 0),
+    (hasManualSettings ? 0.06 : 0) +
+    (callsUserAs.length > 0 ? 0.04 : -0.05) +
+    (addressingInference.strongAlias ? 0.05 : 0),
     0.3,
     0.94,
   );

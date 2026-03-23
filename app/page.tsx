@@ -3,6 +3,9 @@ import SiteFooter from "@/app/_components/SiteFooter";
 import TypewriterHeadline from "@/app/_components/TypewriterHeadline";
 import FadeIn from "@/app/_components/FadeIn";
 import { StartChatButtonDesktop, StartChatButtonMobile } from "@/app/_components/AuthStartButton";
+import UserProfileMenu from "@/app/_components/UserProfileMenu";
+import Navigation from "@/app/_components/Navigation";
+import RecallingLogo from "@/app/_components/RecallingLogo";
 
 type ReflectionItem = {
   name: string;
@@ -371,20 +374,22 @@ export default async function Home() {
   const reflectionRowBottom = mergedReflections.filter((_, index) => index % 3 === 2);
 
   return (
-    <>
-      <FadeIn delay={1900}>
-        <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/85 backdrop-blur-xl">
-          <div className="mx-auto flex h-16 w-full max-w-7xl items-center px-6 md:px-12">
-            <div className="flex items-center gap-2">
-              <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
-              <span className="font-headline text-2xl font-extrabold tracking-tight text-[#4a626d]">Bogopa</span>
-            </div>
-          </div>
-        </header>
-      </FadeIn>
+    <div className="min-h-screen bg-[#faf9f5]">
+      <Navigation />
 
-      <main className="overflow-hidden pb-28 pt-24 md:pb-20 md:pt-32">
-        <section className="mx-auto max-w-4xl px-6 text-center">
+      <main className="overflow-hidden pb-28 pt-12 md:pb-20 md:pt-16 lg:pt-20 lg:pl-64">
+        <div className="lg:hidden">
+          <RecallingLogo delay={800}>
+            <div className="flex flex-col items-center mb-10 md:mb-16">
+              <div className="flex items-center gap-3">
+                <img src="/logo/bogopa%20logo.png" alt="Logo" className="h-10 w-10 object-contain shadow-sm" />
+                <span className="font-headline text-3xl font-extrabold tracking-tight text-[#4a626d]">Bogopa</span>
+              </div>
+            </div>
+          </RecallingLogo>
+        </div>
+
+        <section className="mx-auto max-w-4xl lg:max-w-6xl px-6 text-center">
           <TypewriterHeadline />
           <FadeIn delay={1900}>
             <p className="mx-auto mb-4 max-w-2xl break-keep text-lg leading-relaxed text-[#655d5a] md:mb-12 md:text-xl">
@@ -395,9 +400,9 @@ export default async function Home() {
                 <StartChatButtonDesktop />
               </div>
 
-              <div className="relative mt-0 w-full max-w-3xl overflow-hidden md:mt-8">
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-[#242926] to-transparent md:w-20" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-[#242926] to-transparent md:w-20" />
+              <div className="relative mt-0 w-full max-w-none overflow-hidden md:mt-8">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-[#242926] via-[#242926]/80 to-transparent md:w-32" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-[#242926] via-[#242926]/80 to-transparent md:w-32" />
                 <div className="space-y-3 py-4">
                   <div className="animate-marquee whitespace-nowrap">
                     {[...reflectionRowTop, ...reflectionRowTop].map((review, index) => (
@@ -520,9 +525,8 @@ export default async function Home() {
 
       <FadeIn delay={1900}>
         <StartChatButtonMobile />
-
         <SiteFooter />
       </FadeIn>
-    </>
+    </div>
   );
 }

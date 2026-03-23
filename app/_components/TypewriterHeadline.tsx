@@ -40,6 +40,7 @@ export default function TypewriterHeadline() {
                 setTimeout(typeLine2, typingSpeed);
             } else {
                 setTimeout(() => {
+                    setShowCursor2(false);
                     setIsIntro(false);
                     document.body.style.overflow = ""; // 스크롤 잠금 해제
                 }, 400);
@@ -56,7 +57,7 @@ export default function TypewriterHeadline() {
 
     return (
         <div
-            className={`transition-all duration-[1200ms] ease-in-out relative z-[100] ${isIntro ? 'translate-y-[28vh] md:translate-y-[32vh] scale-[1.15]' : 'translate-y-0 scale-100'
+            className={`transition-all duration-[1200ms] ease-in-out relative z-10 ${isIntro ? 'translate-y-[28vh] md:translate-y-[32vh] scale-[1.15]' : 'translate-y-0 scale-100'
                 }`}
         >
             <h1 className="font-headline mb-5 text-4xl leading-[1.1] font-extrabold tracking-tight text-[#2f342e] md:mb-8 md:text-6xl">

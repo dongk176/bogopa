@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import UserProfileMenu from "@/app/_components/UserProfileMenu";
 import { clearOnboardingDraft, persistOnboardingStep } from "@/lib/onboarding-client";
+import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 import { analyzePersonaMock } from "@/lib/persona/analyzePersonaMock";
 import { buildPersonaRuntime } from "@/lib/persona/buildPersonaRuntime";
 import {
@@ -136,6 +138,7 @@ export default function StepFourPage() {
   const [manualError, setManualError] = useState("");
   const [fileError, setFileError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [showExportGuide, setShowExportGuide] = useState(false);
   const [showPrivacyGuide, setShowPrivacyGuide] = useState(false);
@@ -311,6 +314,21 @@ export default function StepFourPage() {
       const runtime = buildPersonaRuntime(analysis);
       savePersonaAnalysis(analysis);
       savePersonaRuntime(runtime);
+
+      // Persist to Supabase
+      try {
+        await fetch("/api/persona", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            runtime,
+            analysis,
+            avatarUrl: analysis.personaInput.avatarUrl,
+          }),
+        });
+      } catch (dbError) {
+        console.error("[step-4] background DB save failed", dbError);
+      }
     } catch (error) {
       console.error("[step-4] analysis generation failed", error);
       setNotice("분석 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
@@ -402,10 +420,14 @@ export default function StepFourPage() {
     <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsHomeModalOpen(true)}
+            className="flex items-center gap-2 transition-opacity hover:opacity-80"
+          >
             <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
             <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
-          </div>
+          </button>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 4/4</span>
             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
@@ -594,7 +616,7 @@ export default function StepFourPage() {
                         <button
                           type="button"
                           onClick={() => setOpenMenu(openMenu === "emotion" ? null : "emotion")}
-                          className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] p-3 text-left text-[#2f342e] outline-none ring-0 transition-all focus:ring-2 focus:ring-[#bfd8e5]"
+                          className="flex w-full items-center justify-between rounded-xl bg-black/20 px-4 py-3 text-left text-sm text-[#f0f5f2] border-none outline-none ring-0 transition-all focus:ring-2 focus:ring-[#f0b6b4]/50 hover:bg-black/30"
                         >
                           <span>{emotionDepth}</span>
                           <span className={`transition-transform ${openMenu === "emotion" ? "rotate-180" : ""}`}>
@@ -602,7 +624,7 @@ export default function StepFourPage() {
                           </span>
                         </button>
                         {openMenu === "emotion" ? (
-                          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-[#afb3ac]/40 bg-white p-1 shadow-[0_12px_28px_rgba(48,51,46,0.14)]">
+                          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-[#afb3ac]/20 bg-[#1f2522] p-1 shadow-2xl">
                             {EMOTION_OPTIONS.map((option) => (
                               <button
                                 key={option}
@@ -612,8 +634,8 @@ export default function StepFourPage() {
                                   setOpenMenu(null);
                                 }}
                                 className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${emotionDepth === option
-                                  ? "bg-[#cde6f4]/45 text-[#3e5560]"
-                                  : "text-[#2f342e] hover:bg-[#f4f4ef]"
+                                  ? "bg-white/10 text-white font-bold"
+                                  : "text-[#f0f5f2]/80 hover:bg-white/5 hover:text-[#f0f5f2]"
                                   }`}
                               >
                                 {option}
@@ -630,7 +652,7 @@ export default function StepFourPage() {
                         <button
                           type="button"
                           onClick={() => setOpenMenu(openMenu === "emoji" ? null : "emoji")}
-                          className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] p-3 text-left text-[#2f342e] outline-none ring-0 transition-all focus:ring-2 focus:ring-[#bfd8e5]"
+                          className="flex w-full items-center justify-between rounded-xl bg-black/20 px-4 py-3 text-left text-sm text-[#f0f5f2] border-none outline-none ring-0 transition-all focus:ring-2 focus:ring-[#f0b6b4]/50 hover:bg-black/30"
                         >
                           <span>{emojiStyle}</span>
                           <span className={`transition-transform ${openMenu === "emoji" ? "rotate-180" : ""}`}>
@@ -638,7 +660,7 @@ export default function StepFourPage() {
                           </span>
                         </button>
                         {openMenu === "emoji" ? (
-                          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-[#afb3ac]/40 bg-white p-1 shadow-[0_12px_28px_rgba(48,51,46,0.14)]">
+                          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-[#afb3ac]/20 bg-[#1f2522] p-1 shadow-2xl">
                             {EMOJI_OPTIONS.map((option) => (
                               <button
                                 key={option}
@@ -648,8 +670,8 @@ export default function StepFourPage() {
                                   setOpenMenu(null);
                                 }}
                                 className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${emojiStyle === option
-                                  ? "bg-[#cde6f4]/45 text-[#3e5560]"
-                                  : "text-[#2f342e] hover:bg-[#f4f4ef]"
+                                  ? "bg-white/10 text-white font-bold"
+                                  : "text-[#f0f5f2]/80 hover:bg-white/5 hover:text-[#f0f5f2]"
                                   }`}
                               >
                                 {option}
@@ -945,6 +967,10 @@ export default function StepFourPage() {
           </section>
         </div>
       ) : null}
+      <HomeConfirmModal
+        isOpen={isHomeModalOpen}
+        onClose={() => setIsHomeModalOpen(false)}
+      />
     </div>
   );
 }

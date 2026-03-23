@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { loadPersonaAnalysis } from "@/lib/persona/storage";
 import { PersonaAnalysis } from "@/types/persona";
+import UserProfileMenu from "@/app/_components/UserProfileMenu";
+import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 
 function UserIcon() {
   return (
@@ -47,6 +49,7 @@ function buildAiDigest(analysis: PersonaAnalysis) {
 export default function StepFivePage() {
   const [analysis, setAnalysis] = useState<PersonaAnalysis | null>(null);
   const aiDigest = useMemo(() => (analysis ? buildAiDigest(analysis) : []), [analysis]);
+  const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
 
   useEffect(() => {
     setAnalysis(loadPersonaAnalysis());
@@ -75,17 +78,15 @@ export default function StepFivePage() {
   return (
     <div className="min-h-screen bg-[#faf9f5] text-[#2f342e]">
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/75 backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
+          <button 
+            type="button"
+            onClick={() => setIsHomeModalOpen(true)}
+            className="flex items-center gap-2 transition-opacity hover:opacity-80"
+          >
             <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
             <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-[#655d5a]">Step 4/4</span>
-            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
-              <div className="h-full w-full bg-[#4a626d]" />
-            </div>
-          </div>
+          </button>
         </div>
       </header>
 
@@ -214,6 +215,10 @@ export default function StepFivePage() {
           </span>
         </Link>
       </div>
+      <HomeConfirmModal 
+        isOpen={isHomeModalOpen} 
+        onClose={() => setIsHomeModalOpen(false)} 
+      />
     </div>
   );
 }
