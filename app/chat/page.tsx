@@ -28,6 +28,10 @@ type StoredChatState = {
   updatedAt: string;
 };
 
+type Step3AvatarRaw = {
+  personaImageUrl?: string;
+};
+
 const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
 const USER_INPUT_CHAR_LIMIT = 100;
 const DEFAULT_ASSISTANT_CHAR_LIMIT = 300;
@@ -46,6 +50,18 @@ function toId() {
 
 function getChatStateKey(personaId: string) {
   return `${CHAT_STATE_KEY_PREFIX}:${personaId}`;
+}
+
+function readStep3AvatarFromStorage() {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage.getItem("bogopa_profile_step3");
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as Step3AvatarRaw;
+    return typeof parsed.personaImageUrl === "string" ? parsed.personaImageUrl.trim() : "";
+  } catch {
+    return "";
+  }
 }
 
 function maskDisplayName(name: string) {
@@ -196,6 +212,8 @@ export default function ChatPage() {
   const [reviewError, setReviewError] = useState("");
   const [isSavingReview, setIsSavingReview] = useState(false);
   const [dateLabel, setDateLabel] = useState("");
+  const [step3AvatarUrl, setStep3AvatarUrl] = useState("");
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const initialMessageRequestIdRef = useRef(0);
 
@@ -248,6 +266,7 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
+    setStep3AvatarUrl(readStep3AvatarFromStorage());
     const loadedRuntime = loadPersonaRuntime();
     const loadedAnalysis = loadPersonaAnalysis();
     setRuntime(loadedRuntime);
@@ -261,21 +280,21 @@ export default function ChatPage() {
           const parsed = JSON.parse(rawState) as Partial<StoredChatState>;
           const parsedMessages = Array.isArray(parsed.messages)
             ? parsed.messages.filter(
-                (item): item is ChatMessage =>
-                  !!item &&
-                  typeof item.id === "string" &&
-                  (item.role === "user" || item.role === "assistant") &&
-                  typeof item.content === "string" &&
-                  typeof item.createdAt === "string",
-              )
+              (item): item is ChatMessage =>
+                !!item &&
+                typeof item.id === "string" &&
+                (item.role === "user" || item.role === "assistant") &&
+                typeof item.content === "string" &&
+                typeof item.createdAt === "string",
+            )
             : [];
           const parsedTurns = Array.isArray(parsed.unsummarizedTurns)
             ? parsed.unsummarizedTurns.filter(
-                (item): item is ChatTurn =>
-                  !!item &&
-                  (item.role === "user" || item.role === "assistant") &&
-                  typeof item.content === "string",
-              )
+              (item): item is ChatTurn =>
+                !!item &&
+                (item.role === "user" || item.role === "assistant") &&
+                typeof item.content === "string",
+            )
             : [];
 
           if (parsed.personaId === loadedRuntime.personaId && parsedMessages.length > 0) {
@@ -307,6 +326,10 @@ export default function ChatPage() {
       initialMessageRequestIdRef.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [analysis?.personaInput.avatarUrl, step3AvatarUrl]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -520,13 +543,17 @@ export default function ChatPage() {
   }
 
   const personaName = runtime.displayName || "페르소나";
-  const avatarUrl = analysis?.personaInput.avatarUrl || null;
+  const avatarUrl = analysis?.personaInput.avatarUrl || step3AvatarUrl || null;
+  const showAvatarImage = Boolean(avatarUrl) && !avatarLoadError;
 
   return (
     <div className="min-h-screen bg-[#faf9f5] text-[#2f342e]">
       <nav className="fixed top-0 z-50 w-full bg-[#faf9f5]/80 backdrop-blur-xl">
         <div className="mx-auto hidden h-16 w-full max-w-7xl items-center justify-between px-6 md:flex md:px-12">
-          <div className="font-headline text-2xl font-bold tracking-tighter text-[#4a626d]">보고파</div>
+          <div className="flex items-center gap-2">
+            <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
+            <span className="font-headline text-2xl font-bold tracking-tighter text-[#4a626d]">Bogopa</span>
+          </div>
           <div className="hidden items-center gap-8 md:flex">
             <span className="text-[#655d5a]">기록장</span>
             <span className="text-[#655d5a]">추억</span>
@@ -556,9 +583,14 @@ export default function ChatPage() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 overflow-hidden rounded-2xl ring-2 ring-white">
-                {avatarUrl ? (
+                {showAvatarImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={avatarUrl} alt="페르소나 프로필" className="h-full w-full object-cover" />
+                  <img
+                    src={avatarUrl || ""}
+                    alt="페르소나 프로필"
+                    className="h-full w-full object-cover"
+                    onError={() => setAvatarLoadError(true)}
+                  />
                 ) : (
                   <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
                     <UserAvatarIcon />
@@ -570,32 +602,32 @@ export default function ChatPage() {
           </div>
 
           <div className="relative" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() => setMenuOpen((prev) => !prev)}
-                  className="rounded-xl p-2 text-[#5c605a] transition-colors hover:bg-[#f4f4ef]"
-                  aria-label="더보기"
-                >
-                  <MenuIcon />
-                </button>
-                {menuOpen ? (
-                  <div className="absolute right-0 top-12 z-40 w-48 rounded-2xl bg-white p-2 shadow-2xl ring-1 ring-black/5">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="rounded-xl p-2 text-[#f0f5f2] transition-colors hover:bg-[#f4f4ef]"
+              aria-label="더보기"
+            >
+              <MenuIcon />
+            </button>
+            {menuOpen ? (
+              <div className="absolute right-0 top-12 z-40 w-48 rounded-2xl bg-white p-2 shadow-2xl ring-1 ring-black/5">
                 <button
                   type="button"
                   onClick={openDeleteFlow}
-                  className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#2f342e] hover:bg-[#f4f4ef]"
+                  className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#f0f5f2] hover:bg-[#cde6f4] hover:text-[#1f2a31]"
                 >
                   내 기억 삭제
                 </button>
                 <button
                   type="button"
                   onClick={resetChatOnly}
-                  className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#2f342e] hover:bg-[#f4f4ef]"
+                  className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#f0f5f2] hover:bg-[#cde6f4] hover:text-[#1f2a31]"
                 >
                   채팅 초기화
                 </button>
                 <div className="my-1 h-px bg-[#edeee8]" />
-                <button type="button" className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#9f403d] hover:bg-[#fe8983]/10">
+                <button type="button" className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#f0b6b4] hover:bg-[#cde6f4] hover:text-[#1f2a31]">
                   대화 내보내기
                 </button>
               </div>
@@ -627,9 +659,14 @@ export default function ChatPage() {
             <div className="flex items-center gap-4">
               <div className="relative">
                 <div className="h-14 w-14 overflow-hidden rounded-3xl ring-2 ring-white">
-                  {avatarUrl ? (
+                  {showAvatarImage ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={avatarUrl} alt="페르소나 프로필" className="h-full w-full object-cover" />
+                    <img
+                      src={avatarUrl || ""}
+                      alt="페르소나 프로필"
+                      className="h-full w-full object-cover"
+                      onError={() => setAvatarLoadError(true)}
+                    />
                   ) : (
                     <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
                       <UserAvatarIcon />
@@ -646,7 +683,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={() => setMenuOpen((prev) => !prev)}
-                className="rounded-xl p-2 text-[#5c605a] transition-colors hover:bg-[#f4f4ef]"
+                className="rounded-xl p-2 text-[#f0f5f2] transition-colors hover:bg-[#f4f4ef]"
                 aria-label="더보기"
               >
                 <MenuIcon />
@@ -656,19 +693,19 @@ export default function ChatPage() {
                   <button
                     type="button"
                     onClick={openDeleteFlow}
-                    className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#2f342e] hover:bg-[#f4f4ef]"
+                    className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#f0f5f2] hover:bg-[#cde6f4] hover:text-[#1f2a31]"
                   >
                     내 기억 삭제
                   </button>
                   <button
                     type="button"
                     onClick={resetChatOnly}
-                    className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#2f342e] hover:bg-[#f4f4ef]"
+                    className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#f0f5f2] hover:bg-[#cde6f4] hover:text-[#1f2a31]"
                   >
                     채팅 초기화
                   </button>
                   <div className="my-1 h-px bg-[#edeee8]" />
-                  <button type="button" className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#9f403d] hover:bg-[#fe8983]/10">
+                  <button type="button" className="w-full rounded-xl px-4 py-2 text-left text-sm text-[#f0b6b4] hover:bg-[#cde6f4] hover:text-[#1f2a31]">
                     대화 내보내기
                   </button>
                 </div>
@@ -678,7 +715,7 @@ export default function ChatPage() {
 
           <section className="hide-scrollbar flex-1 space-y-8 overflow-y-auto px-2 pb-8">
             <div className="flex justify-center">
-              <span className="rounded-full bg-[#f4f4ef] px-3 py-1 text-[11px] font-semibold tracking-wide text-[#5c605a]/80">
+              <span className="rounded-full bg-[#f4f4ef] px-3 py-1 text-[11px] font-semibold tracking-wide text-[#f0f5f2]">
                 {dateLabel || formatDateLabel(nowIso())}
               </span>
             </div>
@@ -689,9 +726,14 @@ export default function ChatPage() {
                   <div key={message.id} className="flex items-start gap-3">
                     <div className="pt-1">
                       <div className="h-8 w-8 overflow-hidden rounded-full">
-                        {avatarUrl ? (
+                        {showAvatarImage ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={avatarUrl} alt="페르소나" className="h-full w-full object-cover" />
+                          <img
+                            src={avatarUrl || ""}
+                            alt="페르소나"
+                            className="h-full w-full object-cover"
+                            onError={() => setAvatarLoadError(true)}
+                          />
                         ) : (
                           <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
                             <UserAvatarIcon />
@@ -703,7 +745,7 @@ export default function ChatPage() {
                       <div className="rounded-3xl rounded-tl-sm bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                         <p className="whitespace-pre-line text-[15px] leading-relaxed text-[#2f342e]">{message.content}</p>
                       </div>
-                      <span className="ml-1 mt-2 block text-[10px] text-[#5c605a]/60">{formatTime(message.createdAt)}</span>
+                      <span className="ml-1 mt-2 block text-[10px] text-[#2f342e]">{formatTime(message.createdAt)}</span>
                     </div>
                   </div>
                 );
@@ -716,7 +758,7 @@ export default function ChatPage() {
                       <p className="text-[15px] leading-relaxed text-[#3e5560]">{message.content}</p>
                     </div>
                   </div>
-                  <span className="mr-1 text-[10px] text-[#5c605a]/60">{formatTime(message.createdAt)}</span>
+                  <span className="mr-1 text-[10px] text-[#3e5560]">{formatTime(message.createdAt)}</span>
                 </div>
               );
             })}
@@ -725,9 +767,14 @@ export default function ChatPage() {
               <div className="flex items-start gap-3 opacity-70">
                 <div className="pt-1">
                   <div className="h-8 w-8 overflow-hidden rounded-full">
-                    {avatarUrl ? (
+                    {showAvatarImage ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={avatarUrl} alt="페르소나 입력 중" className="h-full w-full object-cover" />
+                      <img
+                        src={avatarUrl || ""}
+                        alt="페르소나 입력 중"
+                        className="h-full w-full object-cover"
+                        onError={() => setAvatarLoadError(true)}
+                      />
                     ) : (
                       <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
                         <UserAvatarIcon />

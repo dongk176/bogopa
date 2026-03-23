@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { persistOnboardingStep } from "@/lib/onboarding-client";
+import { clearOnboardingDraft, persistOnboardingStep } from "@/lib/onboarding-client";
+import { PERSONA_ANALYSIS_STORAGE_KEY, PERSONA_RUNTIME_STORAGE_KEY } from "@/lib/persona/storage";
 
 type Gender = "Male" | "Female";
 
@@ -71,6 +72,13 @@ export default function StepOnePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    const hasPreviousPersona =
+      Boolean(window.localStorage.getItem(PERSONA_RUNTIME_STORAGE_KEY)) ||
+      Boolean(window.localStorage.getItem(PERSONA_ANALYSIS_STORAGE_KEY));
+    if (hasPreviousPersona) {
+      clearOnboardingDraft();
+    }
+
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
 
@@ -123,7 +131,10 @@ export default function StepOnePage() {
     <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
-          <div className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">보고파</div>
+          <div className="flex items-center gap-2">
+            <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
+            <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 1/4</span>
             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
@@ -134,19 +145,19 @@ export default function StepOnePage() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-28 pt-16 md:px-6 md:pb-12">
-        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-white md:p-12 md:shadow-[0_20px_40px_rgba(47,52,46,0.06)]">
+        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
           <div className="absolute -right-10 -top-10 -z-0 hidden h-40 w-40 bg-[#cde6f4]/20 [border-radius:40%_60%_70%_30%/40%_50%_60%_50%] md:block" />
 
           <div className="relative z-10">
             <div className="mb-10 text-center md:text-left">
-              <h1 className="font-headline mb-4 text-3xl font-bold tracking-tight text-[#4a626d] md:text-4xl">
+              <h1 className="font-headline mb-4 text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
                 당신에 대해 알려주세요.
               </h1>
             </div>
 
             <form className="space-y-10" onSubmit={handleSubmit}>
               <div className="space-y-3">
-                <label className="ml-1 block text-sm font-semibold text-[#5c605a]" htmlFor="userName">
+                <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="userName">
                   성함 <span className="text-[#9f403d]">*</span>
                 </label>
                 <div className="group relative">
@@ -161,9 +172,8 @@ export default function StepOnePage() {
                       setName(nextValue);
                       if (nameError && nextValue.trim().length > 0) setNameError("");
                     }}
-                    className={`w-full rounded-xl border-none bg-[#f4f4ef] px-6 py-4 pr-12 text-lg text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all duration-300 focus:ring-2 ${
-                      nameError ? "focus:ring-[#9f403d]/30" : "focus:ring-[#4a626d]/20"
-                    }`}
+                    className={`w-full rounded-xl border-none bg-[#f4f4ef] px-6 py-4 pr-12 text-lg text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all duration-300 focus:ring-2 ${nameError ? "focus:ring-[#9f403d]/30" : "focus:ring-[#4a626d]/20"
+                      }`}
                   />
                   <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#787c75] group-focus-within:text-[#4a626d]">
                     <PersonIcon />
@@ -173,7 +183,7 @@ export default function StepOnePage() {
               </div>
 
               <div className="space-y-4">
-                <label className="ml-1 block text-sm font-semibold text-[#5c605a]">
+                <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]">
                   성별 <span className="text-[#9f403d]">*</span>
                 </label>
                 <div className="grid grid-cols-2 gap-4">
@@ -183,11 +193,10 @@ export default function StepOnePage() {
                       setGender("Male");
                       if (genderError) setGenderError("");
                     }}
-                    className={`group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 px-4 py-6 transition-all duration-300 ${
-                      gender === "Male"
-                        ? "border-[#4a626d] bg-[#cde6f4] text-[#3e5560]"
-                        : "border-transparent bg-[#f4f4ef] text-[#655d5a] hover:bg-[#e6e9e2]"
-                    }`}
+                    className={`group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 px-4 py-6 transition duration-300 ${gender === "Male"
+                      ? "border-[#24303a] bg-[#cce2f0] text-[#14191d] shadow-inner shadow-[#24303a]/30"
+                      : "border-transparent bg-[#f4f4ef] text-[#655d5a] hover:bg-[#e6e9e2]"
+                      }`}
                   >
                     <MaleIcon />
                     <span className="font-medium">남성</span>
@@ -199,11 +208,10 @@ export default function StepOnePage() {
                       setGender("Female");
                       if (genderError) setGenderError("");
                     }}
-                    className={`group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 px-4 py-6 transition-all duration-300 ${
-                      gender === "Female"
-                        ? "border-[#d07093] bg-[#ffe3ef] text-[#8b3a5f]"
-                        : "border-transparent bg-[#f4f4ef] text-[#655d5a] hover:bg-[#e6e9e2]"
-                    }`}
+                    className={`group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 px-4 py-6 transition-all duration-300 ${gender === "Female"
+                      ? "border-[#8d305a] bg-[#ffd3e3] text-[#4a2c3f]"
+                      : "border-transparent bg-[#f4f4ef] text-[#655d5a] hover:bg-[#e6e9e2]"
+                      }`}
                   >
                     <FemaleIcon />
                     <span className="font-medium">여성</span>

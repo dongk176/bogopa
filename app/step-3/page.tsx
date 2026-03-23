@@ -66,6 +66,19 @@ function inferGenderByRelationshipKey(key: RelationshipKey, userGender: StepOneG
   return null;
 }
 
+function getDefaultPersonaImagePath(
+  relationship: RelationshipKey | null,
+  personaGender: "male" | "female",
+) {
+  if (relationship === "mother") return "/img/mom.png";
+  if (relationship === "father") return "/img/dad.png";
+  if (relationship === "olderSister") return "/img/old sister.png";
+  if (relationship === "olderBrother") return "/img/old brother.png";
+  if (relationship === "youngerSibling") return personaGender === "male" ? "/img/young brother.png" : "/img/young sister.png";
+  if (relationship === "partner") return personaGender === "male" ? "/img/husband.png" : "/img/wife.png";
+  return "";
+}
+
 function getNicknamePlaceholder(relationship: RelationshipKey | null, userGender: StepOneGender | null) {
   if (relationship === "mother" || relationship === "father") {
     if (userGender === "Male") return "예: 동민아, 우리 아들";
@@ -240,6 +253,7 @@ export default function StepThreePage() {
   const [personaImageKey, setPersonaImageKey] = useState("");
   const [personaImageUrl, setPersonaImageUrl] = useState("");
   const [personaFile, setPersonaFile] = useState<File | null>(null);
+  const [hasCustomImage, setHasCustomImage] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [relationship, setRelationship] = useState<RelationshipKey | null>(null);
   const [customRelationship, setCustomRelationship] = useState("");
@@ -257,7 +271,7 @@ export default function StepThreePage() {
   const [imageError, setImageError] = useState("");
   const [isImageProcessing, setIsImageProcessing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const shouldShowGenderSelector = relationship === "youngerSibling" || relationship === "custom";
+  const shouldShowGenderSelector = relationship === "youngerSibling" || relationship === "partner" || relationship === "custom";
 
   useEffect(() => {
     return () => {
@@ -289,10 +303,16 @@ export default function StepThreePage() {
       if (typeof saved.personaName === "string") setPersonaName(saved.personaName);
       if (typeof saved.personaOccupation === "string") setPersonaOccupation(saved.personaOccupation);
       if (typeof saved.personaImageName === "string") setPersonaImageName(saved.personaImageName);
-      if (typeof saved.personaImageKey === "string") setPersonaImageKey(saved.personaImageKey);
+      if (typeof saved.personaImageKey === "string") {
+        setPersonaImageKey(saved.personaImageKey);
+        setHasCustomImage(saved.personaImageKey.trim().length > 0);
+      }
       if (typeof saved.personaImageUrl === "string") {
         setPersonaImageUrl(saved.personaImageUrl);
         setPreviewUrl(saved.personaImageUrl);
+        if (saved.personaImageUrl.trim().length > 0 && !saved.personaImageUrl.startsWith("/img/")) {
+          setHasCustomImage(true);
+        }
       }
       if (saved.personaGender === "male" || saved.personaGender === "female") setPersonaGender(saved.personaGender);
       if (typeof saved.userNickname === "string") setUserNickname(saved.userNickname);
@@ -312,6 +332,29 @@ export default function StepThreePage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (hasCustomImage || personaFile) return;
+
+    const nextDefaultImage = getDefaultPersonaImagePath(relationship, personaGender);
+    const currentIsDefault = personaImageUrl.startsWith("/img/");
+
+    if (!nextDefaultImage) {
+      if (currentIsDefault) {
+        setPersonaImageUrl("");
+        setPersonaImageName("");
+        if (!previewUrl.startsWith("blob:")) setPreviewUrl("");
+      }
+      return;
+    }
+
+    if (nextDefaultImage === personaImageUrl && nextDefaultImage === previewUrl) return;
+
+    if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    setPersonaImageUrl(nextDefaultImage);
+    setPreviewUrl(nextDefaultImage);
+    setPersonaImageName(nextDefaultImage.split("/").pop() || "");
+  }, [relationship, personaGender, hasCustomImage, personaFile, personaImageUrl, previewUrl]);
+
   async function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -330,6 +373,7 @@ export default function StepThreePage() {
 
     setImageError("");
     setIsImageProcessing(true);
+    setHasCustomImage(true);
 
     try {
       const optimized = await compressPersonaImage(file);
@@ -412,6 +456,13 @@ export default function StepThreePage() {
       }
     }
 
+    if (!finalImageUrl) {
+      const defaultImage = getDefaultPersonaImagePath(relationship, personaGender);
+      if (defaultImage) {
+        finalImageUrl = defaultImage;
+      }
+    }
+
     const payload: StepThreeData = {
       personaImageName: personaImageName || undefined,
       personaImageKey: finalImageKey || undefined,
@@ -439,7 +490,10 @@ export default function StepThreePage() {
     <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
-          <div className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">보고파</div>
+          <div className="flex items-center gap-2">
+            <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
+            <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 3/4</span>
             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
@@ -450,17 +504,17 @@ export default function StepThreePage() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-32 pt-20 md:px-6 md:pb-12 md:pt-24">
-        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-white md:p-12 md:shadow-[0_20px_40px_rgba(47,52,46,0.06)]">
+        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
           <div className="absolute -right-10 -top-10 -z-0 hidden h-40 w-40 bg-[#cde6f4]/20 [border-radius:40%_60%_70%_30%/40%_50%_60%_50%] md:block" />
 
           <div className="relative z-10">
             <div className="mb-8 text-center md:text-left">
-              <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#4a626d] md:text-4xl">
+              <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
                 이제, 다시 대화하고 싶은
                 <br />
                 사람을 알려주세요.
               </h1>
-              <p className="text-[#5d605a]">소중한 기억을 되살리기 위해 대상에 대한 기본 정보가 필요합니다.</p>
+              <p className="text-[#f0f5f2]/80">소중한 기억을 되살리기 위해 대상에 대한 기본 정보가 필요합니다.</p>
             </div>
 
             <form className="space-y-7" onSubmit={handleSubmit}>
@@ -480,13 +534,13 @@ export default function StepThreePage() {
 
                   <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                 </label>
-                <p className="text-sm font-medium text-[#655d5a]">사진을 등록해주세요 (선택, 10MB 미만 · 자동 압축)</p>
+                <p className="text-sm font-medium text-[#f0f5f2]">사진을 등록해주세요 (선택, 10MB 미만 · 자동 압축)</p>
                 {personaImageName ? <p className="text-xs text-[#787c75]">{personaImageName}</p> : null}
                 {imageError ? <p className="text-xs text-[#9f403d]">{imageError}</p> : null}
               </div>
 
               <div className="space-y-3">
-                <label className="ml-1 block text-sm font-semibold text-[#5c605a]" htmlFor="persona-name">
+                <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-name">
                   이름 또는 애칭 <span className="text-[#9f403d]">*</span>
                 </label>
                 <div className="group relative">
@@ -500,9 +554,8 @@ export default function StepThreePage() {
                       if (nameError && nextValue.trim().length > 0) setNameError("");
                     }}
                     placeholder="예: 우리 엄마, 김철수"
-                    className={`w-full rounded-xl border-none bg-[#f4f4ef] px-6 py-4 pr-12 text-lg text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all duration-300 focus:ring-2 ${
-                      nameError ? "focus:ring-[#9f403d]/30" : "focus:ring-[#4a626d]/20"
-                    }`}
+                    className={`w-full rounded-xl border-none bg-[#f4f4ef] px-6 py-4 pr-12 text-lg text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all duration-300 focus:ring-2 ${nameError ? "focus:ring-[#9f403d]/30" : "focus:ring-[#4a626d]/20"
+                      }`}
                   />
                   <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#787c75] group-focus-within:text-[#4a626d]">
                     <UserIcon />
@@ -517,27 +570,26 @@ export default function StepThreePage() {
                   onClick={() => setIsRelationshipOpen((prev) => !prev)}
                   className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] px-4 py-3 text-left"
                 >
-                  <span className="text-sm font-semibold text-[#5c605a]">
+                  <span className="text-sm font-semibold text-[#f0f5f2]">
                     관계 <span className="text-[#9f403d]">*</span>
                   </span>
                   <span className="flex items-center gap-2">
                     {!isRelationshipOpen && relationship ? (
-                      <span className="max-w-[160px] truncate text-sm font-medium text-[#4a626d]">
+                      <span className="max-w-[160px] truncate text-sm font-medium text-[#f0f5f2]">
                         {relationship === "custom"
                           ? customRelationship.trim() || "직접 입력"
                           : getRelationshipLabel(relationship, userGender)}
                       </span>
                     ) : null}
-                    <span className={`text-sm text-[#4a626d] transition-transform duration-300 ${isRelationshipOpen ? "rotate-180" : ""}`}>
+                    <span className={`text-sm text-[#f0f5f2] transition-transform duration-300 ${isRelationshipOpen ? "rotate-180" : ""}`}>
                       ▾
                     </span>
                   </span>
                 </button>
 
                 <div
-                  className={`grid transition-all duration-300 ease-out ${
-                    isRelationshipOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-70"
-                  }`}
+                  className={`grid transition-all duration-300 ease-out ${isRelationshipOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-70"
+                    }`}
                 >
                   <div className="overflow-hidden">
                     <div className="grid grid-cols-2 gap-3 pt-1 sm:grid-cols-3">
@@ -552,15 +604,14 @@ export default function StepThreePage() {
                               if (item !== "custom") setCustomRelationship("");
                               const inferred = inferGenderByRelationshipKey(item, userGender);
                               if (inferred) setPersonaGender(inferred);
-                              setIsGenderOpen(item === "youngerSibling" || item === "custom");
+                              setIsGenderOpen(item === "youngerSibling" || item === "partner" || item === "custom");
                               if (relationshipError) setRelationshipError("");
                               setIsRelationshipOpen(false);
                             }}
-                            className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 md:text-base ${
-                              isActive
-                                ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
-                                : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
-                            }`}
+                            className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 md:text-base ${isActive
+                              ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
+                              : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
+                              }`}
                           >
                             {getRelationshipLabel(item, userGender)}
                           </button>
@@ -593,21 +644,20 @@ export default function StepThreePage() {
                     onClick={() => setIsGenderOpen((prev) => !prev)}
                     className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] px-4 py-3 text-left"
                   >
-                    <span className="text-sm font-semibold text-[#5c605a]">성별</span>
+                    <span className="text-sm font-semibold text-[#f0f5f2]">성별</span>
                     <span className="flex items-center gap-2">
                       {!isGenderOpen ? (
-                        <span className="text-sm font-medium text-[#4a626d]">{personaGender === "male" ? "남성" : "여성"}</span>
+                        <span className="text-sm font-medium text-[#f0f5f2]">{personaGender === "male" ? "남성" : "여성"}</span>
                       ) : null}
-                      <span className={`text-sm text-[#4a626d] transition-transform duration-300 ${isGenderOpen ? "rotate-180" : ""}`}>
+                      <span className={`text-sm text-[#f0f5f2] transition-transform duration-300 ${isGenderOpen ? "rotate-180" : ""}`}>
                         ▾
                       </span>
                     </span>
                   </button>
 
                   <div
-                    className={`grid transition-all duration-300 ease-out ${
-                      isGenderOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-70"
-                    }`}
+                    className={`grid transition-all duration-300 ease-out ${isGenderOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-70"
+                      }`}
                   >
                     <div className="overflow-hidden">
                       <div className="grid grid-cols-2 gap-3 pt-1">
@@ -617,11 +667,10 @@ export default function StepThreePage() {
                             setPersonaGender("male");
                             setIsGenderOpen(false);
                           }}
-                          className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 md:text-base ${
-                            personaGender === "male"
-                              ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
-                              : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
-                          }`}
+                          className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 md:text-base ${personaGender === "male"
+                            ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
+                            : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
+                            }`}
                         >
                           남성
                         </button>
@@ -631,11 +680,10 @@ export default function StepThreePage() {
                             setPersonaGender("female");
                             setIsGenderOpen(false);
                           }}
-                          className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 md:text-base ${
-                            personaGender === "female"
-                              ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
-                              : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
-                          }`}
+                          className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 md:text-base ${personaGender === "female"
+                            ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
+                            : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
+                            }`}
                         >
                           여성
                         </button>
@@ -646,7 +694,7 @@ export default function StepThreePage() {
               ) : null}
 
               <div className="space-y-3">
-                <label className="ml-1 block text-sm font-semibold text-[#5c605a]" htmlFor="persona-occupation">
+                <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-occupation">
                   직업
                 </label>
                 <input
@@ -661,7 +709,7 @@ export default function StepThreePage() {
 
               <div className="space-y-3">
                 <div className="ml-1 flex items-center justify-between">
-                  <label className="block text-sm font-semibold text-[#5c605a]" htmlFor="persona-user-nickname">
+                  <label className="block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-user-nickname">
                     나를 불러주던 애칭 <span className="text-[#9f403d]">*</span>
                   </label>
                 </div>
@@ -676,9 +724,8 @@ export default function StepThreePage() {
                   }}
                   placeholder={getNicknamePlaceholder(relationship, userGender)}
                   required
-                  className={`w-full rounded-xl border-none bg-[#f4f4ef] px-4 py-4 text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all focus:ring-2 ${
-                    nicknameError ? "focus:ring-[#9f403d]/30" : "focus:ring-[#4a626d]/20"
-                  }`}
+                  className={`w-full rounded-xl border-none bg-[#f4f4ef] px-4 py-4 text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all focus:ring-2 ${nicknameError ? "focus:ring-[#9f403d]/30" : "focus:ring-[#4a626d]/20"
+                    }`}
                 />
                 {nicknameError ? <p className="ml-1 text-sm text-[#9f403d]">{nicknameError}</p> : null}
               </div>

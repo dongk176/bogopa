@@ -74,6 +74,7 @@ function compactRuntime(runtimeData: PersonaRuntime) {
     personaId: runtimeData.personaId,
     displayName: runtimeData.displayName,
     relation: runtimeData.relation,
+    gender: runtimeData.gender,
     goal: runtimeData.goal,
     summary: runtimeData.summary,
     style: runtimeData.style,
@@ -119,6 +120,7 @@ function buildReplySystemPrompt(
     "사용자 감정을 먼저 수용하고, 질문은 남발하지 마세요.",
     "고정 템플릿 문장을 반복하지 말고, 매 턴 문맥에 맞게 새로 작성하세요.",
     relationHint,
+    `페르소나 성별 정보: ${runtimeData.gender === "male" ? "남성" : "여성"}. 말투/자기지칭/호칭 뉘앙스 결정 시 참고하세요.`,
     "호칭을 사용할 때는 주어진 애칭 원형만 사용하고, 야/아 같은 추가 호격 조사는 붙이지 마세요.",
     "runtime.safety 규칙을 반드시 준수하세요: 실제 동일인 단정 금지, 구체 사실 날조 금지, 과도한 친밀감 과장 금지.",
     "ㅋㅋ/ㅎㅎ/ㅠㅠ 같은 감정 표현은 페르소나 패턴을 참고하되, 한 답변에서 최대 1회만 사용하고 길이는 2글자 수준(예: ㅋㅋ, ㅎㅎ, ㅠㅠ)으로 제한하세요.",
@@ -284,6 +286,7 @@ export async function POST(request: NextRequest) {
       const toneSummary = (body.styleSummary || runtimeData.style.tone[0] || "").trim();
       const userPrompt = [
         `관계: ${runtimeData.relation || "미지정"}`,
+        `페르소나 성별: ${runtimeData.gender === "male" ? "남성" : "여성"}`,
         `대화 목적: ${goalLabel(runtimeData.goal, customGoalText)}`,
         `애칭: ${alias}`,
         toneSummary ? `말투 요약: ${toneSummary}` : "",

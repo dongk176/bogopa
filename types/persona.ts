@@ -145,6 +145,7 @@ export type PersonaRuntime = {
   personaId: string;
   displayName: string;
   relation: string;
+  gender: Gender;
   goal: PrimaryGoal;
 
   summary: string;

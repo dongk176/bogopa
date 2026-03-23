@@ -5,6 +5,7 @@ export function buildPersonaRuntime(analysis: PersonaAnalysis): PersonaRuntime {
     personaId: analysis.personaId,
     displayName: analysis.personaInput.displayName,
     relation: analysis.personaInput.relation,
+    gender: analysis.personaInput.gender,
     goal: analysis.conversationIntent.primaryGoal,
 
     summary: analysis.analysisSummary.oneLineSummary,

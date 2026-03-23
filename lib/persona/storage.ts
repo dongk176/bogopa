@@ -30,6 +30,13 @@ type Step4Raw = {
   emojiStyle?: string;
 };
 
+function readStep3AvatarUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const step3 = safeParse<Step3Raw>(window.localStorage.getItem(STEP3_KEY));
+  const avatar = step3?.personaImageUrl?.trim();
+  return avatar ? avatar : null;
+}
+
 function safeParse<T>(value: string | null): T | null {
   if (!value) return null;
   try {
@@ -67,6 +74,13 @@ function inferPersonaGender(relation: string, fallbackUserGender: Gender): Gende
   if (/(엄마|누나|언니|여동생)/.test(rel)) return "female";
   if (/(아빠|형|오빠|남동생)/.test(rel)) return "male";
   return fallbackUserGender;
+}
+
+function inferRuntimeGender(relation: string): Gender {
+  const rel = relation.replace(/\s/g, "");
+  if (/(엄마|누나|언니|여동생|아내|와이프|부인|여친)/.test(rel)) return "female";
+  if (/(아빠|형|오빠|남동생|남편|남친)/.test(rel)) return "male";
+  return "female";
 }
 
 function normalizeAddressAlias(value: string) {
@@ -138,7 +152,23 @@ export function savePersonaAnalysis(analysis: PersonaAnalysis) {
 
 export function loadPersonaAnalysis(): PersonaAnalysis | null {
   if (typeof window === "undefined") return null;
-  return safeParse<PersonaAnalysis>(window.localStorage.getItem(PERSONA_ANALYSIS_STORAGE_KEY));
+  const parsed = safeParse<PersonaAnalysis>(window.localStorage.getItem(PERSONA_ANALYSIS_STORAGE_KEY));
+  if (!parsed) return null;
+
+  if (!parsed.personaInput.avatarUrl) {
+    const fallbackAvatar = readStep3AvatarUrl();
+    if (fallbackAvatar) {
+      return {
+        ...parsed,
+        personaInput: {
+          ...parsed.personaInput,
+          avatarUrl: fallbackAvatar,
+        },
+      };
+    }
+  }
+
+  return parsed;
 }
 
 export function savePersonaRuntime(runtime: PersonaRuntime) {
@@ -153,6 +183,7 @@ export function loadPersonaRuntime(): PersonaRuntime | null {
 
   const normalized: PersonaRuntime = {
     ...parsed,
+    gender: parsed.gender === "male" || parsed.gender === "female" ? parsed.gender : inferRuntimeGender(parsed.relation || ""),
     addressing: {
       callsUserAs: (parsed.addressing?.callsUserAs || []).map((item) => normalizeAddressAlias(item)).filter(Boolean),
       userCallsPersonaAs: parsed.addressing?.userCallsPersonaAs || [],

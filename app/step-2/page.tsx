@@ -159,7 +159,10 @@ export default function StepTwoPage() {
     <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
-          <div className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">보고파</div>
+          <div className="flex items-center gap-2">
+            <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
+            <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 2/4</span>
             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
@@ -170,12 +173,12 @@ export default function StepTwoPage() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-32 pt-20 md:px-6 md:pb-12 md:pt-24">
-        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-white md:p-12 md:shadow-[0_20px_40px_rgba(47,52,46,0.06)]">
+        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
           <div className="absolute -right-10 -top-10 -z-0 hidden h-40 w-40 bg-[#cde6f4]/20 [border-radius:40%_60%_70%_30%/40%_50%_60%_50%] md:block" />
 
           <div className="relative z-10">
             <div className="mb-8 text-center md:text-left">
-              <h1 className="font-headline text-3xl font-bold tracking-tight text-[#4a626d] md:text-4xl">
+              <h1 className="font-headline text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
                 이 대화를 통해
                 <br />
                 무엇을 바라고 있나요?
@@ -195,19 +198,17 @@ export default function StepTwoPage() {
                         setGoalError("");
                         if (item.value !== "custom") setCustomError("");
                       }}
-                      className={`group relative rounded-2xl border-2 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 ${
-                        isActive
-                          ? "border-[#4a626d] bg-white shadow-sm"
-                          : "border-transparent bg-[#f4f4ef] hover:bg-[#ffffff]"
-                      }`}
+                      className={`group relative rounded-2xl border-2 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 ${isActive
+                        ? "border-[#4a626d] bg-white shadow-sm"
+                        : "border-transparent bg-[#f4f4ef] hover:bg-[#ffffff]"
+                        }`}
                     >
                       <div className="flex items-center gap-3">
                         <span
-                          className={`grid h-8 w-8 place-items-center rounded-full transition-all ${
-                            isActive
-                              ? "bg-[#cde6f4] text-[#3e5560]"
-                              : "bg-[#e6e9e2] text-[#4a626d] opacity-90 group-hover:opacity-100"
-                          }`}
+                          className={`grid h-8 w-8 place-items-center rounded-full transition-all ${isActive
+                            ? "bg-[#cde6f4] text-[#3e5560]"
+                            : "bg-[#e6e9e2] text-[#4a626d] opacity-90 group-hover:opacity-100"
+                            }`}
                         >
                           <GoalIcon name={item.icon} active={isActive} />
                         </span>
@@ -232,7 +233,7 @@ export default function StepTwoPage() {
                     placeholder="당신의 마음을 적어주세요..."
                     className="min-h-[120px] w-full resize-none rounded-2xl border-none bg-[#e6e9e2] p-6 text-[#5c605a] outline-none ring-0 transition-all duration-300 focus:bg-white focus:ring-1 focus:ring-[#4a626d]/20"
                   />
-                  <p className="text-right text-xs text-[#655d5a]/70">구체적으로 적을수록 더 깊은 대화가 가능해요.</p>
+                  <p className="text-right text-xs text-[#f0f5f2]/70">구체적으로 적을수록 더 깊은 대화가 가능해요.</p>
                   {customError ? <p className="ml-1 text-sm text-[#9f403d]">{customError}</p> : null}
                 </div>
               ) : null}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import AuthProvider from "@/app/_components/AuthProvider";
 
 const headlineFont = Manrope({
   subsets: ["latin"],
@@ -18,6 +19,9 @@ export const metadata: Metadata = {
   title: "보고파 | AI 대화 동반자",
   description:
     "대화 기록을 바탕으로 페르소나를 만들고, 실제 대화를 이어갈 수 있는 AI 대화 동반자 서비스",
+  icons: {
+    icon: "/logo/bogopa%20logo.png",
+  },
 };
 
 const rootClassName = `${headlineFont.variable} ${bodyFont.variable} h-full antialiased`;
@@ -30,7 +34,9 @@ export default function RootLayout({
   return (
     <html lang="ko" className={rootClassName}>
       <body className="min-h-full flex flex-col bg-[#faf9f5] text-[#2f342e]">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

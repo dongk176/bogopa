@@ -2,14 +2,98 @@
 @import "tailwindcss";
 
 :root {
-  --background: #faf9f5;
-  --on-surface: #2f342e;
+  --background: #242926;
+  --on-surface: #d9e1da;
 }
 
 body {
   background-color: var(--background);
   color: var(--on-surface);
   font-family: var(--font-body), "Plus Jakarta Sans", sans-serif;
+}
+
+/* Soft dark mode across the app */
+.bg-\[\#faf9f5\] {
+  background-color: #242926 !important;
+}
+
+.bg-\[\#faf9f5\]\/85 {
+  background-color: rgb(36 41 38 / 0.85) !important;
+}
+
+.bg-\[\#faf9f5\]\/80 {
+  background-color: rgb(36 41 38 / 0.8) !important;
+}
+
+.bg-\[\#faf9f5\]\/75 {
+  background-color: rgb(36 41 38 / 0.75) !important;
+}
+
+.bg-\[\#f4f4ef\] {
+  background-color: #2c322f !important;
+}
+
+.bg-\[\#edeee8\] {
+  background-color: #313834 !important;
+}
+
+.bg-\[\#e6e9e2\] {
+  background-color: #3a433e !important;
+}
+
+.bg-\[\#ece0dc\] {
+  background-color: #3b3432 !important;
+}
+
+.bg-\[\#ece0dc\]\/35 {
+  background-color: rgb(59 52 50 / 0.35) !important;
+}
+
+.bg-\[\#ece0dc\]\/55 {
+  background-color: rgb(59 52 50 / 0.55) !important;
+}
+
+.bg-white {
+  background-color: #303733 !important;
+}
+
+.bg-white\/70 {
+  background-color: rgb(48 55 51 / 0.7) !important;
+}
+
+.text-\[\#2f342e\] {
+  color: #d9e1da !important;
+}
+
+.text-\[\#4a626d\] {
+  color: #b9cad1 !important;
+}
+
+.text-\[\#3e5560\] {
+  color: #aac0cb !important;
+}
+
+.text-\[\#655d5a\] {
+  color: #aeb4ad !important;
+}
+
+.text-\[\#5d605a\] {
+  color: #9fa7a0 !important;
+}
+
+.text-\[\#787c75\] {
+  color: #8d9690 !important;
+}
+
+.text-\[\#58504d\] {
+  color: #a79f9c !important;
+}
+
+.border-\[\#afb3ac\]\/25,
+.border-\[\#afb3ac\]\/30,
+.border-\[\#afb3ac\]\/40,
+.border-\[\#afb3ac\]\/60 {
+  border-color: rgb(121 129 124 / 0.45) !important;
 }
 
 .font-headline {

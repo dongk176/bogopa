@@ -1,5 +1,8 @@
-import Link from "next/link";
 import { listRecentUserReviews } from "@/lib/server/reviews";
+import SiteFooter from "@/app/_components/SiteFooter";
+import TypewriterHeadline from "@/app/_components/TypewriterHeadline";
+import FadeIn from "@/app/_components/FadeIn";
+import { StartChatButtonDesktop, StartChatButtonMobile } from "@/app/_components/AuthStartButton";
 
 type ReflectionItem = {
   name: string;
@@ -266,14 +269,14 @@ const featureCards = [
     title: "관계와 분위기 직접 설정",
     description: "상대와의 관계, 말의 온도, 대화 목적을 원하는 대로 조율할 수 있습니다.",
     icon: <EditIcon />,
-    badgeClassName: "border border-[#d6dcd2] bg-white text-[#655d5a] shadow-sm",
+    badgeClassName: "border border-[#d6dcd2] bg-white text-[#4a626d] shadow-sm",
     cardClassName: "border-[#d6dcd2] bg-white shadow-[0_14px_28px_rgba(47,52,46,0.1)]",
   },
   {
     title: "실제 대화 즉시 시작",
     description: "생성된 페르소나와 바로 채팅하며 기억을 천천히 다시 이어갈 수 있습니다.",
     icon: <ChatIcon />,
-    badgeClassName: "border border-[#d6dcd2] bg-white text-[#3e5661] shadow-sm",
+    badgeClassName: "border border-[#d6dcd2] bg-white text-[#4a626d] shadow-sm",
     cardClassName: "border-[#d6dcd2] bg-white shadow-[0_14px_28px_rgba(47,52,46,0.1)]",
   },
 ];
@@ -304,7 +307,7 @@ const demoMessages = [
 
 function ChartIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor">
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
       <path d="M4 19h16" strokeWidth="1.8" />
       <rect x="6" y="10" width="3" height="6" rx="1" strokeWidth="1.8" />
       <rect x="11" y="7" width="3" height="9" rx="1" strokeWidth="1.8" />
@@ -315,7 +318,7 @@ function ChartIcon() {
 
 function EditIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor">
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
       <path
         d="M4 19.5h5l10-10a1.8 1.8 0 0 0 0-2.6l-1.9-1.9a1.8 1.8 0 0 0-2.6 0l-10 10v4.5Z"
         strokeWidth="1.8"
@@ -327,7 +330,7 @@ function EditIcon() {
 
 function ChatIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor">
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
       <path
         d="M20 14a4 4 0 0 1-4 4H9l-4 3v-3a4 4 0 0 1-1-2.7V8a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v6Z"
         strokeWidth="1.8"
@@ -369,180 +372,157 @@ export default async function Home() {
 
   return (
     <>
-      <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center px-6 md:px-12">
-          <div className="font-headline text-2xl font-extrabold tracking-tight text-[#4a626d]">보고파</div>
-        </div>
-      </header>
+      <FadeIn delay={1900}>
+        <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/85 backdrop-blur-xl">
+          <div className="mx-auto flex h-16 w-full max-w-7xl items-center px-6 md:px-12">
+            <div className="flex items-center gap-2">
+              <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
+              <span className="font-headline text-2xl font-extrabold tracking-tight text-[#4a626d]">Bogopa</span>
+            </div>
+          </div>
+        </header>
+      </FadeIn>
 
       <main className="overflow-hidden pb-28 pt-24 md:pb-20 md:pt-32">
         <section className="mx-auto max-w-4xl px-6 text-center">
-          <h1 className="font-headline mb-5 text-4xl leading-[1.1] font-extrabold tracking-tight text-[#2f342e] md:mb-8 md:text-6xl">
-            기억을 바탕으로,
-            <br />
-            <span className="text-[#4a626d]">다시 만나는 대화</span>
-          </h1>
-          <p className="mx-auto mb-4 max-w-2xl break-keep text-lg leading-relaxed text-[#655d5a] md:mb-12 md:text-xl">
-            대화 내용을 분석해, AI로 그 사람의 말투처럼 다시 대화할 수 있어요.
-          </p>
-          <div className="flex flex-col items-center gap-8">
-            <div className="hidden flex-col gap-3 sm:flex-row md:flex">
-              <Link
-                className="group relative hidden rounded-full bg-[#4a626d] px-10 py-4 text-lg font-semibold text-[#f0f9ff] shadow-sm transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.98] md:inline-flex"
-                href="/step-1"
-              >
-                대화 시작하기
-                <span className="absolute inset-0 rounded-full bg-white/10 opacity-0 transition-opacity group-hover:opacity-100" />
-              </Link>
-            </div>
+          <TypewriterHeadline />
+          <FadeIn delay={1900}>
+            <p className="mx-auto mb-4 max-w-2xl break-keep text-lg leading-relaxed text-[#655d5a] md:mb-12 md:text-xl">
+              대화 내용을 분석해, AI로 그 사람의 말투처럼 다시 대화할 수 있어요.
+            </p>
+            <div className="flex flex-col items-center gap-8">
+              <div className="hidden flex-col gap-3 sm:flex-row md:flex">
+                <StartChatButtonDesktop />
+              </div>
 
-            <div className="relative mt-0 w-full max-w-3xl overflow-hidden md:mt-8">
-              <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-[#faf9f5] to-transparent md:w-20" />
-              <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-[#faf9f5] to-transparent md:w-20" />
-              <div className="space-y-3 py-4">
-                <div className="animate-marquee whitespace-nowrap">
-                  {[...reflectionRowTop, ...reflectionRowTop].map((review, index) => (
-                    <span
-                      key={`top-${review.name}-${index}`}
-                      className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
-                    >
-                      <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
-                      <span>“{review.text}”</span>
-                    </span>
-                  ))}
-                </div>
+              <div className="relative mt-0 w-full max-w-3xl overflow-hidden md:mt-8">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-[#242926] to-transparent md:w-20" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-[#242926] to-transparent md:w-20" />
+                <div className="space-y-3 py-4">
+                  <div className="animate-marquee whitespace-nowrap">
+                    {[...reflectionRowTop, ...reflectionRowTop].map((review, index) => (
+                      <span
+                        key={`top-${review.name}-${index}`}
+                        className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
+                      >
+                        <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
+                        <span>“{review.text}”</span>
+                      </span>
+                    ))}
+                  </div>
 
-                <div className="animate-marquee whitespace-nowrap">
-                  {[...reflectionRowMiddle, ...reflectionRowMiddle].map((review, index) => (
-                    <span
-                      key={`middle-${review.name}-${index}`}
-                      className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
-                    >
-                      <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
-                      <span>“{review.text}”</span>
-                    </span>
-                  ))}
-                </div>
+                  <div className="animate-marquee whitespace-nowrap">
+                    {[...reflectionRowMiddle, ...reflectionRowMiddle].map((review, index) => (
+                      <span
+                        key={`middle-${review.name}-${index}`}
+                        className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
+                      >
+                        <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
+                        <span>“{review.text}”</span>
+                      </span>
+                    ))}
+                  </div>
 
-                <div className="animate-marquee whitespace-nowrap">
-                  {[...reflectionRowBottom, ...reflectionRowBottom].map((review, index) => (
-                    <span
-                      key={`bottom-${review.name}-${index}`}
-                      className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
-                    >
-                      <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
-                      <span>“{review.text}”</span>
-                    </span>
-                  ))}
+                  <div className="animate-marquee whitespace-nowrap">
+                    {[...reflectionRowBottom, ...reflectionRowBottom].map((review, index) => (
+                      <span
+                        key={`bottom-${review.name}-${index}`}
+                        className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
+                      >
+                        <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
+                        <span>“{review.text}”</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </FadeIn>
         </section>
 
-        <section className="mx-auto mt-24 max-w-6xl px-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {featureCards.map((feature) => (
-              <div
-                key={feature.title}
-                className={`rounded-2xl border p-8 text-center transition-transform duration-300 hover:-translate-y-1 ${feature.cardClassName}`}
-              >
+        <FadeIn delay={1900}>
+          <section className="mx-auto mt-24 max-w-6xl px-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+              {featureCards.map((feature) => (
                 <div
-                  className={`mx-auto mb-6 grid h-12 w-12 place-items-center rounded-full ${feature.badgeClassName}`}
+                  key={feature.title}
+                  className={`rounded-2xl border p-8 text-center transition-transform duration-300 hover:-translate-y-1 ${feature.cardClassName}`}
                 >
-                  {feature.icon}
-                </div>
-                <h3 className="font-headline mb-3 text-xl font-bold text-[#2f342e]">{feature.title}</h3>
-                <p className="text-sm leading-relaxed text-[#655d5a]">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mx-auto mt-20 grid max-w-6xl grid-cols-1 gap-8 px-6 lg:grid-cols-2">
-          <article className="rounded-3xl border border-[#afb3ac]/30 bg-white p-8 shadow-[0_8px_24px_rgba(47,52,46,0.05)]">
-            <h2 className="font-headline mb-6 text-2xl font-extrabold tracking-tight text-[#2f342e]">
-              대화 기반 페르소나 생성 플로우
-            </h2>
-            <div className="space-y-4">
-              {flowSteps.map((step, idx) => (
-                <div key={step.title} className="flex gap-4 rounded-2xl bg-[#f4f4ef] p-4">
-                  <div className="font-headline mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#4a626d] text-sm font-bold text-[#f0f9ff]">
-                    {idx + 1}
+                  <div
+                    className={`mx-auto mb-6 grid h-14 w-14 place-items-center rounded-full ${feature.badgeClassName}`}
+                  >
+                    {feature.icon}
                   </div>
-                  <div>
-                    <h3 className="mb-1 font-semibold text-[#2f342e]">{step.title}</h3>
-                    <p className="text-sm leading-relaxed text-[#655d5a]">{step.body}</p>
-                  </div>
+                  <h3 className="font-headline mb-3 text-xl font-bold text-[#2f342e]">{feature.title}</h3>
+                  <p className="text-sm leading-relaxed text-[#655d5a]">{feature.description}</p>
                 </div>
               ))}
             </div>
-          </article>
+          </section>
 
-          <article
-            id="demo"
-            className="rounded-3xl border border-[#afb3ac]/30 bg-[#2f342e] p-8 text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.2)]"
-          >
-            <h2 className="font-headline mb-2 text-2xl font-extrabold tracking-tight">실제 대화 미리보기</h2>
-            <p className="mb-6 text-sm leading-relaxed text-[#d6dcd2]">
-              생성된 페르소나는 말투, 공감 방식, 문장 길이까지 반영해 자연스럽게 응답합니다.
-            </p>
-            <div className="space-y-3">
-              {demoMessages.map((message, idx) => {
-                const isAi = message.role === "ai";
-                return (
-                  <div
-                    key={`${message.role}-${idx}`}
-                    className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                      isAi
+          <section className="mx-auto mt-20 grid max-w-6xl grid-cols-1 gap-8 px-6 lg:grid-cols-2">
+            <article className="rounded-3xl border border-[#afb3ac]/30 bg-white p-8 shadow-[0_8px_24px_rgba(47,52,46,0.05)]">
+              <h2 className="font-headline mb-6 text-2xl font-extrabold tracking-tight text-[#2f342e]">
+                대화 기반 페르소나 생성 플로우
+              </h2>
+              <div className="space-y-4">
+                {flowSteps.map((step, idx) => (
+                  <div key={step.title} className="flex gap-4 rounded-2xl bg-[#f4f4ef] p-4">
+                    <div className="font-headline mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#4a626d] text-sm font-bold text-[#f0f9ff]">
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <h3 className="mb-1 font-semibold text-[#2f342e]">{step.title}</h3>
+                      <p className="text-sm leading-relaxed text-[#655d5a]">{step.body}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article
+              id="demo"
+              className="rounded-3xl border border-[#afb3ac]/30 bg-[#2f342e] p-8 text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.2)]"
+            >
+              <h2 className="font-headline mb-2 text-2xl font-extrabold tracking-tight">실제 대화 미리보기</h2>
+              <p className="mb-6 text-sm leading-relaxed text-[#d6dcd2]">
+                생성된 페르소나는 말투, 공감 방식, 문장 길이까지 반영해 자연스럽게 응답합니다.
+              </p>
+              <div className="space-y-3">
+                {demoMessages.map((message, idx) => {
+                  const isAi = message.role === "ai";
+                  return (
+                    <div
+                      key={`${message.role}-${idx}`}
+                      className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isAi
                         ? "bg-[#4a626d] text-[#f0f9ff]"
                         : "ml-auto bg-[#ece0dc] text-[#3e5560]"
-                    }`}
-                  >
-                    {message.text}
-                  </div>
-                );
-              })}
-            </div>
-          </article>
-        </section>
+                        }`}
+                    >
+                      {message.text}
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          </section>
 
-        <section className="mx-auto mt-32 max-w-3xl px-6 text-center">
-          <div className="mx-auto mb-10 h-px w-12 bg-[#afb3ac]/40" />
-          <p className="font-body text-2xl leading-relaxed italic text-[#655d5a]/70">
-            &quot;기억은 사라지는 것이 아니라,
-            <br className="hidden md:block" />우리 마음 속 어딘가에서 잠시 대화를 멈춘 것뿐입니다.&quot;
-          </p>
-          <div className="mx-auto mt-10 h-px w-12 bg-[#afb3ac]/40" />
-        </section>
+          <section className="mx-auto mt-32 max-w-3xl px-6 text-center">
+            <div className="mx-auto mb-10 h-px w-12 bg-[#afb3ac]/40" />
+            <p className="font-body text-2xl leading-relaxed italic text-[#f0f5f2]">
+              &quot;기억은 사라지는 것이 아니라,
+              <br className="hidden md:block" />우리 마음 속 어딘가에서 잠시 대화를 멈춘 것뿐입니다.&quot;
+            </p>
+            <div className="mx-auto mt-10 h-px w-12 bg-[#afb3ac]/40" />
+          </section>
+        </FadeIn>
       </main>
 
-      <Link
-        href="/step-1"
-        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] rounded-full bg-[#4a626d] px-6 py-4 text-center text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] md:hidden"
-      >
-        대화 시작하기
-      </Link>
+      <FadeIn delay={1900}>
+        <StartChatButtonMobile />
 
-      <footer className="w-full bg-[#f4f4ef] px-6 py-12">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-8 md:flex-row">
-          <div className="text-center md:text-left">
-            <span className="font-headline mb-2 block text-lg font-bold text-[#4a626d]">보고파</span>
-            <p className="text-sm text-[#655d5a]">© {year} 보고파. 대화 기반 AI 대화 동반자.</p>
-          </div>
-          <div className="flex gap-8 text-sm">
-            <a className="text-[#655d5a] transition-colors hover:text-[#4a626d]" href="#">
-              Privacy
-            </a>
-            <a className="text-[#655d5a] transition-colors hover:text-[#4a626d]" href="#">
-              Terms
-            </a>
-            <a className="text-[#655d5a] transition-colors hover:text-[#4a626d]" href="#">
-              Support
-            </a>
-          </div>
-        </div>
-      </footer>
+        <SiteFooter />
+      </FadeIn>
     </>
   );
 }

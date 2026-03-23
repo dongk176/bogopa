@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { persistOnboardingStep } from "@/lib/onboarding-client";
+import { clearOnboardingDraft, persistOnboardingStep } from "@/lib/onboarding-client";
 import { analyzePersonaMock } from "@/lib/persona/analyzePersonaMock";
 import { buildPersonaRuntime } from "@/lib/persona/buildPersonaRuntime";
 import {
@@ -150,6 +150,8 @@ export default function StepFourPage() {
   const [consentError, setConsentError] = useState("");
   const [openMenu, setOpenMenu] = useState<DropupMenu>(null);
   const [analysisHint, setAnalysisHint] = useState(CONVERSATION_BASED_HINTS[0]);
+  const [isConversationInputOpen, setIsConversationInputOpen] = useState(false);
+  const [hasChosenInputMode, setHasChosenInputMode] = useState(false);
   const emotionMenuRef = useRef<HTMLDivElement | null>(null);
   const emojiMenuRef = useRef<HTMLDivElement | null>(null);
   const requiredConsentRef = useRef<HTMLDivElement | null>(null);
@@ -163,7 +165,11 @@ export default function StepFourPage() {
 
       if (typeof saved.pastedConversation === "string") setPastedConversation(saved.pastedConversation);
       if (typeof saved.uploadedFileName === "string") setUploadedFileName(saved.uploadedFileName);
-      if (typeof saved.useManualSettings === "boolean") setUseManualSettings(saved.useManualSettings);
+      if (typeof saved.useManualSettings === "boolean") {
+        setUseManualSettings(saved.useManualSettings);
+        setIsConversationInputOpen(!saved.useManualSettings);
+        setHasChosenInputMode(true);
+      }
       if (typeof saved.frequentPhrases === "string") setFrequentPhrases(saved.frequentPhrases);
       if (saved.toneStyle && TONE_STYLES.includes(saved.toneStyle)) setToneStyle(saved.toneStyle);
       if (saved.emotionDepth && EMOTION_OPTIONS.includes(saved.emotionDepth)) setEmotionDepth(saved.emotionDepth);
@@ -262,7 +268,7 @@ export default function StepFourPage() {
   }
 
   async function runAnalysisFlow(consent?: StepFourConsent) {
-    const isConversationBased = hasConversationSource();
+    const isConversationBased = !useManualSettings && hasConversationSource();
     setIsConversationBasedAnalysis(isConversationBased);
     setManualError("");
     setIsSubmitting(true);
@@ -333,6 +339,7 @@ export default function StepFourPage() {
       if (elapsed < MIN_ANALYZING_MS) {
         await new Promise((resolve) => window.setTimeout(resolve, MIN_ANALYZING_MS - elapsed));
       }
+      clearOnboardingDraft();
       router.push("/chat");
     } catch (error) {
       console.error("[step-4] analysis flow failed", error);
@@ -364,13 +371,25 @@ export default function StepFourPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (!hasChosenInputMode) {
+      setNotice("먼저 대화 준비 방식을 선택해주세요.");
+      return;
+    }
+
     if (useManualSettings && !toneStyle) {
       setManualError("말투 및 스타일을 선택해주세요.");
       setNotice("");
       return;
     }
 
-    if (hasConversationSource()) {
+    if (!useManualSettings && !hasConversationSource()) {
+      setNotice("대화 내용을 붙여넣거나 파일을 업로드해주세요.");
+      setManualError("");
+      setIsConversationInputOpen(true);
+      return;
+    }
+
+    if (!useManualSettings && hasConversationSource()) {
       setConsentError("");
       setShowConsentModal(true);
       return;
@@ -383,7 +402,10 @@ export default function StepFourPage() {
     <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
-          <div className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">보고파</div>
+          <div className="flex items-center gap-2">
+            <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
+            <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 4/4</span>
             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
@@ -394,15 +416,15 @@ export default function StepFourPage() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-32 pt-20 md:px-6 md:pb-12 md:pt-24">
-        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-white md:p-12 md:shadow-[0_20px_40px_rgba(47,52,46,0.06)]">
+        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
           <div className="absolute -right-10 -top-10 -z-0 hidden h-40 w-40 bg-[#cde6f4]/20 [border-radius:40%_60%_70%_30%/40%_50%_60%_50%] md:block" />
 
           <div className="relative z-10">
             <div className="mb-8 text-center md:text-left">
-              <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#4a626d] md:text-4xl">
-                이전에 나눴던 대화가 있다면
+              <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
+                대화 준비 방식을
                 <br />
-                붙여넣거나 업로드해주세요.
+                먼저 선택해주세요.
               </h1>
               <p className="flex flex-wrap justify-center gap-x-1 gap-y-0 rounded-xl border border-[#f3c3c8] bg-[#ffecef] px-4 py-3 text-sm font-semibold text-[#9f403d] md:justify-start md:text-base">
                 <span className="whitespace-nowrap">입력한 데이터는 분석 목적에만 사용되며,</span>
@@ -421,102 +443,126 @@ export default function StepFourPage() {
             </div>
 
             <form className="space-y-6" onSubmit={handleSubmit}>
-              <div
-                className={`overflow-hidden transition-all duration-500 ${
-                  useManualSettings
-                    ? "pointer-events-none max-h-0 -translate-y-2 opacity-0"
-                    : "max-h-[900px] translate-y-0 opacity-100"
-                }`}
-              >
-                <div className="space-y-6 pb-1">
-                  <section className="rounded-2xl bg-white p-5 shadow-[0_12px_32px_rgba(48,51,46,0.04)]">
-                    <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#4a626d]">
-                      <PasteIcon />
-                      대화 내용 붙여넣기
-                    </label>
-                    <textarea
-                      value={pastedConversation}
-                      onChange={(e) => setPastedConversation(e.target.value)}
-                      rows={2}
-                      className="min-h-[56px] w-full resize-none rounded-xl border-none bg-[#f4f4ef] p-4 text-[#30332e] outline-none ring-0 transition-all duration-300 focus:bg-white focus:ring-2 focus:ring-[#bfd8e5]"
-                      placeholder="카카오톡 대화 내용이나 메신저 기록을 복사해서 붙여넣어 주세요."
-                    />
-                  </section>
+              <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseManualSettings(false);
+                    setManualError("");
+                    setNotice("");
+                    setIsConversationInputOpen(true);
+                    setHasChosenInputMode(true);
+                  }}
+                  className={`rounded-2xl border-2 p-5 text-left transition-all duration-300 ${hasChosenInputMode && !useManualSettings
+                    ? "border-[#7fa4b6] bg-[#e9f5fb] text-[#1f323a] shadow-[0_6px_14px_rgba(127,164,182,0.18)] -translate-y-0.5 scale-[1.01]"
+                    : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(47,52,46,0.08)]"
+                    }`}
+                >
+                  <p className="text-base font-bold leading-tight md:text-lg">대화 내용 토대로 진행</p>
+                  <p className="mt-2 text-sm text-[#4f5854] md:text-[15px]">붙여넣기 또는 txt 파일로 분석합니다.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseManualSettings(true);
+                    setNotice("");
+                    setIsConversationInputOpen(false);
+                    setHasChosenInputMode(true);
+                  }}
+                  className={`rounded-2xl border-2 p-5 text-left transition-all duration-300 ${hasChosenInputMode && useManualSettings
+                    ? "border-[#7fa4b6] bg-[#e9f5fb] text-[#1f323a] shadow-[0_6px_14px_rgba(127,164,182,0.18)] -translate-y-0.5 scale-[1.01]"
+                    : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(47,52,46,0.08)]"
+                    }`}
+                >
+                  <p className="text-base font-bold leading-tight md:text-lg">대화 내용 없이 진행</p>
+                  <p className="mt-2 text-sm text-[#4f5854] md:text-[15px]">말투/감정 스타일을 직접 설정합니다.</p>
+                </button>
+              </section>
 
-                  <section className="relative rounded-2xl border-2 border-dashed border-[#afb3ac]/40 bg-[#f4f4ef] p-5 text-center transition-colors hover:bg-[#e8e9e2]">
-                    <button
-                      type="button"
-                      onClick={() => setShowExportGuide(true)}
-                      className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-[#afb3ac]/60 bg-white text-base font-bold text-[#4a626d] transition-colors hover:bg-[#f4f4ef]"
-                      aria-label="카카오톡 채팅 내보내기 안내 보기"
-                    >
-                      ?
-                    </button>
-                    <div className="mx-auto mb-2 grid h-12 w-12 place-items-center rounded-full bg-[#cde6f4] text-[#4a626d]">
-                      <UploadFileIcon />
+              {hasChosenInputMode && !useManualSettings ? (
+                <div className="space-y-3 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsConversationInputOpen((prev) => !prev)}
+                    className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] px-4 py-3 text-left"
+                  >
+                    <span className="text-sm font-semibold text-[#f0f5f2]">대화 내용 입력</span>
+                    <span className={`text-sm text-[#f0f5f2] transition-transform ${isConversationInputOpen ? "rotate-180" : ""}`}>▾</span>
+                  </button>
+
+                  <div
+                    className={`grid transition-all duration-300 ease-out ${isConversationInputOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-70"
+                      }`}
+                  >
+                    <div className="overflow-hidden">
+                      <section className="rounded-2xl bg-white p-5 shadow-[0_12px_32px_rgba(48,51,46,0.04)]">
+                        <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#f0f5f2]">
+                          <PasteIcon />
+                          대화 내용 붙여넣기
+                        </label>
+                        <textarea
+                          value={pastedConversation}
+                          onChange={(e) => setPastedConversation(e.target.value)}
+                          rows={2}
+                          className="min-h-[56px] w-full resize-none rounded-xl border-none bg-[#f4f4ef] p-4 text-[#2f342e] outline-none ring-0 transition-all duration-300 focus:bg-white focus:ring-2 focus:ring-[#bfd8e5]"
+                          placeholder="카카오톡 대화 내용이나 메신저 기록을 복사해서 붙여넣어 주세요."
+                        />
+                      </section>
+
+                      <section className="relative rounded-2xl border-2 border-dashed border-[#afb3ac]/40 bg-[#f4f4ef] p-5 text-center transition-colors hover:bg-[#e8e9e2]">
+                        <button
+                          type="button"
+                          onClick={() => setShowExportGuide(true)}
+                          className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-[#afb3ac]/60 bg-white text-base font-bold text-[#4a626d] transition-colors hover:bg-[#f4f4ef]"
+                          aria-label="카카오톡 채팅 내보내기 안내 보기"
+                        >
+                          ?
+                        </button>
+                        <div className="mx-auto mb-2 grid h-14 w-14 place-items-center rounded-full border border-[#bfd8e5]/70 bg-[#cde6f4] text-[#1f2a31] shadow-sm">
+                          <UploadFileIcon />
+                        </div>
+                        <h3 className="mb-1 font-semibold text-[#f0f5f2]">대화 파일 업로드</h3>
+                        <p className="mb-3 text-xs text-[#f0f5f2]/75">.txt 파일 형식을 지원합니다 (최대 500KB, 약 1년간 대화 내용)</p>
+                        <label className="inline-flex cursor-pointer items-center rounded-full bg-white px-4 py-2 text-xs font-bold text-[#4a626d] shadow-sm transition-all hover:shadow-md active:scale-[0.98]">
+                          파일 선택하기
+                          <input
+                            type="file"
+                            accept=".txt,text/plain"
+                            className="hidden"
+                            onChange={handleFileChange}
+                          />
+                        </label>
+                        {uploadedFileName ? <p className="mt-3 text-sm text-[#f0f5f2]">선택됨: {uploadedFileName}</p> : null}
+                        {fileError ? <p className="mt-2 text-sm text-[#9f403d]">{fileError}</p> : null}
+                      </section>
+
+                      <div className="mt-3 flex items-center gap-3 py-1">
+                        <div className="h-px flex-1 bg-[#afb3ac]/30" />
+                        <span className="text-xs font-semibold tracking-widest text-[#f0f5f2]/60">붙여넣기 또는 파일 업로드</span>
+                        <div className="h-px flex-1 bg-[#afb3ac]/30" />
+                      </div>
                     </div>
-                    <h3 className="mb-1 font-semibold text-[#30332e]">대화 파일 업로드</h3>
-                    <p className="mb-3 text-xs text-[#5d605a]">.txt 파일 형식을 지원합니다 (최대 500KB, 약 1년간 대화 내용)</p>
-                    <label className="inline-flex cursor-pointer items-center rounded-full bg-white px-4 py-2 text-xs font-bold text-[#4a626d] shadow-sm transition-all hover:shadow-md active:scale-[0.98]">
-                      파일 선택하기
-                      <input
-                        type="file"
-                        accept=".txt,text/plain"
-                        className="hidden"
-                        onChange={handleFileChange}
-                      />
-                    </label>
-                    {uploadedFileName ? <p className="mt-3 text-sm text-[#4a626d]">선택됨: {uploadedFileName}</p> : null}
-                    {fileError ? <p className="mt-2 text-sm text-[#9f403d]">{fileError}</p> : null}
-                  </section>
-
-                  <div className="flex items-center gap-3 py-1">
-                    <div className="h-px flex-1 bg-[#afb3ac]/30" />
-                    <span className="text-xs font-semibold tracking-widest text-[#787c75]">OR</span>
-                    <div className="h-px flex-1 bg-[#afb3ac]/30" />
                   </div>
                 </div>
-              </div>
+              ) : null}
 
-              <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-[#ece0dc]/35 p-5 transition-colors hover:bg-[#ece0dc]/55">
-                <input
-                  type="checkbox"
-                  checked={useManualSettings}
-                  onChange={(e) => {
-                    const nextChecked = e.target.checked;
-                    setUseManualSettings(nextChecked);
-                    if (!e.target.checked) setManualError("");
-                    if (nextChecked) {
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }
-                  }}
-                  className="mt-1 h-5 w-5 rounded-md border-[#afb3ac] text-[#4a626d] focus:ring-[#bfd8e5]"
-                />
-                <div>
-                  <span className="mb-1 block font-bold text-[#58504d]">대화 내용 없이 직접 설정할게요</span>
-                  <span className="block text-sm text-[#58504d]/75">
-                    기존 대화 내용이 없어도 선호하는 대화 스타일을 정의할 수 있습니다.
-                  </span>
-                </div>
-              </label>
-
-              {useManualSettings ? (
+              {hasChosenInputMode && useManualSettings ? (
                 <section className="space-y-6 rounded-2xl bg-white p-6 shadow-[0_12px_32px_rgba(48,51,46,0.04)]">
                   <div className="space-y-2">
                     <div className="space-y-2">
-                      <label className="px-1 text-sm font-bold text-[#5d605a]">자주 사용하는 문구</label>
+                      <label className="px-1 text-sm font-bold text-[#f0f5f2]">자주 사용하는 문구</label>
                       <input
                         value={frequentPhrases}
                         onChange={(e) => setFrequentPhrases(e.target.value)}
                         type="text"
                         placeholder="예: '밥 먹었어?', '잘 자'"
-                        className="w-full rounded-xl border-none bg-[#f4f4ef] p-3 text-[#30332e] outline-none ring-0 focus:ring-2 focus:ring-[#bfd8e5]"
+                        className="w-full rounded-xl border-none bg-[#f4f4ef] p-3 text-[#2f342e] outline-none ring-0 focus:ring-2 focus:ring-[#bfd8e5]"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-3">
-                    <label className="px-1 text-sm font-bold text-[#5d605a]">말투 및 스타일</label>
+                    <label className="px-1 text-sm font-bold text-[#f0f5f2]">말투 및 스타일</label>
                     <div className="grid grid-cols-2 gap-3">
                       {TONE_STYLES.map((style) => {
                         const isActive = toneStyle === style;
@@ -528,11 +574,10 @@ export default function StepFourPage() {
                               setToneStyle(style);
                               if (manualError) setManualError("");
                             }}
-                            className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 md:text-base ${
-                              isActive
-                                ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
-                                : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
-                            }`}
+                            className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 md:text-base ${isActive
+                              ? "border-[#4a626d] bg-white text-[#2f342e] shadow-sm"
+                              : "border-transparent bg-[#f4f4ef] text-[#2f342e] hover:bg-white"
+                              }`}
                           >
                             {style}
                           </button>
@@ -544,12 +589,12 @@ export default function StepFourPage() {
 
                   <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                     <div className="space-y-2">
-                      <label className="px-1 text-sm font-bold text-[#5d605a]">감정의 깊이</label>
+                      <label className="px-1 text-sm font-bold text-[#f0f5f2]">감정의 깊이</label>
                       <div ref={emotionMenuRef} className="relative">
                         <button
                           type="button"
                           onClick={() => setOpenMenu(openMenu === "emotion" ? null : "emotion")}
-                          className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] p-3 text-left text-[#30332e] outline-none ring-0 transition-all focus:ring-2 focus:ring-[#bfd8e5]"
+                          className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] p-3 text-left text-[#2f342e] outline-none ring-0 transition-all focus:ring-2 focus:ring-[#bfd8e5]"
                         >
                           <span>{emotionDepth}</span>
                           <span className={`transition-transform ${openMenu === "emotion" ? "rotate-180" : ""}`}>
@@ -566,11 +611,10 @@ export default function StepFourPage() {
                                   setEmotionDepth(option);
                                   setOpenMenu(null);
                                 }}
-                                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                                  emotionDepth === option
-                                    ? "bg-[#cde6f4]/45 text-[#3e5560]"
-                                    : "text-[#30332e] hover:bg-[#f4f4ef]"
-                                }`}
+                                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${emotionDepth === option
+                                  ? "bg-[#cde6f4]/45 text-[#3e5560]"
+                                  : "text-[#2f342e] hover:bg-[#f4f4ef]"
+                                  }`}
                               >
                                 {option}
                               </button>
@@ -581,12 +625,12 @@ export default function StepFourPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <label className="px-1 text-sm font-bold text-[#5d605a]">이모지 사용 스타일</label>
+                      <label className="px-1 text-sm font-bold text-[#f0f5f2]">이모지 사용 스타일</label>
                       <div ref={emojiMenuRef} className="relative">
                         <button
                           type="button"
                           onClick={() => setOpenMenu(openMenu === "emoji" ? null : "emoji")}
-                          className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] p-3 text-left text-[#30332e] outline-none ring-0 transition-all focus:ring-2 focus:ring-[#bfd8e5]"
+                          className="flex w-full items-center justify-between rounded-xl bg-[#f4f4ef] p-3 text-left text-[#2f342e] outline-none ring-0 transition-all focus:ring-2 focus:ring-[#bfd8e5]"
                         >
                           <span>{emojiStyle}</span>
                           <span className={`transition-transform ${openMenu === "emoji" ? "rotate-180" : ""}`}>
@@ -603,11 +647,10 @@ export default function StepFourPage() {
                                   setEmojiStyle(option);
                                   setOpenMenu(null);
                                 }}
-                                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                                  emojiStyle === option
-                                    ? "bg-[#cde6f4]/45 text-[#3e5560]"
-                                    : "text-[#30332e] hover:bg-[#f4f4ef]"
-                                }`}
+                                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${emojiStyle === option
+                                  ? "bg-[#cde6f4]/45 text-[#3e5560]"
+                                  : "text-[#2f342e] hover:bg-[#f4f4ef]"
+                                  }`}
                               >
                                 {option}
                               </button>
@@ -678,30 +721,30 @@ export default function StepFourPage() {
             </div>
 
             <div className="space-y-2">
-              <details open className="rounded-xl border border-[#afb3ac]/40 bg-[#f9faf7]">
-                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[#2f342e]">
+              <details open className="rounded-xl border border-[#51605a]/60 bg-[#2d3531]">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[#f0f5f2]">
                   수집 및 이용 목적
                 </summary>
-                <p className="px-4 pb-4 text-sm leading-relaxed text-[#4a4a4a]">
+                <p className="px-4 pb-4 text-sm leading-relaxed text-[#dce6de]">
                   카카오톡 대화 데이터 분석을 통한 개인화 AI 페르소나 생성 및 대화 서비스 제공
                 </p>
               </details>
 
-              <details className="rounded-xl border border-[#afb3ac]/40 bg-[#f9faf7]">
-                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[#2f342e]">
+              <details className="rounded-xl border border-[#51605a]/60 bg-[#2d3531]">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[#f0f5f2]">
                   처리 방식 · 보유 및 이용 기간 · 동의 거부 권리
                 </summary>
-                <div className="space-y-2 px-4 pb-4 text-sm leading-relaxed text-[#4a4a4a]">
+                <div className="space-y-2 px-4 pb-4 text-sm leading-relaxed text-[#dce6de]">
                   <p>
-                    <span className="font-semibold text-[#2f342e]">처리 방식:</span> 업로드된 대화 원문은 AI 분석 즉시
+                    <span className="font-semibold text-[#f0f5f2]">처리 방식:</span> 업로드된 대화 원문은 AI 분석 즉시
                     서버에서 영구 삭제되며, 분석 결과(말투, 호칭 등 성격 레시피)만 가명화되어 저장됩니다.
                   </p>
                   <p>
-                    <span className="font-semibold text-[#2f342e]">보유 및 이용 기간:</span> 페르소나 삭제 시 혹은 서비스 탈퇴
+                    <span className="font-semibold text-[#f0f5f2]">보유 및 이용 기간:</span> 페르소나 삭제 시 혹은 서비스 탈퇴
                     시까지 (분석 원문은 처리 직후 즉시 파기)
                   </p>
                   <p>
-                    <span className="font-semibold text-[#2f342e]">동의 거부 권리:</span> 귀하는 동의를 거부할 수 있으나, 이 경우
+                    <span className="font-semibold text-[#f0f5f2]">동의 거부 권리:</span> 귀하는 동의를 거부할 수 있으나, 이 경우
                     대화 기반 페르소나 생성 서비스를 이용할 수 없습니다.
                   </p>
                 </div>
@@ -719,64 +762,63 @@ export default function StepFourPage() {
                   <span className={`transition-transform duration-300 ${isRequiredConsentOpen ? "rotate-180" : ""}`}>▾</span>
                 </button>
                 <div
-                  className={`grid transition-all duration-300 ease-out ${
-                    isRequiredConsentOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-70"
-                  }`}
+                  className={`grid transition-all duration-300 ease-out ${isRequiredConsentOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-70"
+                    }`}
                 >
                   <div className="overflow-hidden">
                     <div className="space-y-3 px-4 pb-4">
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={consentChecklist.counterpartyConsent}
-                      onChange={(e) => setConsentChecklist((prev) => ({ ...prev, counterpartyConsent: e.target.checked }))}
-                      className="mt-1 h-5 w-5 shrink-0 rounded border-[#afb3ac] text-[#4a626d] focus:ring-[#bfd8e5]"
-                    />
-                    <span className="text-sm leading-relaxed text-[#2f342e]">
-                      업로드하는 대화의 상대방으로부터 해당 데이터를 AI 서비스에 활용함에 대해 충분한 동의를 얻었음을 확약합니다.
-                    </span>
-                  </label>
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={consentChecklist.counterpartyConsent}
+                          onChange={(e) => setConsentChecklist((prev) => ({ ...prev, counterpartyConsent: e.target.checked }))}
+                          className="mt-1 h-5 w-5 shrink-0 rounded border-[#afb3ac] text-[#4a626d] focus:ring-[#bfd8e5]"
+                        />
+                        <span className="text-sm leading-relaxed text-[#2f342e]">
+                          업로드하는 대화의 상대방으로부터 해당 데이터를 AI 서비스에 활용함에 대해 충분한 동의를 얻었음을 확약합니다.
+                        </span>
+                      </label>
 
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={consentChecklist.rawDeletionAndVirtualModel}
-                      onChange={(e) =>
-                        setConsentChecklist((prev) => ({ ...prev, rawDeletionAndVirtualModel: e.target.checked }))
-                      }
-                      className="mt-1 h-5 w-5 shrink-0 rounded border-[#afb3ac] text-[#4a626d] focus:ring-[#bfd8e5]"
-                    />
-                    <span className="text-sm leading-relaxed text-[#2f342e]">
-                      분석 완료 후 대화 원문은 즉시 파기되며, 생성된 AI는 실제 인물과 무관한 &apos;가상의 대화 모델&apos;임을
-                      이해합니다.
-                    </span>
-                  </label>
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={consentChecklist.rawDeletionAndVirtualModel}
+                          onChange={(e) =>
+                            setConsentChecklist((prev) => ({ ...prev, rawDeletionAndVirtualModel: e.target.checked }))
+                          }
+                          className="mt-1 h-5 w-5 shrink-0 rounded border-[#afb3ac] text-[#4a626d] focus:ring-[#bfd8e5]"
+                        />
+                        <span className="text-sm leading-relaxed text-[#2f342e]">
+                          분석 완료 후 대화 원문은 즉시 파기되며, 생성된 AI는 실제 인물과 무관한 &apos;가상의 대화 모델&apos;임을
+                          이해합니다.
+                        </span>
+                      </label>
 
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={consentChecklist.noMisuseAndResponsibility}
-                      onChange={(e) =>
-                        setConsentChecklist((prev) => ({ ...prev, noMisuseAndResponsibility: e.target.checked }))
-                      }
-                      className="mt-1 h-5 w-5 shrink-0 rounded border-[#afb3ac] text-[#4a626d] focus:ring-[#bfd8e5]"
-                    />
-                    <span className="text-sm leading-relaxed text-[#2f342e]">
-                      본 서비스를 통해 생성된 페르소나를 타인을 비방하거나 부적절한 목적으로 사용하지 않으며, 이를 위반하여
-                      발생하는 모든 책임은 사용자 본인에게 있음을 동의합니다.
-                    </span>
-                  </label>
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={consentChecklist.noMisuseAndResponsibility}
+                          onChange={(e) =>
+                            setConsentChecklist((prev) => ({ ...prev, noMisuseAndResponsibility: e.target.checked }))
+                          }
+                          className="mt-1 h-5 w-5 shrink-0 rounded border-[#afb3ac] text-[#4a626d] focus:ring-[#bfd8e5]"
+                        />
+                        <span className="text-sm leading-relaxed text-[#2f342e]">
+                          본 서비스를 통해 생성된 페르소나를 타인을 비방하거나 부적절한 목적으로 사용하지 않으며, 이를 위반하여
+                          발생하는 모든 책임은 사용자 본인에게 있음을 동의합니다.
+                        </span>
+                      </label>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <details className="mt-5 rounded-xl border border-[#c9dbe3] bg-[#eef5f8]">
-              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-bold text-[#3e5560] md:text-base">
+            <details className="mt-5 rounded-xl border border-[#4f6776]/60 bg-[#22313a]">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-bold text-[#e6f0f5] md:text-base">
                 데이터 보안 안내
               </summary>
-              <div className="px-4 pb-4 text-xs leading-relaxed text-[#3e5560] md:text-sm">
+              <div className="px-4 pb-4 text-xs leading-relaxed text-[#d6e3eb] md:text-sm">
                 <p>
                   본 서비스는 OpenAI API의 엔터프라이즈 보안 정책을 준수하며, 전송된 데이터는 AI 모델의 학습 데이터로 사용되지
                   않습니다.
@@ -889,15 +931,15 @@ export default function StepFourPage() {
       ) : null}
 
       {isSubmitting ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#faf9f5]/88 backdrop-blur-sm">
-          <section className="mx-6 w-full max-w-md rounded-3xl border border-[#afb3ac]/35 bg-white px-6 py-8 text-center shadow-[0_24px_60px_rgba(47,52,46,0.22)]">
-            <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-[#cde6f4]/60">
-              <svg viewBox="0 0 24 24" className="h-11 w-11 animate-spin text-[#4a626d]" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#242926]/88 backdrop-blur-sm">
+          <section className="mx-6 w-full max-w-md rounded-3xl border border-[#afb3ac]/30 bg-[#303733] px-6 py-8 text-center shadow-[0_24px_60px_rgba(0,0,0,0.42)]">
+            <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-[#3a433e]">
+              <svg viewBox="0 0 24 24" className="h-11 w-11 animate-spin text-[#b9cad1]" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M12 3a9 9 0 1 0 9 9" />
               </svg>
             </div>
-            <h3 className="font-headline text-2xl font-bold text-[#2f342e]">기억을 되살리는 중이에요</h3>
-            <p className="mt-3 min-h-[48px] text-base leading-relaxed text-[#5d605a]">
+            <h3 className="font-headline text-2xl font-bold text-[#f0f5f2]">기억을 되살리는 중이에요</h3>
+            <p className="mt-3 min-h-[48px] text-base leading-relaxed text-[#b7c1bb]">
               {analysisHint}
             </p>
           </section>
