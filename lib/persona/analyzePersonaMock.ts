@@ -78,9 +78,12 @@ function cleanMessageText(text: string) {
 function normalizeAddressAlias(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (trimmed.length > 1) {
-    if (trimmed.endsWith("야") || trimmed.endsWith("아")) return trimmed.slice(0, -1);
-    if (trimmed.endsWith("님") || trimmed.endsWith("씨")) return trimmed.slice(0, -1);
+  if (trimmed.length > 1 && (trimmed.endsWith("님") || trimmed.endsWith("씨"))) return trimmed.slice(0, -1);
+  if (trimmed.length > 1 && (trimmed.endsWith("야") || trimmed.endsWith("아"))) {
+    const base = trimmed.slice(0, -1);
+    if (!base) return trimmed;
+    if (/[야아]$/.test(base)) return trimmed;
+    return base;
   }
   return trimmed;
 }

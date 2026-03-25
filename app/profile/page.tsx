@@ -2,18 +2,65 @@
 
 import { useSession, signOut } from "next-auth/react";
 import Navigation from "@/app/_components/Navigation";
+import LogoutConfirmModal from "@/app/_components/LogoutConfirmModal";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("ko-KR").format(value);
+}
 
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const [memoryBalance, setMemoryBalance] = useState<number | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    try {
+      await signOut({ callbackUrl: "/" });
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/");
     }
   }, [status, router]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let cancelled = false;
+
+    const loadMemoryPassStatus = async () => {
+      try {
+        const response = await fetch("/api/memory-pass", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) {
+          setIsSubscribed(Boolean(data?.isSubscribed));
+          setMemoryBalance(Number(data?.memoryBalance ?? 0));
+        }
+      } catch {
+        if (!cancelled) {
+          setIsSubscribed(false);
+          setMemoryBalance(null);
+        }
+      }
+    };
+
+    loadMemoryPassStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   if (status === "loading") {
     return (
@@ -76,6 +123,31 @@ export default function ProfilePage() {
                          소셜 로그인 연결됨
                       </span>
                     </div>
+                    <div className="mt-4 rounded-2xl border border-[#afb3ac]/20 bg-[#f4f4ef] p-4">
+                      <p className="text-xs font-bold uppercase tracking-widest text-[#7b827d]">현재 구독 정보</p>
+                      <p className="mt-2 text-sm font-semibold text-[#2f342e]">
+                        {isSubscribed ? "기억 패스 활성화됨" : "기억 패스 미활성"}
+                      </p>
+                      <p className="mt-1 text-sm text-[#655d5a]">
+                        남은 기억: {memoryBalance === null ? "..." : formatNumber(memoryBalance)}
+                      </p>
+                    </div>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2 md:justify-start">
+                      <button
+                        type="button"
+                        onClick={() => router.push("/payment?returnTo=%2Fprofile")}
+                        className="rounded-2xl bg-[#4a626d] px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-[#4a626d]/20 transition-all hover:scale-[1.02] active:scale-95"
+                      >
+                        {isSubscribed ? "구독 관리" : "기억 업그레이드"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.push("/profile/billing")}
+                        className="rounded-2xl border border-[#afb3ac]/40 bg-white px-6 py-3 text-sm font-extrabold text-[#4a626d] transition-all hover:bg-[#f4f4ef] active:scale-95"
+                      >
+                        Billing
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -107,7 +179,9 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <button 
-                    onClick={() => signOut({ callbackUrl: "/" })}
+                    onClick={() => {
+                      setIsLogoutModalOpen(true);
+                    }}
                     className="w-full shrink-0 rounded-2xl bg-[#9f403d] px-10 py-4 text-base font-extrabold text-white shadow-xl shadow-[#9f403d]/20 transition-all hover:scale-[1.03] active:scale-95 md:w-auto"
                   >
                     로그아웃
@@ -117,6 +191,18 @@ export default function ProfilePage() {
           </div>
         </div>
       </main>
+
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        isProcessing={isSigningOut}
+        onClose={() => {
+          if (isSigningOut) return;
+          setIsLogoutModalOpen(false);
+        }}
+        onConfirm={() => {
+          void handleSignOut();
+        }}
+      />
     </div>
   );
 }

@@ -59,7 +59,6 @@ export function buildPersonaRuntime(analysis: PersonaAnalysis): PersonaRuntime {
     safety: {
       doNotClaimLiteralIdentity: true,
       doNotInventSpecificFacts: true,
-      doNotOverstateIntimacy: true,
     },
   };
 }

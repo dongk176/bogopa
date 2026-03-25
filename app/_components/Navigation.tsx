@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect } from "react";
 import LoginModal from "./LoginModal";
+import LogoutConfirmModal from "@/app/_components/LogoutConfirmModal";
 
 type StoredChatState = {
   personaId: string;
@@ -76,11 +77,31 @@ function NavigationContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeChatId = searchParams.get("id");
+  const isPaymentPage = pathname?.startsWith("/payment");
+  const isProfileContext = pathname === "/profile" || pathname?.startsWith("/payment");
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [loginNextPath, setLoginNextPath] = useState("/step-1");
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    try {
+      await signOut({ callbackUrl: "/" });
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const openLoginModal = (nextPath: string) => {
+    setLoginNextPath(nextPath);
+    setIsLoginModalOpen(true);
+  };
 
   const navItems = [
     { id: "home", href: "/", icon: HomeIcon, label: "홈" },
@@ -134,6 +155,7 @@ function NavigationContent() {
   return (
     <>
       {/* Desktop Sidebar */}
+      {!isPaymentPage && (
       <aside className="fixed left-0 top-0 z-50 hidden h-screen w-64 flex-col border-r border-[#afb3ac]/20 bg-[#faf9f5] py-8 lg:flex">
         <div className="flex flex-col px-6">
           <Link href="/" className="mb-12 flex items-center gap-3 transition-opacity hover:opacity-80">
@@ -151,7 +173,7 @@ function NavigationContent() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setIsLoginModalOpen(true)}
+                    onClick={() => openLoginModal(item.href)}
                     className="group flex items-center gap-4 rounded-2xl px-4 py-3.5 transition-all text-[#655d5a] hover:bg-black/5 hover:text-[#4a626d] w-full text-left"
                   >
                     <Icon className="h-6 w-6 shrink-0" />
@@ -177,22 +199,22 @@ function NavigationContent() {
 
             {!session ? (
               <button
-                onClick={() => setIsLoginModalOpen(true)}
+                onClick={() => openLoginModal("/profile")}
                 className="group flex items-center gap-4 rounded-2xl px-4 py-3.5 transition-all text-[#655d5a] hover:bg-black/5 hover:text-[#4a626d] w-full text-left"
               >
                 <UserAvatar size="w-6 h-6" textClass="text-[10px]" />
-                <span className="font-headline text-base font-bold tracking-tight">내 계정</span>
+                <span className="font-headline text-base font-bold tracking-tight">프로필</span>
               </button>
             ) : (
               <Link
                 href="/profile"
-                className={`group flex items-center gap-4 rounded-2xl px-4 py-3.5 transition-all ${pathname === "/profile"
+                className={`group flex items-center gap-4 rounded-2xl px-4 py-3.5 transition-all ${isProfileContext
                   ? "bg-[#4a626d] text-white shadow-lg shadow-[#4a626d]/20"
                   : "text-[#655d5a] hover:bg-black/5 hover:text-[#4a626d]"
                   }`}
               >
                 <UserAvatar size="w-6 h-6" textClass="text-[10px]" />
-                <span className="font-headline text-base font-bold tracking-tight">내 계정</span>
+                <span className="font-headline text-base font-bold tracking-tight">프로필</span>
               </Link>
             )}
           </nav>
@@ -201,8 +223,10 @@ function NavigationContent() {
         <div className="mt-auto px-6">
           {session && (
             <button
-              onClick={() => signOut({ callbackUrl: "/" })}
-              className="flex w-full items-center gap-4 rounded-2xl px-4 py-3 text-sm font-bold text-[#9f403d] transition-colors hover:bg-[#9f403d]/5"
+              onClick={() => {
+                setIsLogoutModalOpen(true);
+              }}
+              className="flex w-full items-center gap-4 rounded-2xl border border-[#ff8f88]/45 bg-[#ff8f88]/16 px-4 py-3 text-sm font-bold text-[#ffd7d3] transition-colors hover:bg-[#ff8f88]/24 hover:text-[#ffe8e6]"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -212,6 +236,19 @@ function NavigationContent() {
           )}
         </div>
       </aside>
+      )}
+
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        isProcessing={isSigningOut}
+        onClose={() => {
+          if (isSigningOut) return;
+          setIsLogoutModalOpen(false);
+        }}
+        onConfirm={() => {
+          void handleSignOut();
+        }}
+      />
 
       {/* Desktop Sub-Sidebar (Chat List) - Visible ONLY on Chat when chats exist */}
       {(pathname?.startsWith("/chat") && savedChats.length > 0) && (
@@ -315,8 +352,7 @@ function NavigationContent() {
       )}
 
       {/* Mobile Bottom Tab Bar */}
-      {!pathname?.startsWith("/chat") && (
-        <nav className="fixed bottom-0 left-0 z-50 flex h-[calc(5.5rem+env(safe-area-inset-bottom))] w-full items-start justify-around border-t border-white/5 bg-[#242926]/90 px-2 pt-3 backdrop-blur-xl lg:hidden shadow-[0_-8px_30px_rgba(0,0,0,0.3)]">
+      <nav className="fixed bottom-0 left-0 z-50 flex h-[calc(5.5rem+env(safe-area-inset-bottom))] w-full items-start justify-around border-t border-white/5 bg-[#242926]/90 px-2 pt-3 backdrop-blur-xl lg:hidden shadow-[0_-8px_30px_rgba(0,0,0,0.3)]">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -325,7 +361,7 @@ function NavigationContent() {
             const handleClick = (e: React.MouseEvent) => {
               if (isProtected && !session) {
                 e.preventDefault();
-                setIsLoginModalOpen(true);
+                openLoginModal(item.href);
               }
             };
 
@@ -350,47 +386,54 @@ function NavigationContent() {
 
           {!session ? (
             <button
-              onClick={() => setIsLoginModalOpen(true)}
-              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${pathname === "/profile" ? "text-[#f0f9ff]" : "text-[#afb3ac]"
+              onClick={() => openLoginModal("/profile")}
+              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"
                 }`}
             >
-              <div className={`flex flex-col items-center gap-1.5 rounded-2xl px-6 py-2.5 transition-all ${pathname === "/profile" ? "bg-white/10 -translate-y-[2px]" : "bg-transparent translate-y-0"
+              <div className={`flex flex-col items-center gap-1.5 rounded-2xl px-6 py-2.5 transition-all ${isProfileContext ? "bg-white/10 -translate-y-[2px]" : "bg-transparent translate-y-0"
                 }`}>
                 <UserAvatar size="w-6 h-6" textClass="text-[10px]" />
-                <span className={`text-[11px] font-bold tracking-tight transition-colors ${pathname === "/profile" ? "text-[#f0f9ff]" : "text-[#afb3ac]"}`}>
-                  내 계정
+                <span className={`text-[11px] font-bold tracking-tight transition-colors ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"}`}>
+                  프로필
                 </span>
               </div>
             </button>
           ) : (
             <Link
               href="/profile"
-              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${pathname === "/profile" ? "text-[#f0f9ff]" : "text-[#afb3ac]"
+              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"
                 }`}
             >
-              <div className={`flex flex-col items-center gap-1.5 rounded-2xl px-6 py-2.5 transition-all ${pathname === "/profile" ? "bg-white/10 -translate-y-[2px]" : "bg-transparent translate-y-0"
+              <div className={`flex flex-col items-center gap-1.5 rounded-2xl px-6 py-2.5 transition-all ${isProfileContext ? "bg-white/10 -translate-y-[2px]" : "bg-transparent translate-y-0"
                 }`}>
                 <UserAvatar size="w-6 h-6" textClass="text-[10px]" />
-                <span className={`text-[11px] font-bold tracking-tight transition-colors ${pathname === "/profile" ? "text-[#f0f9ff]" : "text-[#afb3ac]"}`}>
-                  내 계정
+                <span className={`text-[11px] font-bold tracking-tight transition-colors ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"}`}>
+                  프로필
                 </span>
               </div>
             </Link>
           )}
         </nav>
-      )}
 
-      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
+      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} nextPath={loginNextPath} />
     </>
   );
 }
 
-import { Suspense } from "react";
+function NavigationFallback() {
+  return (
+    <>
+      <aside className="fixed left-0 top-0 z-50 hidden h-screen w-64 border-r border-[#afb3ac]/20 bg-[#faf9f5] lg:flex" />
+      <nav className="fixed bottom-0 left-0 z-50 flex h-[calc(5.5rem+env(safe-area-inset-bottom))] w-full border-t border-white/5 bg-[#242926]/90 backdrop-blur-xl lg:hidden" />
+    </>
+  );
+}
 
 export default function Navigation() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<NavigationFallback />}>
       <NavigationContent />
     </Suspense>
   );
 }
+import { Suspense } from "react";

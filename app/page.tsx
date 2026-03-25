@@ -6,6 +6,8 @@ import { StartChatButtonDesktop, StartChatButtonMobile } from "@/app/_components
 import UserProfileMenu from "@/app/_components/UserProfileMenu";
 import Navigation from "@/app/_components/Navigation";
 import RecallingLogo from "@/app/_components/RecallingLogo";
+import HomeSignupGate from "@/app/_components/HomeSignupGate";
+import SignupCompleteModal from "@/app/_components/SignupCompleteModal";
 
 type ReflectionItem = {
   name: string;
@@ -375,6 +377,8 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-[#faf9f5]">
+      <HomeSignupGate />
+      <SignupCompleteModal />
       <Navigation />
 
       <main className="overflow-hidden pb-28 pt-12 md:pb-20 md:pt-16 lg:pt-20 lg:pl-64">

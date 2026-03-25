@@ -4,11 +4,16 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { generateMockReply } from "@/lib/persona/generateMockReply";
-import { clearPersonaArtifacts, loadPersonaAnalysis, loadPersonaRuntime } from "@/lib/persona/storage";
-import { PersonaAnalysis, PersonaRuntime } from "@/types/persona";
+import {
+  clearPersonaArtifacts,
+  loadPersonaRuntime,
+  savePersonaRuntime,
+} from "@/lib/persona/storage";
+import { PersonaRuntime } from "@/types/persona";
+import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import UserProfileMenu from "@/app/_components/UserProfileMenu";
 import Navigation from "@/app/_components/Navigation";
+import PersonaMemorySheet from "@/app/_components/PersonaMemorySheet";
 
 type ChatMessage = {
   id: string;
@@ -26,6 +31,7 @@ type StoredChatState = {
   personaId: string;
   personaName?: string;
   avatarUrl?: string;
+  runtime?: PersonaRuntime | null;
   messages: ChatMessage[];
   lastMessage?: string;
   memorySummary: string;
@@ -40,7 +46,10 @@ type Step3AvatarRaw = {
 
 const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
 const USER_INPUT_CHAR_LIMIT = 100;
-const DEFAULT_ASSISTANT_CHAR_LIMIT = 300;
+const RECENT_CONTEXT_MESSAGES = 8; // 4 turns
+const COMPRESSION_MIN_USER_TURNS = 10;
+const COMPRESSION_TRIGGER_TOKENS = 2600;
+const TOKEN_ESTIMATE_CHAR_RATIO = 0.7;
 const ONBOARDING_STORAGE_KEYS = [
   "bogopa_profile_step1",
   "bogopa_profile_step2",
@@ -86,18 +95,13 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
-function shouldAllowLongReply(text: string) {
-  const normalized = text.trim();
-  if (!normalized) return false;
-  return /(길게|자세히|상세하게|구체적으로|천천히 설명|긴 답변|자세한 설명|길게 말해)/.test(normalized);
+function estimateTokenCountFromText(text: string) {
+  if (!text) return 0;
+  return Math.ceil(text.length * TOKEN_ESTIMATE_CHAR_RATIO);
 }
 
-function clipAssistantReply(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return "";
-  return trimmed.length > DEFAULT_ASSISTANT_CHAR_LIMIT
-    ? trimmed.slice(0, DEFAULT_ASSISTANT_CHAR_LIMIT).trimEnd()
-    : trimmed;
+function estimateTokenCountFromTurns(turns: ChatTurn[]) {
+  return turns.reduce((sum, turn) => sum + estimateTokenCountFromText(turn.content) + 8, 0);
 }
 
 function formatTime(iso: string) {
@@ -113,6 +117,10 @@ function formatDateLabel(iso: string) {
     month: "long",
     day: "numeric",
   }).format(new Date(iso));
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("ko-KR").format(value);
 }
 
 function UserAvatarIcon() {
@@ -180,6 +188,39 @@ function ChevronDownIcon({ className }: { className?: string }) {
   );
 }
 
+function MemoryMarkIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={className} fill="none" stroke="currentColor" strokeWidth="1.7">
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6.4v4.2l2.7 1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="10" cy="10" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+type MemoryBalanceBadgeProps = {
+  memoryBalance: number | null;
+  isAnimating: boolean;
+};
+
+function MemoryBalanceBadge({
+  memoryBalance,
+  isAnimating,
+}: MemoryBalanceBadgeProps) {
+  return (
+    <div
+      className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[#f0f5f2] transition-colors duration-200 ${
+        isAnimating
+          ? "border-[#7fa4b6]/35 bg-[#34403b]"
+          : "border-white/10 bg-[#303733]"
+      }`}
+    >
+      <MemoryMarkIcon className="h-5 w-5 text-[#bfe4f5]" />
+      <span className="text-sm font-extrabold leading-none">{memoryBalance === null ? "..." : formatNumber(memoryBalance)}</span>
+    </div>
+  );
+}
+
 function DotTyping() {
   return (
     <div className="flex gap-1">
@@ -190,16 +231,33 @@ function DotTyping() {
   );
 }
 
-async function fetchFirstGreeting(runtime: PersonaRuntime, analysis: PersonaAnalysis | null, alias: string) {
+function ChatLoadingScaffold() {
+  return (
+    <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
+      <Navigation />
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 lg:pl-64">
+        <div className="flex min-h-0 flex-1 items-center justify-center pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-0">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
+        </div>
+      </main>
+    </div>
+  );
+}
+
+async function fetchFirstGreeting(runtime: PersonaRuntime, alias: string) {
+  const styleSummary =
+    (runtime as any)?.style?.tone?.[0] ||
+    (runtime as any)?.style?.politeness ||
+    (runtime as any)?.style?.replyTempo ||
+    "";
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action: "first_greeting",
       runtime,
-      analysis,
       alias,
-      styleSummary: runtime.style.tone[0] || "",
+      styleSummary,
     }),
   });
 
@@ -211,9 +269,12 @@ async function fetchFirstGreeting(runtime: PersonaRuntime, analysis: PersonaAnal
 function normalizeAddressAlias(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (trimmed.length > 1) {
-    if (trimmed.endsWith("야") || trimmed.endsWith("아")) return trimmed.slice(0, -1);
-    if (trimmed.endsWith("님") || trimmed.endsWith("씨")) return trimmed.slice(0, -1);
+  if (trimmed.length > 1 && (trimmed.endsWith("님") || trimmed.endsWith("씨"))) return trimmed.slice(0, -1);
+  if (trimmed.length > 1 && (trimmed.endsWith("야") || trimmed.endsWith("아"))) {
+    const base = trimmed.slice(0, -1);
+    if (!base) return trimmed;
+    if (/[야아]$/.test(base)) return trimmed;
+    return base;
   }
   return trimmed;
 }
@@ -224,7 +285,6 @@ function ChatContainer() {
   const chatId = searchParams.get("id");
   const { data: session } = useSession();
   const [runtime, setRuntime] = useState<PersonaRuntime | null>(null);
-  const [analysis, setAnalysis] = useState<PersonaAnalysis | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [memorySummary, setMemorySummary] = useState("");
   const [unsummarizedTurns, setUnsummarizedTurns] = useState<ChatTurn[]>([]);
@@ -244,22 +304,52 @@ function ChatContainer() {
   const [savedChats, setSavedChats] = useState<StoredChatState[]>([]);
   const [step3AvatarUrl, setStep3AvatarUrl] = useState("");
   const [avatarLoadError, setAvatarLoadError] = useState(false);
+  const [memoryBalance, setMemoryBalance] = useState<number | null>(null);
+  const [isMemoryBadgeAnimating, setIsMemoryBadgeAnimating] = useState(false);
   const [isChatListOpen, setIsChatListOpen] = useState(false);
+  const [isPersonaSheetOpen, setIsPersonaSheetOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const initialMessageRequestIdRef = useRef(0);
+  const isComposingRef = useRef(false);
+  const memoryBalanceRef = useRef<number | null>(null);
+  const memoryBadgeAnimTimeoutRef = useRef<number | null>(null);
 
-  async function queueInitialAssistantMessage(targetRuntime: PersonaRuntime, targetAnalysis: PersonaAnalysis | null) {
+  function triggerMemorySpendAnimation() {
+    setIsMemoryBadgeAnimating(true);
+
+    if (memoryBadgeAnimTimeoutRef.current) {
+      window.clearTimeout(memoryBadgeAnimTimeoutRef.current);
+    }
+
+    memoryBadgeAnimTimeoutRef.current = window.setTimeout(() => {
+      setIsMemoryBadgeAnimating(false);
+    }, 220);
+  }
+
+  useEffect(() => {
+    memoryBalanceRef.current = memoryBalance;
+  }, [memoryBalance]);
+
+  useEffect(() => {
+    return () => {
+      if (memoryBadgeAnimTimeoutRef.current) {
+        window.clearTimeout(memoryBadgeAnimTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  async function queueInitialAssistantMessage(targetRuntime: PersonaRuntime) {
     const requestId = ++initialMessageRequestIdRef.current;
-    const preferredAlias = normalizeAddressAlias(targetRuntime.addressing.callsUserAs[0] || "") || "너";
+    const preferredAlias = normalizeAddressAlias((targetRuntime as any)?.addressing?.callsUserAs?.[0] || "") || "너";
     const requestedAt = Date.now();
     setIsTyping(true);
 
     let first = "";
     try {
-      first = await fetchFirstGreeting(targetRuntime, targetAnalysis, preferredAlias);
+      first = await fetchFirstGreeting(targetRuntime, preferredAlias);
       if (!first) {
         await sleep(120);
-        first = await fetchFirstGreeting(targetRuntime, targetAnalysis, preferredAlias);
+        first = await fetchFirstGreeting(targetRuntime, preferredAlias);
       }
     } catch (error) {
       console.error("[chat] first greeting generation failed", error);
@@ -268,7 +358,7 @@ function ChatContainer() {
     if (!first) {
       first = `${preferredAlias}, 안녕. 잘 지냈어? 오늘은 어땠는지 편하게 들려줘.`;
     }
-    first = clipAssistantReply(first);
+    first = first.trim();
 
     const elapsed = Date.now() - requestedAt;
     if (elapsed < 1000) {
@@ -301,14 +391,40 @@ function ChatContainer() {
       console.error("[chat] failed to reset db session", err);
     }
 
-    void queueInitialAssistantMessage(runtime, analysis);
+    void queueInitialAssistantMessage(runtime);
   }
 
   useEffect(() => {
-    // Scroll to bottom whenever ID changes
-    chatEndRef.current?.scrollIntoView({ behavior: "auto" });
+    let cancelled = false;
 
-    // Reset local state for the new session
+    const loadMemoryBalance = async () => {
+      try {
+        const response = await fetch("/api/memory-pass", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) {
+          setMemoryBalance(Number(data?.memoryBalance ?? 0));
+        }
+      } catch {
+        if (!cancelled) {
+          setMemoryBalance(null);
+        }
+      }
+    };
+
+    loadMemoryBalance();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // Entering chat should always start from the top of the page viewport.
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+
+    // Reset local state for the new session.
     setMessages([]);
     setIsLoaded(false);
     setIsTyping(false);
@@ -318,15 +434,19 @@ function ChatContainer() {
 
     const searchId = chatId || undefined;
     setStep3AvatarUrl(readStep3AvatarFromStorage());
-    const loadedRuntime = loadPersonaRuntime(searchId);
-    const loadedAnalysis = loadPersonaAnalysis(searchId);
+    let resolvedRuntime = loadPersonaRuntime(searchId);
 
-    const fetchPersonaList = async () => {
+    const hydrateChat = async () => {
+      let fetchedChats: StoredChatState[] = [];
+      let didLoadPersonaList = false;
       try {
         const res = await fetch("/api/persona", { cache: "no-store" });
         const data = await res.json();
+        if (cancelled) return;
+        didLoadPersonaList = true;
+
         if (data.ok && Array.isArray(data.personas)) {
-          const dbChats: StoredChatState[] = data.personas.map((p: any) => {
+          fetchedChats = data.personas.map((p: any) => {
             const lastActivity = p.session_updated_at && new Date(p.session_updated_at) > new Date(p.updated_at)
               ? p.session_updated_at
               : p.updated_at;
@@ -334,6 +454,7 @@ function ChatContainer() {
               personaId: p.persona_id,
               personaName: p.name,
               avatarUrl: p.avatar_url,
+              runtime: p.runtime || null,
               messages: p.last_message_content ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }] : [],
               lastMessage: p.last_message_content || "",
               memorySummary: p.memory_summary || "",
@@ -342,59 +463,90 @@ function ChatContainer() {
               updatedAt: lastActivity,
             };
           });
-          dbChats.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
-          setSavedChats(dbChats);
+          fetchedChats.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+          setSavedChats(fetchedChats);
 
-          if (!chatId && dbChats.length > 0) {
-            router.replace(`/chat?id=${dbChats[0].personaId}`);
-            return;
+          if (resolvedRuntime) {
+            const runtimeStillExists = fetchedChats.some((chat) => chat.personaId === resolvedRuntime?.personaId);
+            if (!runtimeStillExists) {
+              window.localStorage.removeItem(getChatStateKey(resolvedRuntime.personaId));
+              clearPersonaArtifacts(resolvedRuntime.personaId);
+              resolvedRuntime = null;
+            }
+          }
+
+          if (!chatId) {
+            if (fetchedChats.length > 0) {
+              router.replace(`/chat?id=${fetchedChats[0].personaId}`);
+              return;
+            }
+          } else {
+            const matchedChat = fetchedChats.find((chat) => chat.personaId === chatId);
+
+            if (!matchedChat) {
+              if (fetchedChats.length > 0) {
+                router.replace(`/chat?id=${fetchedChats[0].personaId}`);
+                return;
+              }
+              resolvedRuntime = null;
+            } else if (!resolvedRuntime && matchedChat.runtime) {
+              resolvedRuntime = matchedChat.runtime;
+              savePersonaRuntime(matchedChat.runtime);
+            }
           }
         }
       } catch (err) {
         console.error("[chat] failed to fetch persona list", err);
       }
-    };
+      if (cancelled) return;
 
-    fetchPersonaList();
+      if (didLoadPersonaList && fetchedChats.length === 0 && resolvedRuntime) {
+        window.localStorage.removeItem(getChatStateKey(resolvedRuntime.personaId));
+        clearPersonaArtifacts(resolvedRuntime.personaId);
+        resolvedRuntime = null;
+      }
 
-    setRuntime(loadedRuntime);
-    setAnalysis(loadedAnalysis);
+      setRuntime(resolvedRuntime);
 
-    if (loadedRuntime) {
-      // [New] Try to load from DB first
-      const loadFromDb = async () => {
-        try {
-          const res = await fetch(`/api/chat/session?personaId=${loadedRuntime.personaId}`);
-          const data = await res.json();
-          if (data.ok && data.messages.length > 0) {
-            setMessages(data.messages);
-            setDateLabel(formatDateLabel(data.messages[0].createdAt));
-            setMemorySummary(data.memorySummary || "");
-            setUnsummarizedTurns(data.unsummarizedTurns || []);
-            setUserTurnCount(data.userTurnCount || 0);
-            return true;
-          }
-        } catch (err) {
-          console.error("[chat] failed to load from db", err);
+      if (!resolvedRuntime) {
+        setIsLoaded(true);
+        return;
+      }
+
+      let hasDbMessages = false;
+      try {
+        const res = await fetch(`/api/chat/session?personaId=${resolvedRuntime.personaId}`);
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (data.ok && data.messages.length > 0) {
+          hasDbMessages = true;
+          setMessages(data.messages);
+          setDateLabel(formatDateLabel(data.messages[0].createdAt));
+          setMemorySummary(data.memorySummary || "");
+          setUnsummarizedTurns(data.unsummarizedTurns || []);
+          setUserTurnCount(data.userTurnCount || 0);
         }
-        return false;
-      };
+      } catch (err) {
+        console.error("[chat] failed to load from db", err);
+      }
 
-      const syncDone = loadFromDb();
-
-      syncDone.then((result) => {
-        if (result) return;
-
-        // If no DB data, we clean up local state and start fresh with greeting
+      if (!hasDbMessages) {
         setMemorySummary("");
         setUnsummarizedTurns([]);
         setUserTurnCount(0);
-        void queueInitialAssistantMessage(loadedRuntime, loadedAnalysis);
-      });
-    }
+        void queueInitialAssistantMessage(resolvedRuntime);
+      }
 
-    setIsLoaded(true);
-  }, [chatId]);
+      setIsLoaded(true);
+    };
+
+    void hydrateChat();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, router]);
 
   useEffect(() => {
     return () => {
@@ -404,7 +556,7 @@ function ChatContainer() {
 
   useEffect(() => {
     setAvatarLoadError(false);
-  }, [analysis?.personaInput.avatarUrl, step3AvatarUrl]);
+  }, [(runtime as any)?.avatarUrl, step3AvatarUrl]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -417,12 +569,17 @@ function ChatContainer() {
   }, []);
 
   useEffect(() => {
+    if (!isPersonaSheetOpen) return;
+    setMenuOpen(false);
+  }, [isPersonaSheetOpen]);
+
+  useEffect(() => {
     if (!runtime) return;
     const stateKey = getChatStateKey(runtime.personaId);
     const payload: StoredChatState = {
       personaId: runtime.personaId,
       personaName: runtime.displayName || "알 수 없음",
-      avatarUrl: analysis?.personaInput.avatarUrl || step3AvatarUrl || "",
+      avatarUrl: (runtime as any)?.avatarUrl || step3AvatarUrl || "",
       messages,
       memorySummary,
       unsummarizedTurns,
@@ -438,11 +595,11 @@ function ChatContainer() {
   }, [runtime]);
 
   const memoryCount = useMemo(() => {
-    if (!analysis) return 0;
-    const anchorCount = analysis.memoryAnchors.length;
-    const phraseCount = analysis.textHabits.frequentPhrases.length;
+    if (!runtime) return 0;
+    const anchorCount = ((runtime as any)?.memories || []).length;
+    const phraseCount = ((runtime as any)?.expressions?.frequentPhrases || []).length;
     return anchorCount * 10 + phraseCount;
-  }, [analysis]);
+  }, [runtime]);
 
   function openDeleteFlow() {
     setMenuOpen(false);
@@ -459,6 +616,8 @@ function ChatContainer() {
     clearPersonaArtifacts();
     ONBOARDING_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
   }
+
+  const reviewUserName = ((runtime as any)?.userName || "").trim();
 
   async function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -477,8 +636,8 @@ function ChatContainer() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: analysis?.userInput.userName || "",
-          nameMasked: maskDisplayName(analysis?.userInput.userName || ""),
+          name: reviewUserName,
+          nameMasked: maskDisplayName(reviewUserName),
           review: trimmedReview,
           feedback: feedbackText.trim(),
         }),
@@ -507,9 +666,16 @@ function ChatContainer() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isComposingRef.current) return;
     const trimmed = input.slice(0, USER_INPUT_CHAR_LIMIT).trim();
     if (!trimmed || !runtime || isTyping) return;
-    const allowLongReply = shouldAllowLongReply(trimmed);
+    if (
+      typeof memoryBalanceRef.current === "number" &&
+      memoryBalanceRef.current < MEMORY_COSTS.chat
+    ) {
+      router.push(`/payment?returnTo=${encodeURIComponent(`/chat?id=${runtime.personaId}`)}`);
+      return;
+    }
 
     const userAt = nowIso();
     const userMessage: ChatMessage = { id: toId(), role: "user", content: trimmed, createdAt: userAt };
@@ -518,12 +684,27 @@ function ChatContainer() {
     setInput("");
     setIsTyping(true);
     const startedAt = Date.now();
+    let usedOptimisticSpend = false;
+    if (typeof memoryBalanceRef.current === "number") {
+      const nextBalance = Math.max(memoryBalanceRef.current - MEMORY_COSTS.chat, 0);
+      memoryBalanceRef.current = nextBalance;
+      setMemoryBalance(nextBalance);
+      triggerMemorySpendAnimation();
+      usedOptimisticSpend = true;
+    }
+
     const nextUserTurn = userTurnCount + 1;
     let nextSummary = memorySummary;
     let turnBuffer = [...unsummarizedTurns];
+    const runtimeTokenEstimate = estimateTokenCountFromText(JSON.stringify(runtime));
+    const summaryTokenEstimate = estimateTokenCountFromText(nextSummary);
+    const bufferedTokenEstimate = estimateTokenCountFromTurns(turnBuffer);
+    const shouldCompress =
+      nextUserTurn >= COMPRESSION_MIN_USER_TURNS &&
+      bufferedTokenEstimate + runtimeTokenEstimate + summaryTokenEstimate >= COMPRESSION_TRIGGER_TOKENS;
 
     try {
-      if (nextUserTurn % 10 === 0) {
+      if (shouldCompress) {
         try {
           const compressionResponse = await fetch("/api/chat", {
             method: "POST",
@@ -531,7 +712,6 @@ function ChatContainer() {
             body: JSON.stringify({
               action: "compress",
               runtime,
-              analysis,
               previousSummary: nextSummary,
               messages: turnBuffer,
             }),
@@ -550,9 +730,7 @@ function ChatContainer() {
         }
       }
 
-      const historyForReply: ChatTurn[] = nextSummary
-        ? [{ role: "user", content: trimmed }]
-        : [...turnBuffer.slice(-10), { role: "user", content: trimmed }];
+      const historyForReply: ChatTurn[] = [...turnBuffer.slice(-RECENT_CONTEXT_MESSAGES), { role: "user", content: trimmed }];
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -560,17 +738,25 @@ function ChatContainer() {
         body: JSON.stringify({
           action: "reply",
           runtime,
-          analysis,
           memorySummary: nextSummary,
           messages: historyForReply,
-          allowLongReply,
         }),
       });
 
       let replyText = "";
-      if (response.ok) {
-        const payload = (await response.json()) as { reply?: string };
-        replyText = clipAssistantReply(payload.reply || "");
+      let nextBalanceFromServer: number | null = null;
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { code?: string };
+        if (response.status === 402 || body.code === "MEMORY_INSUFFICIENT") {
+          router.push(`/payment?returnTo=${encodeURIComponent(`/chat?id=${runtime.personaId}`)}`);
+          return;
+        }
+      } else {
+        const payload = (await response.json()) as { reply?: string; memoryBalance?: number };
+        replyText = (payload.reply || "").trim();
+        if (typeof payload.memoryBalance === "number") {
+          nextBalanceFromServer = payload.memoryBalance;
+        }
       }
 
       if (!replyText) {
@@ -587,6 +773,15 @@ function ChatContainer() {
       const turnUser: ChatTurn = { role: "user", content: trimmed };
       const turnAssistant: ChatTurn = { role: "assistant", content: replyText };
       setMessages((prev) => [...prev, aiMessage]);
+
+      if (typeof nextBalanceFromServer === "number") {
+        memoryBalanceRef.current = nextBalanceFromServer;
+        setMemoryBalance(nextBalanceFromServer);
+        if (!usedOptimisticSpend) {
+          triggerMemorySpendAnimation();
+        }
+      }
+
       setMemorySummary(nextSummary);
       setUnsummarizedTurns([...turnBuffer, turnUser, turnAssistant].slice(-60));
       setUserTurnCount(nextUserTurn);
@@ -597,46 +792,82 @@ function ChatContainer() {
     }
   }
 
+  const chatLayoutPaddingClass = savedChats.length > 0 ? "lg:pl-[34rem]" : "lg:pl-64";
+
   if (!isLoaded) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#faf9f5]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
-      </div>
-    );
+    return <ChatLoadingScaffold />;
   }
 
   if (!runtime) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#faf9f5] px-6 text-center text-[#2f342e]">
-        <div className="max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 shadow-sm">
-          <p className="mb-2 font-headline text-2xl font-bold text-[#4a626d]">채팅 준비가 안 됐어요</p>
-          <p className="mb-6 text-sm text-[#5d605a]">내 기억과 대화를 시작해요.</p>
-          <Link
-            href="/step-1"
-            className="inline-flex items-center justify-center rounded-full bg-[#4a626d] px-5 py-3 text-sm font-semibold text-[#f0f9ff]"
-          >
-            1단계로 이동
-          </Link>
+    if (savedChats.length > 0) {
+      return (
+        <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
+          <Navigation />
+          <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ${chatLayoutPaddingClass}`}>
+            <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-center lg:pb-0">
+              <div className="max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 shadow-sm">
+                <p className="mb-2 font-headline text-2xl font-bold text-[#4a626d]">대화를 불러오는 중 문제가 생겼어요</p>
+                <p className="mb-6 text-sm text-[#5d605a]">저장된 대화 목록에서 다시 선택해 주세요.</p>
+                <Link
+                  href="/chat/list"
+                  className="inline-flex items-center justify-center rounded-full bg-[#4a626d] px-5 py-3 text-sm font-semibold text-[#f0f9ff]"
+                >
+                  대화 목록 보기
+                </Link>
+              </div>
+            </div>
+          </main>
         </div>
+      );
+    }
+
+    return (
+      <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
+        <Navigation />
+        <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ${chatLayoutPaddingClass}`}>
+          <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-center lg:pb-0">
+            <div className="max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 shadow-sm">
+              <p className="mb-2 font-headline text-2xl font-bold text-[#4a626d]">새로운 기억을 만들어 대화를 시작하세요.</p>
+              <Link
+                href="/step-1"
+                className="inline-flex items-center justify-center rounded-full bg-[#4a626d] px-5 py-3 text-sm font-semibold text-[#f0f9ff]"
+              >
+                새로운 기억 만들기
+              </Link>
+            </div>
+          </div>
+        </main>
       </div>
-    );
+      );
   }
 
   const personaName = runtime.displayName || "페르소나";
-  const rawAvatarUrl = analysis?.personaInput.avatarUrl || step3AvatarUrl || null;
+  const rawAvatarUrl = (runtime as any)?.avatarUrl || step3AvatarUrl || null;
   const avatarUrl =
     rawAvatarUrl && rawAvatarUrl.includes("amazonaws.com")
       ? `/api/image-proxy?url=${encodeURIComponent(rawAvatarUrl)}`
       : rawAvatarUrl;
   const showAvatarImage = Boolean(avatarUrl) && !avatarLoadError;
 
+  const handlePersonaRuntimeSaved = (nextRuntime: PersonaRuntime) => {
+    setRuntime(nextRuntime);
+    savePersonaRuntime(nextRuntime);
+    setSavedChats((prev) =>
+      prev.map((chat) =>
+        chat.personaId === nextRuntime.personaId
+          ? { ...chat, personaName: nextRuntime.displayName || chat.personaName, runtime: nextRuntime }
+          : chat,
+      ),
+    );
+  };
+
   return (
-    <div className="flex h-screen bg-[#faf9f5] font-body text-[#2f342e]">
+    <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
       <Navigation />
       
-      <main className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${savedChats.length > 0 ? "lg:pl-[34rem]" : "lg:pl-64"}`}>
+      <main className={`flex min-h-0 flex-1 flex-col min-w-0 overflow-hidden transition-all duration-300 ${chatLayoutPaddingClass}`}>
         {/* Mobile Chat Header (Specific to this chat) */}
-        <div className="fixed top-0 left-0 z-10 flex w-full items-center justify-between border-b border-white/5 bg-[#242926]/80 px-4 py-3 backdrop-blur-md lg:hidden">
+        <div className="fixed top-0 left-0 z-10 flex h-16 w-full items-center justify-between border-b border-white/5 bg-[#242926]/80 px-4 backdrop-blur-md lg:hidden">
           <div className="flex items-center gap-2">
             <button
               onClick={() => router.push("/")}
@@ -663,11 +894,28 @@ function ChatContainer() {
               </div>
             </button>
           </div>
-          <button onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }} className="p-2 text-[#afb3ac]">
-            <MenuIcon />
-          </button>
+          <div className="flex items-center gap-2">
+            <MemoryBalanceBadge
+              memoryBalance={memoryBalance}
+              isAnimating={isMemoryBadgeAnimating}
+            />
+            <button onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }} className="p-2 text-[#afb3ac]">
+              <MenuIcon />
+            </button>
+          </div>
           {menuOpen && (
             <div className="absolute right-4 top-14 z-40 w-fit min-w-[120px] rounded-2xl bg-[#303733] p-1.5 shadow-2xl ring-1 ring-white/5 border border-white/5" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setIsPersonaSheetOpen(true);
+                  }}
+                  className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5"
+                >
+                  기억 수정하기
+                </button>
+                <div className="mx-2 my-1 h-[1px] bg-white/5" />
                 <button
                   type="button"
                   onClick={openDeleteFlow}
@@ -705,21 +953,36 @@ function ChatContainer() {
               </div>
               <h1 className="font-headline text-xl font-bold tracking-tight text-[#4a626d]">{personaName}</h1>
             </div>
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <div className="relative flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <MemoryBalanceBadge
+                memoryBalance={memoryBalance}
+                isAnimating={isMemoryBadgeAnimating}
+              />
               <button onClick={() => setMenuOpen(!menuOpen)} className="rounded-xl p-2 text-[#afb3ac] hover:bg-black/5 hover:text-[#4a626d]">
                 <MenuIcon />
               </button>
               {menuOpen && (
                 <div className="absolute right-0 top-12 z-40 w-fit min-w-[120px] rounded-2xl bg-[#303733] p-1.5 shadow-2xl ring-1 ring-white/5 border border-white/5">
-                  <button onClick={openDeleteFlow} className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0b6b4] hover:bg-white/5">
-                    내 기억 삭제
-                  </button>
-                  <div className="mx-2 my-1 h-[1px] bg-white/5" />
-                  <button onClick={() => { setMenuOpen(false); setShowResetConfirm(true); }} className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5">
-                    채팅 초기화
-                  </button>
-                </div>
-              )}
+                <button onClick={openDeleteFlow} className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0b6b4] hover:bg-white/5">
+                  내 기억 삭제
+                </button>
+                <div className="mx-2 my-1 h-[1px] bg-white/5" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setIsPersonaSheetOpen(true);
+                  }}
+                  className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5"
+                >
+                  기억 수정하기
+                </button>
+                <div className="mx-2 my-1 h-[1px] bg-white/5" />
+                <button onClick={() => { setMenuOpen(false); setShowResetConfirm(true); }} className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5">
+                  채팅 초기화
+                </button>
+              </div>
+            )}
             </div>
           </header>
 
@@ -791,14 +1054,24 @@ function ChatContainer() {
             <div ref={chatEndRef} className="h-10" />
           </section>
 
-          <footer className="bg-transparent pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-4 lg:pb-8">
+          <footer className="bg-transparent pb-[calc(6.4rem+env(safe-area-inset-bottom))] pt-4 lg:pb-8">
             <form onSubmit={handleSubmit} className="relative flex items-end gap-2 px-2">
               <div className="relative flex-1 flex items-center bg-white rounded-[2rem] shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-[#4a626d]/20 transition-all">
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    isComposingRef.current = false;
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
+                      const nativeEvent = e.nativeEvent as KeyboardEvent;
+                      if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+                        return;
+                      }
                       e.preventDefault();
                       const form = e.currentTarget.closest("form");
                       if (form) form.requestSubmit();
@@ -861,7 +1134,7 @@ function ChatContainer() {
                   if (!targetId) return;
                   fetch(`/api/persona?personaId=${targetId}`, { method: "DELETE" }).catch(e => console.error(e));
                   clearPersonaArtifacts(targetId);
-                  window.localStorage.removeItem("bogopa_chat_state_" + targetId);
+                  window.localStorage.removeItem(getChatStateKey(targetId));
                   setSavedChats(prev => prev.filter(c => c.personaId !== targetId));
                   setChatToDelete(null);
                   if (runtime?.personaId === targetId) setShowReviewModal(true);
@@ -908,6 +1181,14 @@ function ChatContainer() {
           </section>
         </div>
       )}
+
+      <PersonaMemorySheet
+        open={isPersonaSheetOpen}
+        runtime={runtime}
+        avatarUrl={rawAvatarUrl}
+        onClose={() => setIsPersonaSheetOpen(false)}
+        onRuntimeSaved={handlePersonaRuntimeSaved}
+      />
 
       {/* Mobile Chat List Bottom Sheet */}
       {isChatListOpen && (
@@ -974,11 +1255,7 @@ import { Suspense } from "react";
 
 export default function ChatPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-[#faf9f5]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
-      </div>
-    }>
+    <Suspense fallback={<ChatLoadingScaffold />}>
       <ChatContainer />
     </Suspense>
   );

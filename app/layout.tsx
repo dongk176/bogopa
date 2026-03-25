@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/app/_components/AuthProvider";
+import StepRouteScrollTop from "@/app/_components/StepRouteScrollTop";
 
 const headlineFont = Manrope({
   subsets: ["latin"],
@@ -38,6 +39,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-[#faf9f5] text-[#2f342e]">
         <AuthProvider>
+          <StepRouteScrollTop />
           {children}
         </AuthProvider>
       </body>

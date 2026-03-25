@@ -3,8 +3,23 @@
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 
-export default function LoginModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+type LoginModalProps = {
+    isOpen: boolean;
+    onClose: () => void;
+    nextPath?: string;
+};
+
+function normalizeNextPath(nextPath?: string) {
+    if (!nextPath || !nextPath.startsWith("/")) return "/step-1";
+    if (nextPath.startsWith("/api/")) return "/step-1";
+    if (nextPath.startsWith("/auth/")) return "/step-1";
+    if (nextPath.startsWith("/signup")) return "/step-1";
+    return nextPath;
+}
+
+export default function LoginModal({ isOpen, onClose, nextPath }: LoginModalProps) {
     if (!isOpen) return null;
+    const callbackUrl = `/auth/entry?next=${encodeURIComponent(normalizeNextPath(nextPath))}`;
 
     return (
         <div
@@ -32,7 +47,7 @@ export default function LoginModal({ isOpen, onClose }: { isOpen: boolean; onClo
                 <div className="flex flex-col gap-3 mt-1">
                     {/* Kakao Button */}
                     <button
-                        onClick={(e) => { e.preventDefault(); signIn("kakao", { callbackUrl: "/step-1" }); }}
+                        onClick={(e) => { e.preventDefault(); signIn("kakao", { callbackUrl }); }}
                         className="group relative flex w-full items-center justify-center gap-3 rounded-2xl bg-[#FEE500] px-6 py-4 text-[15px] font-bold text-[#191919] shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_20px_rgba(254,229,0,0.25)] hover:brightness-105 active:scale-[0.98]"
                     >
                         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
@@ -43,7 +58,7 @@ export default function LoginModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                     {/* Google Button */}
                     <button
-                        onClick={(e) => { e.preventDefault(); signIn("google", { callbackUrl: "/step-1" }); }}
+                        onClick={(e) => { e.preventDefault(); signIn("google", { callbackUrl }); }}
                         className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border border-white/20 bg-white/5 px-6 py-4 text-[15px] font-bold text-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:bg-white/10 hover:shadow-[0_8px_20px_rgba(255,255,255,0.1)] active:scale-[0.98]"
                     >
                         <svg viewBox="0 0 24 24" className="h-5 w-5" xmlns="http://www.w3.org/2000/svg">

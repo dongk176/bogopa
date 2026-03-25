@@ -1,5 +1,5 @@
 import { getDbPool } from "./db";
-import { PersonaAnalysis, PersonaRuntime } from "@/types/persona";
+import { PersonaRuntime } from "@/types/persona";
 
 const CREATE_CHAT_TABLES_SQL = `
 CREATE SCHEMA IF NOT EXISTS bogopa;
@@ -57,7 +57,7 @@ export async function savePersonaToDb(
   personaId: string,
   name: string,
   avatarUrl: string | null,
-  analysis: PersonaAnalysis,
+  analysis: unknown,
   runtime: PersonaRuntime
 ) {
   await ensureChatTables();
@@ -107,6 +107,16 @@ export async function getPersonaById(personaId: string, userId: string) {
     [personaId, userId]
   );
   return res.rows[0];
+}
+
+export async function countPersonasForUser(userId: string) {
+  await ensureChatTables();
+  const pool = getDbPool();
+  const res = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM bogopa.personas WHERE user_id = $1`,
+    [userId],
+  );
+  return Number(res.rows[0]?.count || 0);
 }
 
 export async function getOrCreateSession(userId: string, personaId: string) {

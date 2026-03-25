@@ -8,11 +8,8 @@ export default withAuth({
 
 export const config = {
     matcher: [
-        "/step-1",
-        "/step-2",
-        "/step-3",
-        "/step-4",
-        "/step-5",
-        "/chat"
+        // Protect every app page except the home login entry ("/"),
+        // public legal pages, API routes, Next internals, and static asset file paths.
+        "/((?!$|legal|api|_next/static|_next/image|.*\\..*).*)",
     ],
 };

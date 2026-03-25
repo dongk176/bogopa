@@ -79,8 +79,8 @@ export async function POST(request: NextRequest) {
   const sessionId = body.sessionId?.trim() || null;
   const step = body.step;
 
-  if (step !== 1 && step !== 2 && step !== 3 && step !== 4) {
-    return NextResponse.json({ error: "step은 1~4만 허용됩니다." }, { status: 400 });
+  if (step !== 1 && step !== 2 && step !== 3) {
+    return NextResponse.json({ error: "step은 1~3만 허용됩니다." }, { status: 400 });
   }
 
   const pool = getDbPool();
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     const clientIp = getClientIp(request);
     let dataToSave = body.data ?? {};
 
-    if (step === 4 && body.data && typeof body.data === "object" && !Array.isArray(body.data)) {
+    if (step === 3 && body.data && typeof body.data === "object" && !Array.isArray(body.data)) {
       const raw = body.data as Record<string, unknown>;
       const consentRaw =
         raw.consent && typeof raw.consent === "object" && !Array.isArray(raw.consent)

@@ -52,7 +52,12 @@ export default function StepFivePage() {
   const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
 
   useEffect(() => {
-    setAnalysis(loadPersonaAnalysis());
+    const loaded = loadPersonaAnalysis() as any;
+    if (loaded?.analysisSummary && loaded?.personaInput) {
+      setAnalysis(loaded as PersonaAnalysis);
+      return;
+    }
+    setAnalysis(null);
   }, []);
 
   if (!analysis) {
@@ -60,7 +65,7 @@ export default function StepFivePage() {
       <div className="flex min-h-screen items-center justify-center bg-[#faf9f5] px-6 text-center text-[#2f342e]">
         <div className="max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 shadow-sm">
           <p className="mb-2 font-headline text-2xl font-bold text-[#4a626d]">분석 결과가 없습니다</p>
-          <p className="mb-6 text-sm text-[#5d605a]">1~4단계를 완료한 뒤 다시 진입해주세요.</p>
+          <p className="mb-6 text-sm text-[#5d605a]">1~3단계를 완료한 뒤 다시 진입해주세요.</p>
           <Link
             href="/step-1"
             className="inline-flex items-center justify-center rounded-full bg-[#4a626d] px-5 py-3 text-sm font-semibold text-[#f0f9ff]"

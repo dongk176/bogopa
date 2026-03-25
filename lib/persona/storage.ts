@@ -1,4 +1,4 @@
-import { PersonaAnalysis, PersonaAnalyzeInput, PersonaRuntime, PrimaryGoal, Gender } from "@/types/persona";
+import { PersonaAnalysis, PersonaAnalyzeInput, PersonaRuntime, PrimaryGoal, Gender, UserGender } from "@/types/persona";
 
 const STEP1_KEY = "bogopa_profile_step1";
 const STEP2_KEY = "bogopa_profile_step2";
@@ -8,7 +8,7 @@ const STEP4_KEY = "bogopa_profile_step4";
 export const PERSONA_ANALYSIS_STORAGE_KEY = "blueme_persona_analysis";
 export const PERSONA_RUNTIME_STORAGE_KEY = "blueme_persona_runtime";
 
-type Step1Raw = { name?: string; gender?: "Male" | "Female" | string };
+type Step1Raw = { name?: string; gender?: "Male" | "Female" | "Other" | string };
 type Step2Raw = { goal?: string; customGoal?: string };
 type Step3Raw = {
   personaName?: string;
@@ -46,10 +46,12 @@ function safeParse<T>(value: string | null): T | null {
   }
 }
 
-function toGender(raw?: string): Gender {
+function toUserGender(raw?: string): UserGender {
   if (!raw) return "female";
   const normalized = raw.toLowerCase();
   if (normalized === "male") return "male";
+  if (normalized === "female") return "female";
+  if (normalized === "other") return "other";
   return "female";
 }
 
@@ -69,11 +71,11 @@ function splitPhrases(raw: string | undefined): string[] {
     .slice(0, 8);
 }
 
-function inferPersonaGender(relation: string, fallbackUserGender: Gender): Gender {
+function inferPersonaGender(relation: string, fallbackUserGender: UserGender): Gender {
   const rel = relation.replace(/\s/g, "");
   if (/(엄마|누나|언니|여동생)/.test(rel)) return "female";
   if (/(아빠|형|오빠|남동생)/.test(rel)) return "male";
-  return fallbackUserGender;
+  return fallbackUserGender === "male" ? "male" : "female";
 }
 
 function inferRuntimeGender(relation: string): Gender {
@@ -86,9 +88,12 @@ function inferRuntimeGender(relation: string): Gender {
 function normalizeAddressAlias(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (trimmed.length > 1) {
-    if (trimmed.endsWith("야") || trimmed.endsWith("아")) return trimmed.slice(0, -1);
-    if (trimmed.endsWith("님") || trimmed.endsWith("씨")) return trimmed.slice(0, -1);
+  if (trimmed.length > 1 && (trimmed.endsWith("님") || trimmed.endsWith("씨"))) return trimmed.slice(0, -1);
+  if (trimmed.length > 1 && (trimmed.endsWith("야") || trimmed.endsWith("아"))) {
+    const base = trimmed.slice(0, -1);
+    if (!base) return trimmed;
+    if (/[야아]$/.test(base)) return trimmed;
+    return base;
   }
   return trimmed;
 }
@@ -103,14 +108,14 @@ export function loadStepInputsFromLocalStorage(): PersonaAnalyzeInput | null {
 
   if (!step1 || !step2 || !step3 || !step4) return null;
 
-  const userGender = toGender(step1.gender);
+  const userGender = toUserGender(step1.gender);
   const relation = (step3.relationship || "").trim();
 
   const personaGender =
     step3.personaGender && (step3.personaGender === "male" || step3.personaGender === "female")
       ? step3.personaGender
       : step3.personaGender === "Male" || step3.personaGender === "Female"
-        ? toGender(step3.personaGender)
+        ? (toUserGender(step3.personaGender) === "male" ? "male" : "female")
         : inferPersonaGender(relation, userGender);
 
   return {
@@ -159,16 +164,26 @@ export function loadPersonaAnalysis(id?: string): PersonaAnalysis | null {
   const parsed = safeParse<PersonaAnalysis>(window.localStorage.getItem(key));
   if (!parsed) return null;
 
-  if (!parsed.personaInput.avatarUrl) {
+  const anyParsed = parsed as any;
+  const hasLegacyAvatar = Boolean(anyParsed?.personaInput?.avatarUrl);
+  const hasCompactAvatar = Boolean(anyParsed?.avatarUrl);
+  if (!hasLegacyAvatar && !hasCompactAvatar) {
     const fallbackAvatar = readStep3AvatarUrl();
     if (fallbackAvatar) {
+      if (anyParsed?.personaInput) {
+        return {
+          ...(anyParsed as object),
+          personaInput: {
+            ...anyParsed.personaInput,
+            avatarUrl: fallbackAvatar,
+          },
+        } as PersonaAnalysis;
+      }
+
       return {
-        ...parsed,
-        personaInput: {
-          ...parsed.personaInput,
-          avatarUrl: fallbackAvatar,
-        },
-      };
+        ...(anyParsed as object),
+        avatarUrl: fallbackAvatar,
+      } as unknown as PersonaAnalysis;
     }
   }
 
@@ -198,9 +213,9 @@ export function loadPersonaRuntime(id?: string): PersonaRuntime | null {
     },
     personaMeta: {
       occupation: parsed.personaMeta?.occupation || "",
-      workAttitudeSummary: parsed.personaMeta?.workAttitudeSummary || "직업 관련 데이터가 아직 충분하지 않아요.",
+      workAttitudeSummary: parsed.personaMeta?.workAttitudeSummary || "",
       workTendencyTags: parsed.personaMeta?.workTendencyTags || [],
-      selfTalkStyle: parsed.personaMeta?.selfTalkStyle || "담백하게 하루 근황을 공유하는 편",
+      selfTalkStyle: parsed.personaMeta?.selfTalkStyle || "",
     },
   };
 

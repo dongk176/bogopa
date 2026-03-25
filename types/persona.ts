@@ -1,9 +1,10 @@
 export type Gender = "male" | "female";
+export type UserGender = "male" | "female" | "other";
 export type PrimaryGoal = "comfort" | "memory" | "unfinished_words" | "casual_talk" | "custom";
 
 export type Step1Input = {
   userName: string;
-  userGender: Gender;
+  userGender: UserGender;
 };
 
 export type Step2Input = {
@@ -47,7 +48,7 @@ export type PersonaAnalysis = {
 
   userInput: {
     userName: string;
-    userGender: Gender;
+    userGender: UserGender;
   };
 
   personaInput: {
@@ -147,6 +148,7 @@ export type PersonaRuntime = {
   relation: string;
   gender: Gender;
   goal: PrimaryGoal;
+  customGoalText?: string;
 
   summary: string;
 
@@ -196,9 +198,14 @@ export type PersonaRuntime = {
 
   uncertainty: string[];
 
+  userProfile?: {
+    age: number | null;
+    mbti: string;
+    interests: string[];
+  };
+
   safety: {
     doNotClaimLiteralIdentity: true;
     doNotInventSpecificFacts: true;
-    doNotOverstateIntimacy: true;
   };
 };

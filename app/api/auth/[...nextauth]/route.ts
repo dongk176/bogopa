@@ -1,7 +1,7 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import KakaoProvider from "next-auth/providers/kakao";
 import GoogleProvider from "next-auth/providers/google";
-import { getDbPool } from "@/lib/server/db";
+import { getUserProfile, upsertUserFromOAuth } from "@/lib/server/user-profile";
 
 export const authOptions: NextAuthOptions = {
     providers: [
@@ -22,26 +22,19 @@ export const authOptions: NextAuthOptions = {
             if (!account || !user) return true;
 
             try {
-                const pool = getDbPool();
                 const provider = account.provider || "kakao";
                 const id = account.providerAccountId;
                 const email = user.email || null;
                 const name = user.name || "사용자";
                 const image = user.image || null;
 
-                // Upsert to Postgres
-                await pool.query(
-                    `
-                    INSERT INTO bogopa."users" ("id", "name", "email", "image", "provider", "updated_at")
-                    VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-                    ON CONFLICT ("id") DO UPDATE
-                    SET "name" = EXCLUDED.name,
-                        "email" = EXCLUDED.email,
-                        "image" = EXCLUDED.image,
-                        "updated_at" = CURRENT_TIMESTAMP;
-                    `,
-                    [id, name, email, image, provider]
-                );
+                await upsertUserFromOAuth({
+                    userId: id,
+                    provider,
+                    email,
+                    name,
+                    image,
+                });
             } catch (error) {
                 console.error("Failed to save user to db during signIn callback:", error);
             }
@@ -51,6 +44,12 @@ export const authOptions: NextAuthOptions = {
             if (account) {
                 token.accessToken = account.access_token;
                 token.providerAccountId = account.providerAccountId;
+                try {
+                    const profile = await getUserProfile(account.providerAccountId);
+                    token.profileCompleted = Boolean(profile.profileCompleted);
+                } catch {
+                    token.profileCompleted = false;
+                }
             }
             return token;
         },
@@ -58,7 +57,27 @@ export const authOptions: NextAuthOptions = {
             // Send properties to the client
             session.user = session.user || {};
             session.user.id = token.providerAccountId;
+            session.user.profileCompleted = Boolean(token.profileCompleted);
             return session;
+        },
+        async redirect({ url, baseUrl }: any) {
+            const target = url.startsWith("/") ? new URL(url, baseUrl) : new URL(url);
+            if (target.origin !== baseUrl) {
+                return baseUrl;
+            }
+
+            // Keep explicit home/legal redirects as-is (e.g. signOut callbackUrl "/")
+            if (target.pathname === "/" || target.pathname.startsWith("/legal")) {
+                return target.toString();
+            }
+
+            // Preserve explicit auth-entry targets with query (e.g. ?next=/chat).
+            if (target.pathname === "/auth/entry") {
+                return target.toString();
+            }
+
+            // Force every sign-in completion through a single onboarding gate.
+            return `${baseUrl}/auth/entry`;
         },
     },
     pages: {

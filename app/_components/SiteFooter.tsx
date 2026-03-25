@@ -8,7 +8,7 @@ export default function SiteFooter() {
     const year = new Date().getFullYear();
 
     return (
-        <footer className="w-full bg-[#f4f4ef] px-6 py-12 pb-32 md:py-16 md:pb-16">
+        <footer className="w-full bg-[#faf9f5] px-6 py-12 pb-[calc(11rem+env(safe-area-inset-bottom))] md:py-16 md:pb-16">
             <div className="mx-auto max-w-7xl">
                 <div className="flex flex-col items-center justify-between md:flex-row md:items-end">
                     <div className="text-center md:text-left">
@@ -75,7 +75,7 @@ export default function SiteFooter() {
                     </div>
                 </div>
 
-                <div className="mt-12 border-t border-[#dfdfd8] pt-8 text-center text-xs text-[#655d5a]/80 md:flex md:items-center md:justify-between md:text-left">
+                <div className="mt-12 border-t border-[#dfdfd8] pt-8 text-center text-xs text-[#655d5a] md:flex md:items-center md:justify-between md:text-left">
                     <p>Copyright © {year} Artiroom. All Rights Reserved.</p>
                     <p className="mt-2 md:mt-0">보고파는 아티룸에서 운영합니다.</p>
                 </div>

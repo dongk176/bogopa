@@ -2,10 +2,13 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useState, useRef, useEffect } from "react";
+import LogoutConfirmModal from "@/app/_components/LogoutConfirmModal";
 
 export default function UserProfileMenu() {
     const { data: session } = useSession();
     const [isOpen, setIsOpen] = useState(false);
+    const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+    const [isSigningOut, setIsSigningOut] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -17,6 +20,16 @@ export default function UserProfileMenu() {
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
+
+    const handleSignOut = async () => {
+        if (isSigningOut) return;
+        setIsSigningOut(true);
+        try {
+            await signOut({ callbackUrl: "/" });
+        } finally {
+            setIsSigningOut(false);
+        }
+    };
 
     if (!session?.user) return null;
 
@@ -50,7 +63,10 @@ export default function UserProfileMenu() {
 
                     <div className="p-1.5">
                         <button
-                            onClick={() => signOut({ callbackUrl: '/' })}
+                            onClick={() => {
+                                setIsOpen(false);
+                                setIsLogoutModalOpen(true);
+                            }}
                             className="group flex w-full items-center rounded-xl px-4 py-2.5 text-sm font-bold text-[#ff6b6b] hover:bg-white/10 active:bg-white/20 transition-colors text-left"
                         >
                             <svg className="mr-3 h-4 w-4 text-[#ff6b6b]/80 group-hover:text-[#ff6b6b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -61,6 +77,18 @@ export default function UserProfileMenu() {
                     </div>
                 </div>
             )}
+
+            <LogoutConfirmModal
+                isOpen={isLogoutModalOpen}
+                isProcessing={isSigningOut}
+                onClose={() => {
+                    if (isSigningOut) return;
+                    setIsLogoutModalOpen(false);
+                }}
+                onConfirm={() => {
+                    void handleSignOut();
+                }}
+            />
         </div>
     );
 }

@@ -30,6 +30,10 @@ type StoredChatState = {
 
 const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
 
+function getChatStateKey(personaId: string) {
+    return `${CHAT_STATE_KEY_PREFIX}:${personaId}`;
+}
+
 function ArrowLeftIcon() {
     return (
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -103,7 +107,7 @@ export default function ChatListPage() {
 
         // Also clean up artifacts and localStorage for this ID if any exist
         clearPersonaArtifacts(chatToDelete);
-        window.localStorage.removeItem(CHAT_STATE_KEY_PREFIX + "_" + chatToDelete);
+        window.localStorage.removeItem(getChatStateKey(chatToDelete));
 
         setSavedChats((prev) => prev.filter((c) => c.personaId !== chatToDelete));
         setChatToDelete(null);
