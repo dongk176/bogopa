@@ -43,26 +43,31 @@ function getAppleClientSecret() {
         return cachedAppleClientSecret.token;
     }
 
-    const header = {
-        alg: "ES256",
-        kid: keyId,
-        typ: "JWT",
-    };
-    const payload = {
-        iss: teamId,
-        iat: now,
-        exp,
-        aud: APPLE_AUDIENCE,
-        sub: clientId,
-    };
-    const signingInput = `${toBase64Url(JSON.stringify(header))}.${toBase64Url(JSON.stringify(payload))}`;
-    const signature = sign("sha256", Buffer.from(signingInput), {
-        key: createPrivateKey(privateKey),
-        dsaEncoding: "ieee-p1363",
-    });
-    const token = `${signingInput}.${toBase64Url(signature)}`;
-    cachedAppleClientSecret = { token, exp, fingerprint };
-    return token;
+    try {
+        const header = {
+            alg: "ES256",
+            kid: keyId,
+            typ: "JWT",
+        };
+        const payload = {
+            iss: teamId,
+            iat: now,
+            exp,
+            aud: APPLE_AUDIENCE,
+            sub: clientId,
+        };
+        const signingInput = `${toBase64Url(JSON.stringify(header))}.${toBase64Url(JSON.stringify(payload))}`;
+        const signature = sign("sha256", Buffer.from(signingInput), {
+            key: createPrivateKey(privateKey),
+            dsaEncoding: "ieee-p1363",
+        });
+        const token = `${signingInput}.${toBase64Url(signature)}`;
+        cachedAppleClientSecret = { token, exp, fingerprint };
+        return token;
+    } catch (error) {
+        console.error("[auth] invalid APPLE_PRIVATE_KEY or Apple client secret generation failed", error);
+        return "";
+    }
 }
 
 function getAppleAuthProvider() {
