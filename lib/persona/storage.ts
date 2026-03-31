@@ -37,6 +37,26 @@ function readStep3AvatarUrl(): string | null {
   return avatar ? avatar : null;
 }
 
+function normalizeLegacyAvatarUrl(avatarUrl?: string | null) {
+  if (!avatarUrl) return avatarUrl || "";
+  if (!avatarUrl.startsWith("/img/")) return avatarUrl;
+  const legacyName = decodeURIComponent(avatarUrl.replace(/^\/img\//, ""))
+    .replace(/\.[a-z0-9]+$/i, "")
+    .trim()
+    .toLowerCase();
+  const map: Record<string, string> = {
+    dad: "/profile/dad.webp",
+    mom: "/profile/mom.webp",
+    husband: "/profile/husband.webp",
+    wife: "/profile/wife.webp",
+    "old brother": "/profile/old brother.webp",
+    "old sister": "/profile/old sister.webp",
+    "young brother": "/profile/young brother.webp",
+    "young sister": "/profile/young sister.webp",
+  };
+  return map[legacyName] || "/profile/mom.webp";
+}
+
 function safeParse<T>(value: string | null): T | null {
   if (!value) return null;
   try {
@@ -106,9 +126,9 @@ export function loadStepInputsFromLocalStorage(): PersonaAnalyzeInput | null {
   const step3 = safeParse<Step3Raw>(window.localStorage.getItem(STEP3_KEY));
   const step4 = safeParse<Step4Raw>(window.localStorage.getItem(STEP4_KEY));
 
-  if (!step1 || !step2 || !step3 || !step4) return null;
+  if (!step2 || !step3 || !step4) return null;
 
-  const userGender = toUserGender(step1.gender);
+  const userGender = toUserGender(step1?.gender);
   const relation = (step3.relationship || "").trim();
 
   const personaGender =
@@ -120,7 +140,7 @@ export function loadStepInputsFromLocalStorage(): PersonaAnalyzeInput | null {
 
   return {
     step1: {
-      userName: (step1.name || "").trim(),
+      userName: (step1?.name || "").trim(),
       userGender,
     },
     step2: {
@@ -218,6 +238,7 @@ export function loadPersonaRuntime(id?: string): PersonaRuntime | null {
       selfTalkStyle: parsed.personaMeta?.selfTalkStyle || "",
     },
   };
+  (normalized as any).avatarUrl = normalizeLegacyAvatarUrl((parsed as any)?.avatarUrl || "");
 
   return normalized;
 }

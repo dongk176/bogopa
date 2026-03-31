@@ -117,6 +117,7 @@ export async function POST(request: Request) {
       gender,
       mbti,
       interests: dedupedInterests,
+      provider: typeof sessionUser.provider === "string" ? sessionUser.provider : null,
     });
 
     const profile = await getUserProfile(sessionUser.id);

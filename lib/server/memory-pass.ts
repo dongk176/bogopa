@@ -1,7 +1,7 @@
 import { getDbPool } from "@/lib/server/db";
 import { getPlanLimits, MEMORY_PASS_MONTHLY_GRANT, MEMORY_PASS_PRICE_KRW } from "@/lib/memory-pass/config";
 
-const DEFAULT_FREE_MEMORY_BALANCE = 60;
+export const DEFAULT_FREE_MEMORY_BALANCE = 60;
 
 const CREATE_MEMORY_PASS_TABLE_SQL = `
 CREATE SCHEMA IF NOT EXISTS bogopa;
@@ -10,9 +10,26 @@ CREATE TABLE IF NOT EXISTS bogopa.user_entitlements (
   user_id VARCHAR PRIMARY KEY,
   is_memory_pass_active BOOLEAN NOT NULL DEFAULT FALSE,
   memory_balance INT NOT NULL DEFAULT ${DEFAULT_FREE_MEMORY_BALANCE},
+  unlimited_chat_expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE bogopa.user_entitlements
+  ADD COLUMN IF NOT EXISTS unlimited_chat_expires_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS bogopa.user_memory_transactions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id VARCHAR NOT NULL,
+  transaction_type VARCHAR(16) NOT NULL CHECK (transaction_type IN ('credit', 'debit')),
+  amount INT NOT NULL CHECK (amount > 0),
+  reason VARCHAR(64) NOT NULL,
+  detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_memory_transactions_user_created
+  ON bogopa.user_memory_transactions (user_id, created_at DESC);
 `;
 
 let ensurePromise: Promise<void> | null = null;
@@ -33,9 +50,60 @@ export async function ensureMemoryPassTables() {
 export type MemoryPassStatus = {
   isSubscribed: boolean;
   memoryBalance: number;
+  isUnlimitedChatActive: boolean;
+  unlimitedChatExpiresAt: string | null;
   monthlyPriceKrw: number;
   limits: ReturnType<typeof getPlanLimits>;
 };
+
+export type MemoryTransactionType = "credit" | "debit";
+
+export type MemoryTransactionReason =
+  | "chat_message"
+  | "persona_create"
+  | "memory_pass_monthly_grant"
+  | "memory_recharge"
+  | "unlimited_chat_pass_grant"
+  | "manual_adjustment";
+
+type SqlExecutor = {
+  query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+};
+
+async function insertMemoryTransaction(
+  executor: SqlExecutor,
+  input: {
+    userId: string;
+    transactionType: MemoryTransactionType;
+    amount: number;
+    reason: MemoryTransactionReason;
+    detail?: Record<string, unknown>;
+  },
+) {
+  if (!Number.isFinite(input.amount) || input.amount <= 0) return;
+  await executor.query(
+    `
+    INSERT INTO bogopa.user_memory_transactions (user_id, transaction_type, amount, reason, detail)
+    VALUES ($1, $2, $3, $4, $5::jsonb)
+    `,
+    [input.userId, input.transactionType, Math.floor(input.amount), input.reason, JSON.stringify(input.detail || {})],
+  );
+}
+
+export async function logMemoryTransaction(
+  input: {
+    userId: string;
+    transactionType: MemoryTransactionType;
+    amount: number;
+    reason: MemoryTransactionReason;
+    detail?: Record<string, unknown>;
+  },
+  executor?: SqlExecutor,
+) {
+  await ensureMemoryPassTables();
+  const queryRunner = executor ?? getDbPool();
+  await insertMemoryTransaction(queryRunner, input);
+}
 
 export async function getOrCreateMemoryPassStatus(userId: string): Promise<MemoryPassStatus> {
   await ensureMemoryPassTables();
@@ -52,7 +120,7 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
 
   const row = await pool.query(
     `
-    SELECT user_id, is_memory_pass_active, memory_balance
+    SELECT user_id, is_memory_pass_active, memory_balance, unlimited_chat_expires_at
     FROM bogopa.user_entitlements
     WHERE user_id = $1
     `,
@@ -62,16 +130,31 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
   const current = row.rows[0];
   const isSubscribed = Boolean(current?.is_memory_pass_active);
   const memoryBalance = Number(current?.memory_balance || 0);
+  const unlimitedChatExpiresAtRaw = current?.unlimited_chat_expires_at
+    ? new Date(current.unlimited_chat_expires_at).toISOString()
+    : null;
+  const isUnlimitedChatActive = Boolean(
+    unlimitedChatExpiresAtRaw && new Date(unlimitedChatExpiresAtRaw).getTime() > Date.now(),
+  );
 
   return {
     isSubscribed,
     memoryBalance,
+    isUnlimitedChatActive,
+    unlimitedChatExpiresAt: unlimitedChatExpiresAtRaw,
     monthlyPriceKrw: MEMORY_PASS_PRICE_KRW,
     limits: getPlanLimits(isSubscribed),
   };
 }
 
-export async function consumeMemory(userId: string, amount: number) {
+export async function consumeMemory(
+  userId: string,
+  amount: number,
+  options?: {
+    reason?: MemoryTransactionReason;
+    detail?: Record<string, unknown>;
+  },
+) {
   if (amount <= 0) return { ok: true as const, balance: 0 };
 
   await ensureMemoryPassTables();
@@ -97,6 +180,14 @@ export async function consumeMemory(userId: string, amount: number) {
   );
 
   if (consumed.rows.length > 0) {
+    await insertMemoryTransaction(pool, {
+      userId,
+      transactionType: "debit",
+      amount,
+      reason: options?.reason || "manual_adjustment",
+      detail: options?.detail,
+    });
+
     return {
       ok: true as const,
       balance: Number(consumed.rows[0].memory_balance || 0),
@@ -113,13 +204,138 @@ export async function consumeMemory(userId: string, amount: number) {
   };
 }
 
-export async function activateMemoryPass(userId: string) {
+export async function creditMemory(
+  userId: string,
+  amount: number,
+  options?: {
+    reason?: MemoryTransactionReason;
+    detail?: Record<string, unknown>;
+  },
+) {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    const current = await getOrCreateMemoryPassStatus(userId);
+    return {
+      ok: true as const,
+      balance: current.memoryBalance,
+    };
+  }
+
+  await ensureMemoryPassTables();
+  const pool = getDbPool();
+
+  await pool.query(
+    `
+    INSERT INTO bogopa.user_entitlements (user_id)
+    VALUES ($1)
+    ON CONFLICT (user_id) DO NOTHING
+    `,
+    [userId],
+  );
+
+  const credited = await pool.query(
+    `
+    UPDATE bogopa.user_entitlements
+    SET memory_balance = memory_balance + $2, updated_at = NOW()
+    WHERE user_id = $1
+    RETURNING memory_balance
+    `,
+    [userId, Math.floor(amount)],
+  );
+
+  await insertMemoryTransaction(pool, {
+    userId,
+    transactionType: "credit",
+    amount: Math.floor(amount),
+    reason: options?.reason || "manual_adjustment",
+    detail: options?.detail,
+  });
+
+  return {
+    ok: true as const,
+    balance: Number(credited.rows[0]?.memory_balance || 0),
+  };
+}
+
+export async function grantUnlimitedChatHours(userId: string, hours: number) {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    const current = await getOrCreateMemoryPassStatus(userId);
+    return {
+      ok: true as const,
+      isUnlimitedChatActive: current.isUnlimitedChatActive,
+      unlimitedChatExpiresAt: current.unlimitedChatExpiresAt,
+    };
+  }
+
+  await ensureMemoryPassTables();
+  const pool = getDbPool();
+
+  await pool.query(
+    `
+    INSERT INTO bogopa.user_entitlements (user_id)
+    VALUES ($1)
+    ON CONFLICT (user_id) DO NOTHING
+    `,
+    [userId],
+  );
+
+  const res = await pool.query(
+    `
+    UPDATE bogopa.user_entitlements
+    SET
+      unlimited_chat_expires_at = CASE
+        WHEN unlimited_chat_expires_at IS NULL OR unlimited_chat_expires_at < NOW()
+          THEN NOW() + make_interval(hours => $2::int)
+        ELSE unlimited_chat_expires_at + make_interval(hours => $2::int)
+      END,
+      updated_at = NOW()
+    WHERE user_id = $1
+    RETURNING unlimited_chat_expires_at
+    `,
+    [userId, Math.floor(hours)],
+  );
+
+  const expiresAt = res.rows[0]?.unlimited_chat_expires_at
+    ? new Date(res.rows[0].unlimited_chat_expires_at).toISOString()
+    : null;
+
+  return {
+    ok: true as const,
+    isUnlimitedChatActive: Boolean(expiresAt && new Date(expiresAt).getTime() > Date.now()),
+    unlimitedChatExpiresAt: expiresAt,
+  };
+}
+
+export async function hasActiveUnlimitedChat(userId: string) {
   await ensureMemoryPassTables();
   const pool = getDbPool();
   const res = await pool.query(
     `
+    SELECT unlimited_chat_expires_at
+    FROM bogopa.user_entitlements
+    WHERE user_id = $1
+    `,
+    [userId],
+  );
+
+  const expiresAt = res.rows[0]?.unlimited_chat_expires_at
+    ? new Date(res.rows[0].unlimited_chat_expires_at).toISOString()
+    : null;
+  const isActive = Boolean(expiresAt && new Date(expiresAt).getTime() > Date.now());
+
+  return {
+    isActive,
+    expiresAt,
+  };
+}
+
+export async function activateMemoryPass(userId: string) {
+  await ensureMemoryPassTables();
+  const pool = getDbPool();
+  const initialGrantAmount = DEFAULT_FREE_MEMORY_BALANCE + MEMORY_PASS_MONTHLY_GRANT;
+  const res = await pool.query(
+    `
     INSERT INTO bogopa.user_entitlements (user_id, is_memory_pass_active, memory_balance)
-    VALUES ($1, TRUE, ${DEFAULT_FREE_MEMORY_BALANCE + MEMORY_PASS_MONTHLY_GRANT})
+    VALUES ($1, TRUE, $3)
     ON CONFLICT (user_id)
     DO UPDATE SET
       is_memory_pass_active = TRUE,
@@ -127,8 +343,15 @@ export async function activateMemoryPass(userId: string) {
       updated_at = NOW()
     RETURNING is_memory_pass_active, memory_balance
     `,
-    [userId, MEMORY_PASS_MONTHLY_GRANT],
+    [userId, MEMORY_PASS_MONTHLY_GRANT, initialGrantAmount],
   );
+
+  await insertMemoryTransaction(pool, {
+    userId,
+    transactionType: "credit",
+    amount: MEMORY_PASS_MONTHLY_GRANT,
+    reason: "memory_pass_monthly_grant",
+  });
 
   return {
     isSubscribed: Boolean(res.rows[0]?.is_memory_pass_active),

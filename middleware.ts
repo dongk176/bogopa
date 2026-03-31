@@ -10,6 +10,6 @@ export const config = {
     matcher: [
         // Protect every app page except the home login entry ("/"),
         // public legal pages, API routes, Next internals, and static asset file paths.
-        "/((?!$|legal|api|_next/static|_next/image|.*\\..*).*)",
+        "/((?!$|login$|legal|api|auth|_next/static|_next/image|.*\\..*).*)",
     ],
 };

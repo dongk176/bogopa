@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { clearPersonaArtifacts } from "@/lib/persona/storage";
+import Navigation from "@/app/_components/Navigation";
+import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 
 type ChatMessage = {
     id: string;
@@ -34,14 +35,6 @@ function getChatStateKey(personaId: string) {
     return `${CHAT_STATE_KEY_PREFIX}:${personaId}`;
 }
 
-function ArrowLeftIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-        </svg>
-    );
-}
-
 function MoreVerticalIcon() {
     return (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -55,6 +48,7 @@ function MoreVerticalIcon() {
 export default function ChatListPage() {
     const router = useRouter();
     const [savedChats, setSavedChats] = useState<StoredChatState[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [chatToDelete, setChatToDelete] = useState<string | null>(null);
 
     // Review states
@@ -63,23 +57,32 @@ export default function ChatListPage() {
     const [feedbackText, setFeedbackText] = useState("");
     const [reviewError, setReviewError] = useState("");
     const [isSavingReview, setIsSavingReview] = useState(false);
+    const { guardCreateStart, modalNode, isChecking } = useMemoryCreateGuard();
 
     useEffect(() => {
         const fetchPersonas = async () => {
+            setIsLoading(true);
             try {
                 const res = await fetch("/api/persona", { cache: "no-store" });
                 const data = await res.json();
                 if (data.ok && Array.isArray(data.personas)) {
-                    const dbChats: StoredChatState[] = data.personas.map((p: any) => ({
-                        personaId: p.persona_id,
-                        personaName: p.name,
-                        avatarUrl: p.avatar_url,
-                        messages: p.last_message_content ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }] : [],
-                        memorySummary: p.memory_summary || "",
-                        unsummarizedTurns: [],
-                        userTurnCount: p.user_turn_count || 0,
-                        updatedAt: p.updated_at,
-                    }));
+                    const dbChats: StoredChatState[] = data.personas
+                        .filter((p: any) => Boolean(p.last_message_content))
+                        .map((p: any) => ({
+                            // latest chat activity time (session) must drive sorting
+                            // fallback to persona updated time only when session timestamp is missing
+                            // to keep ordering stable.
+                            personaId: p.persona_id,
+                            personaName: p.name,
+                            avatarUrl: p.avatar_url,
+                            messages: p.last_message_content
+                                ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }]
+                                : [],
+                            memorySummary: p.memory_summary || "",
+                            unsummarizedTurns: [],
+                            userTurnCount: p.user_turn_count || 0,
+                            updatedAt: p.session_updated_at || p.updated_at,
+                        }));
 
                     dbChats.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
                     setSavedChats(dbChats);
@@ -89,6 +92,8 @@ export default function ChatListPage() {
             } catch (err) {
                 console.error("[chat-list] failed to fetch from db", err);
                 setSavedChats([]);
+            } finally {
+                setIsLoading(false);
             }
         };
 
@@ -98,20 +103,18 @@ export default function ChatListPage() {
     async function handleDelete() {
         if (!chatToDelete) return;
 
-        // DB Delete
+        // Chat session reset only (persona must remain)
         try {
-            await fetch(`/api/persona?personaId=${chatToDelete}`, { method: "DELETE" });
+            await fetch(`/api/chat/session?personaId=${encodeURIComponent(chatToDelete)}`, { method: "DELETE" });
         } catch (err) {
-            console.error("[chat-list] failed to delete from db", err);
+            console.error("[chat-list] failed to reset chat session", err);
         }
 
-        // Also clean up artifacts and localStorage for this ID if any exist
-        clearPersonaArtifacts(chatToDelete);
+        // clear only local chat cache for this persona
         window.localStorage.removeItem(getChatStateKey(chatToDelete));
 
         setSavedChats((prev) => prev.filter((c) => c.personaId !== chatToDelete));
         setChatToDelete(null);
-        setShowReviewModal(true);
     }
 
     function maskDisplayName(name: string) {
@@ -163,29 +166,22 @@ export default function ChatListPage() {
 
     return (
         <div className="min-h-screen bg-[#faf9f5] text-[#2f342e]">
-            <nav className="sticky top-0 z-50 w-full bg-[#faf9f5]/80 backdrop-blur-xl">
-                <div className="mx-auto flex h-16 w-full items-center gap-2 px-3">
-                    <button
-                        type="button"
-                        onClick={() => router.push("/")}
-                        className="rounded-xl p-2 text-[#4a626d] transition-colors hover:bg-[#f4f4ef]"
-                        aria-label="홈으로가기"
-                    >
-                        <ArrowLeftIcon />
-                    </button>
-                    <div className="flex-1 pr-10">
-                        <h1 className="text-center font-headline text-lg font-bold tracking-tight text-[#4a626d]">대화 목록</h1>
-                    </div>
-                </div>
-            </nav>
+            <Navigation />
 
-            <main className="mx-auto max-w-md px-4 py-6 pb-20">
-                <div className="mb-6">
-                    <p className="text-sm font-medium text-[#655d5a]">이전 대화방으로 언제든 돌아가세요</p>
+            <header className="fixed top-0 z-40 w-full border-b border-[#d6ddd8] bg-[#ffffff]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden">
+                <div className="mx-auto flex h-16 w-full max-w-md items-center justify-center px-3">
+                    <h1 className="font-headline text-lg font-bold tracking-tight text-[#4a626d]">대화 목록</h1>
                 </div>
+            </header>
 
+            <main className="mx-auto max-w-md px-3 pb-[calc(6.4rem+max(env(safe-area-inset-bottom),0.5rem))] pt-[calc(5rem+env(safe-area-inset-top))] md:px-6 md:pt-20 lg:max-w-2xl lg:pl-64 lg:pb-20">
+                <header className="mb-10 hidden text-center lg:block">
+                    <h1 className="font-headline text-lg font-bold tracking-tight text-[#4a626d]">대화 목록</h1>
+                </header>
                 <div className="space-y-3">
-                    {savedChats.length === 0 ? (
+                    {isLoading ? (
+                        <div className="h-24" />
+                    ) : savedChats.length === 0 ? (
                         <div className="py-10 text-center text-sm text-[#afb3ac]">아직 대화 기록이 없어요.</div>
                     ) : (
                         savedChats.map((chat) => (
@@ -232,17 +228,29 @@ export default function ChatListPage() {
                     )}
                 </div>
 
-                <Link href="/step-1" className="mt-8 flex justify-center rounded-xl bg-[#4a626d] py-3.5 text-base font-semibold text-white shadow-lg transition-colors active:bg-[#3d535e]">
-                    새 페르소나 만들기
-                </Link>
+                {!isLoading ? (
+                    <button
+                        type="button"
+                        disabled={isChecking}
+                        onClick={() => {
+                            void guardCreateStart({
+                                returnTo: "/chat/list",
+                                onAllowed: () => router.push("/step-1/start"),
+                            });
+                        }}
+                        className="mt-8 flex w-full justify-center rounded-xl bg-[#4a626d] py-3.5 text-base font-semibold text-white shadow-lg transition-colors active:bg-[#3d535e] disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                        새 기억 만들기
+                    </button>
+                ) : null}
             </main>
 
             {chatToDelete !== null ? (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 px-5">
                     <section className="w-full max-w-md rounded-3xl bg-[#303733] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.4)]">
-                        <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">내 기억 삭제</h3>
-                        <p className="mt-3 text-sm leading-relaxed text-[#f0f5f2]/80">
-                            선택한 페르소나와 대화 기록을 완전히 삭제합니다. 이 작업은 되돌릴 수 없습니다.
+                        <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">채팅 삭제</h3>
+                        <p className="mt-3 text-sm leading-relaxed text-[#5d605a]">
+                            선택한 기억과의 대화 기록만 초기화합니다.
                         </p>
                         <div className="mt-5 grid grid-cols-2 gap-3">
                             <button
@@ -328,6 +336,7 @@ export default function ChatListPage() {
                     </section>
                 </div>
             ) : null}
+            {modalNode}
         </div>
     );
 }

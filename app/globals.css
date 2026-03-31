@@ -2,91 +2,260 @@
 @import "tailwindcss";
 
 :root {
-  --background: #242926;
-  --on-surface: #d9e1da;
+  --background: #ffffff;
+  --on-surface: #2f342e;
+  --native-safe-top: env(safe-area-inset-top);
+  --native-safe-bottom: env(safe-area-inset-bottom);
+}
+
+html {
+  background-color: var(--background);
+  color-scheme: light;
 }
 
 body {
   background-color: var(--background);
   color: var(--on-surface);
   font-family: var(--font-body), "Plus Jakarta Sans", sans-serif;
+  overscroll-behavior-y: none;
 }
 
-/* Soft dark mode across the app */
+input,
+textarea,
+select {
+  color-scheme: light;
+}
+
+/* Native app safe-area stabilization */
+html.native-app {
+  --native-safe-top: max(env(safe-area-inset-top), 0.75rem);
+  --native-safe-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  color-scheme: light;
+}
+
+html.native-app body {
+  touch-action: pan-x pan-y;
+}
+
+html.native-app input,
+html.native-app textarea,
+html.native-app select {
+  font-size: 16px !important;
+}
+
+html.native-app header.fixed.top-0 {
+  padding-top: var(--native-safe-top) !important;
+}
+
+html.native-app nav.fixed.bottom-0 {
+  padding-bottom: var(--native-safe-bottom) !important;
+}
+
+/* Native app: hide scrollbars across all pages */
+html.native-app * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.native-app *::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* Native app home must be fully static (no fade/transition). */
+html.native-app .native-home-static,
+html.native-app .native-home-static * {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (max-width: 1023px) {
+  html.native-app .home-main {
+    padding-top: calc(4.7rem + env(safe-area-inset-top)) !important;
+  }
+}
+
+/* Native app route transitions can cause white flash during page enter.
+   Keep web fade-in, disable only in native runtime. */
+html.native-app [data-route-shell].route-phase-in main {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* Light mode normalization across the app */
 .bg-\[\#faf9f5\] {
-  background-color: #242926 !important;
+  background-color: #ffffff !important;
 }
 
 .bg-\[\#faf9f5\]\/85 {
-  background-color: rgb(36 41 38 / 0.85) !important;
+  background-color: rgb(255 255 255 / 0.85) !important;
 }
 
 .bg-\[\#faf9f5\]\/80 {
-  background-color: rgb(36 41 38 / 0.8) !important;
+  background-color: rgb(255 255 255 / 0.8) !important;
 }
 
 .bg-\[\#faf9f5\]\/75 {
-  background-color: rgb(36 41 38 / 0.75) !important;
+  background-color: rgb(255 255 255 / 0.75) !important;
 }
 
 .bg-\[\#f4f4ef\] {
-  background-color: #2c322f !important;
+  background-color: #ffffff !important;
 }
 
 .bg-\[\#edeee8\] {
-  background-color: #313834 !important;
+  background-color: #ffffff !important;
 }
 
 .bg-\[\#e6e9e2\] {
-  background-color: #3a433e !important;
+  background-color: #ffffff !important;
 }
 
 .bg-\[\#ece0dc\] {
-  background-color: #3b3432 !important;
+  background-color: #ffffff !important;
 }
 
 .bg-\[\#ece0dc\]\/35 {
-  background-color: rgb(59 52 50 / 0.35) !important;
+  background-color: rgb(255 255 255 / 0.35) !important;
 }
 
 .bg-\[\#ece0dc\]\/55 {
-  background-color: rgb(59 52 50 / 0.55) !important;
+  background-color: rgb(255 255 255 / 0.55) !important;
 }
 
 .bg-white {
-  background-color: #303733 !important;
+  background-color: #ffffff !important;
 }
 
 .bg-white\/70 {
-  background-color: rgb(48 55 51 / 0.7) !important;
+  background-color: rgb(255 255 255 / 0.7) !important;
 }
 
 .text-\[\#2f342e\] {
-  color: #d9e1da !important;
+  color: #2f342e !important;
 }
 
 .text-\[\#4a626d\] {
-  color: #b9cad1 !important;
+  color: #4a626d !important;
 }
 
 .text-\[\#3e5560\] {
-  color: #aac0cb !important;
+  color: #3e5560 !important;
 }
 
 .text-\[\#655d5a\] {
-  color: #aeb4ad !important;
+  color: #655d5a !important;
 }
 
 .text-\[\#5d605a\] {
-  color: #9fa7a0 !important;
+  color: #5d605a !important;
 }
 
 .text-\[\#787c75\] {
-  color: #8d9690 !important;
+  color: #787c75 !important;
 }
 
 .text-\[\#58504d\] {
-  color: #a79f9c !important;
+  color: #58504d !important;
+}
+
+.bg-\[\#242926\],
+.bg-\[\#242926\]\/80,
+.bg-\[\#242926\]\/85,
+.bg-\[\#242926\]\/90,
+.bg-\[\#303733\],
+.bg-\[\#303733\]\/95,
+.bg-\[\#303733\]\/96,
+.bg-\[\#303733\]\/92,
+.bg-\[\#38403b\],
+.bg-\[\#2d3430\],
+.bg-\[\#323a36\],
+.bg-\[\#2c322f\],
+.bg-\[\#313834\],
+.bg-\[\#3a433e\],
+.bg-\[\#1f2421\] {
+  background-color: #ffffff !important;
+}
+
+.text-\[\#f0f5f2\],
+.text-\[\#f0f9ff\],
+.text-\[\#e6ece8\],
+.text-\[\#d9e1da\],
+.text-\[\#b9cad1\],
+.text-\[\#9fb0a8\] {
+  color: #2f342e !important;
+}
+
+.text-white {
+  color: #2f342e !important;
+}
+
+.border-white\/5,
+.border-white\/10,
+.border-white\/15 {
+  border-color: rgb(175 179 172 / 0.35) !important;
+}
+
+.ring-white\/5,
+.ring-white\/10 {
+  --tw-ring-color: rgb(175 179 172 / 0.3) !important;
+}
+
+/* Remove button/nav shadows globally (including custom shadow-[...]) */
+button,
+[role="button"],
+nav,
+button[class*="shadow"],
+a[class*="shadow"],
+nav[class*="shadow"],
+[class*="shadow-["],
+.shadow,
+.shadow-sm,
+.shadow-md,
+.shadow-lg,
+.shadow-xl,
+.shadow-2xl {
+  box-shadow: none !important;
+}
+
+.bg-\[\#4a626d\] .text-white,
+.bg-\[\#4a626d\].text-white,
+.bg-\[\#9f403d\] .text-white,
+.bg-\[\#9f403d\].text-white,
+.bg-\[\#655d5a\] .text-white,
+.bg-\[\#655d5a\].text-white,
+.bg-\[\#ff4d4d\] .text-white,
+.bg-\[\#ff4d4d\].text-white,
+.bg-\[\#3d535e\] .text-white,
+.bg-\[\#3d535e\].text-white,
+.bg-\[\#2f342e\] .text-white,
+.bg-\[\#2f342e\].text-white,
+.from-\[\#3e5560\].text-white,
+.from-\[\#3e5560\] .text-white,
+.to-\[\#4a626d\].text-white,
+.to-\[\#4a626d\] .text-white,
+.bg-\[\#4a626d\] .text-\[\#f0f9ff\],
+.bg-\[\#4a626d\].text-\[\#f0f9ff\],
+.bg-\[\#9f403d\] .text-\[\#f0f9ff\],
+.bg-\[\#9f403d\].text-\[\#f0f9ff\],
+.bg-\[\#655d5a\] .text-\[\#f0f9ff\],
+.bg-\[\#655d5a\].text-\[\#f0f9ff\],
+.bg-\[\#ff4d4d\] .text-\[\#f0f9ff\],
+.bg-\[\#ff4d4d\].text-\[\#f0f9ff\],
+.bg-\[\#3d535e\] .text-\[\#f0f9ff\],
+.bg-\[\#3d535e\].text-\[\#f0f9ff\],
+.bg-\[\#2f342e\] .text-\[\#f0f9ff\],
+.bg-\[\#2f342e\].text-\[\#f0f9ff\],
+.from-\[\#3e5560\].text-\[\#f0f9ff\],
+.from-\[\#3e5560\] .text-\[\#f0f9ff\],
+.to-\[\#4a626d\].text-\[\#f0f9ff\],
+.to-\[\#4a626d\] .text-\[\#f0f9ff\] {
+  color: #f8fbff !important;
 }
 
 .border-\[\#afb3ac\]\/25,
@@ -94,6 +263,25 @@ body {
 .border-\[\#afb3ac\]\/40,
 .border-\[\#afb3ac\]\/60 {
   border-color: rgb(121 129 124 / 0.45) !important;
+}
+
+/* Unify bordered button color to home brand border color */
+button[class*="border"],
+a[class*="border"],
+[role="button"][class*="border"],
+input[type="button"][class*="border"],
+input[type="submit"][class*="border"] {
+  border-color: #3e5560 !important;
+}
+
+/* Apply same brand border color for bordered div cards/blocks across pages */
+div[class*="border"]:not(.chat-header-divider):not(.no-brand-border) {
+  border-color: #3e5560 !important;
+}
+
+/* Chat header divider should stay neutral gray, not brand border */
+.chat-header-divider {
+  border-color: rgb(175 179 172 / 0.35) !important;
 }
 
 .font-headline {
@@ -189,4 +377,30 @@ body {
 /* Hide mobile top header when a modal/bottom-sheet is open to prevent overlapping blurs */
 body.modal-open header.lg\:hidden {
   display: none !important;
+}
+
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+/* Global page transition (fade-in only, 500ms) */
+@keyframes route-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-route-shell].route-phase-in main {
+  animation: route-fade-in 500ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-route-shell].route-phase-in main {
+    animation: none !important;
+  }
 }

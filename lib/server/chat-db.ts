@@ -1,5 +1,6 @@
 import { getDbPool } from "./db";
 import { PersonaRuntime } from "@/types/persona";
+import { inferAvatarStorage } from "@/lib/avatar-storage";
 
 const CREATE_CHAT_TABLES_SQL = `
 CREATE SCHEMA IF NOT EXISTS bogopa;
@@ -10,6 +11,8 @@ CREATE TABLE IF NOT EXISTS bogopa.personas (
   persona_id VARCHAR UNIQUE NOT NULL,
   name VARCHAR NOT NULL,
   avatar_url TEXT,
+  avatar_source VARCHAR(24),
+  avatar_key TEXT,
   analysis JSONB NOT NULL DEFAULT '{}'::jsonb,
   runtime JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -44,6 +47,24 @@ export async function ensureChatTables() {
     ensurePromise = (async () => {
       const pool = getDbPool();
       await pool.query(CREATE_CHAT_TABLES_SQL);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa.personas ADD COLUMN IF NOT EXISTS avatar_source VARCHAR(24);`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa.personas ADD COLUMN IF NOT EXISTS avatar_key TEXT;`);
+      await pool.query(`
+        UPDATE bogopa.personas
+        SET avatar_source = 'default',
+            avatar_key = avatar_url
+        WHERE COALESCE(avatar_source, '') = ''
+          AND avatar_url IS NOT NULL
+          AND avatar_url LIKE '/%';
+      `);
+      await pool.query(`
+        UPDATE bogopa.personas
+        SET avatar_source = 'upload',
+            avatar_key = substring(avatar_url from '(bogopa/(?:persona|user-profile)/[^?]+)')
+        WHERE COALESCE(avatar_source, '') = ''
+          AND avatar_url IS NOT NULL
+          AND avatar_url ~ 'bogopa/(persona|user-profile)/';
+      `);
     })().catch((err) => {
       ensurePromise = null;
       throw err;
@@ -56,25 +77,50 @@ export async function savePersonaToDb(
   userId: string,
   personaId: string,
   name: string,
-  avatarUrl: string | null,
+  avatarInput: {
+    avatarSource?: string | null;
+    avatarKey?: string | null;
+    avatarUrl?: string | null;
+  } | null,
   analysis: unknown,
   runtime: PersonaRuntime
 ) {
   await ensureChatTables();
   const pool = getDbPool();
+  const normalizedAvatar = inferAvatarStorage({
+    avatarSource: avatarInput?.avatarSource,
+    avatarKey: avatarInput?.avatarKey,
+    avatarUrl: avatarInput?.avatarUrl,
+  });
+  const avatarSource = normalizedAvatar.avatarSource;
+  const avatarKey = normalizedAvatar.avatarKey;
+  const avatarUrlForLegacyColumn =
+    avatarSource === "default" ? normalizedAvatar.avatarUrl : null;
+
   await pool.query(
     `
-    INSERT INTO bogopa.personas (user_id, persona_id, name, avatar_url, analysis, runtime)
-    VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+    INSERT INTO bogopa.personas (user_id, persona_id, name, avatar_url, avatar_source, avatar_key, analysis, runtime)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
     ON CONFLICT (persona_id)
     DO UPDATE SET 
       name = EXCLUDED.name,
       avatar_url = EXCLUDED.avatar_url,
+      avatar_source = EXCLUDED.avatar_source,
+      avatar_key = EXCLUDED.avatar_key,
       analysis = EXCLUDED.analysis,
       runtime = EXCLUDED.runtime,
       updated_at = NOW()
     `,
-    [userId, personaId, name, avatarUrl, JSON.stringify(analysis), JSON.stringify(runtime)]
+    [
+      userId,
+      personaId,
+      name,
+      avatarUrlForLegacyColumn,
+      avatarSource,
+      avatarKey,
+      JSON.stringify(analysis),
+      JSON.stringify(runtime),
+    ]
   );
 }
 

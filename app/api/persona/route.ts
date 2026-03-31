@@ -6,6 +6,7 @@ import { PersonaRuntime } from "@/types/persona";
 import { getDbPool } from "@/lib/server/db";
 import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import { consumeMemory, getOrCreateMemoryPassStatus } from "@/lib/server/memory-pass";
+import { inferAvatarStorage, resolveAvatarUrlFromStorage } from "@/lib/avatar-storage";
 
 function trimList(values: string[] | undefined, maxCount: number, maxChars: number) {
     return (values || [])
@@ -20,17 +21,49 @@ function applyRuntimePlanLimits(runtime: PersonaRuntime, options: {
     maxMemoryChars: number;
     maxPhraseCount: number;
     maxPhraseChars: number;
-    keepSummary?: string;
 }) {
     return {
         ...runtime,
-        summary: options.keepSummary ?? runtime.summary ?? "",
+        summary: "",
         memories: trimList(runtime.memories, options.maxMemoryCount, options.maxMemoryChars),
         expressions: {
             ...runtime.expressions,
             frequentPhrases: trimList(runtime.expressions?.frequentPhrases, options.maxPhraseCount, options.maxPhraseChars),
         },
     } as PersonaRuntime;
+}
+
+function normalizeLegacyAvatarUrl(avatarUrl: string | null | undefined) {
+    if (!avatarUrl) return avatarUrl;
+    if (!avatarUrl.startsWith("/img/")) return avatarUrl;
+
+    const legacyNameRaw = avatarUrl.replace(/^\/img\//, "");
+    const legacyName = decodeURIComponent(legacyNameRaw).replace(/\.[a-z0-9]+$/i, "").trim().toLowerCase();
+    const legacyMap: Record<string, string> = {
+        "dad": "/profile/dad.webp",
+        "mom": "/profile/mom.webp",
+        "husband": "/profile/husband.webp",
+        "wife": "/profile/wife.webp",
+        "old brother": "/profile/old brother.webp",
+        "old sister": "/profile/old sister.webp",
+        "young brother": "/profile/young brother.webp",
+        "young sister": "/profile/young sister.webp",
+    };
+
+    return legacyMap[legacyName] ?? "/profile/mom.webp";
+}
+
+function normalizePersonaAvatar(input: {
+    avatarSource?: string | null;
+    avatarKey?: string | null;
+    avatarUrl?: string | null;
+}) {
+    const inferred = inferAvatarStorage(input);
+    return {
+        avatarSource: inferred.avatarSource,
+        avatarKey: inferred.avatarKey,
+        avatarUrl: inferred.avatarUrl ? normalizeLegacyAvatarUrl(inferred.avatarUrl) : null,
+    };
 }
 
 export async function POST(request: NextRequest) {
@@ -44,6 +77,8 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const runtime = body.runtime as PersonaRuntime;
         const avatarUrl = body.avatarUrl as string | null;
+        const avatarSource = body.avatarSource as string | null;
+        const avatarKey = body.avatarKey as string | null;
 
         if (!runtime || !runtime.personaId) {
             return NextResponse.json({ error: "유효하지 않은 데이터입니다." }, { status: 400 });
@@ -62,7 +97,13 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const consumed = await consumeMemory(sessionUser.id, MEMORY_COSTS.personaCreate);
+            const consumed = await consumeMemory(sessionUser.id, MEMORY_COSTS.personaCreate, {
+                reason: "persona_create",
+                detail: {
+                    personaId: runtime.personaId,
+                    personaName: runtime.displayName || "",
+                },
+            });
             if (!consumed.ok) {
                 return NextResponse.json(
                     {
@@ -76,23 +117,39 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!memoryPass.limits.summaryEditable && runtime.summary?.trim()) {
-            return NextResponse.json(
-                { error: "대화 핵심 성향 작성은 기억 패스 전용 기능입니다.", code: "PREMIUM_REQUIRED" },
-                { status: 403 },
-            );
-        }
-
         const limitedRuntime = applyRuntimePlanLimits(runtime, {
             maxMemoryCount: memoryPass.limits.memoryItemMaxCount,
             maxMemoryChars: memoryPass.limits.memoryItemCharMax,
             maxPhraseCount: memoryPass.limits.phraseItemMaxCount,
             maxPhraseChars: memoryPass.limits.phraseItemCharMax,
         });
+        const resolvedAvatar = normalizePersonaAvatar({
+            avatarSource,
+            avatarKey,
+            avatarUrl: avatarUrl || (limitedRuntime as any)?.avatarUrl || null,
+        });
 
-        const name = limitedRuntime.displayName || "알 수 없음";
+        const runtimeWithAvatar = {
+            ...(limitedRuntime as any),
+            avatarUrl: resolvedAvatar.avatarUrl || "",
+            avatarSource: resolvedAvatar.avatarSource,
+            avatarKey: resolvedAvatar.avatarKey,
+        } as PersonaRuntime;
 
-        await savePersonaToDb(sessionUser.id, limitedRuntime.personaId, name, avatarUrl, {}, limitedRuntime);
+        const name = runtimeWithAvatar.displayName || "알 수 없음";
+
+        await savePersonaToDb(
+            sessionUser.id,
+            runtimeWithAvatar.personaId,
+            name,
+            {
+                avatarSource: resolvedAvatar.avatarSource,
+                avatarKey: resolvedAvatar.avatarKey,
+                avatarUrl: resolvedAvatar.avatarUrl,
+            },
+            {},
+            runtimeWithAvatar,
+        );
 
         const nextMemoryPass = await getOrCreateMemoryPassStatus(sessionUser.id);
         return NextResponse.json({ ok: true, memoryBalance: nextMemoryPass.memoryBalance });
@@ -111,7 +168,46 @@ export async function GET(request: NextRequest) {
 
     try {
         const personas = await getPersonasForUser(sessionUser.id);
-        return NextResponse.json({ ok: true, personas });
+        const normalizedPersonas = personas.map((persona: any) => {
+            const inferredPersonaAvatar = inferAvatarStorage({
+                avatarSource: persona.avatar_source,
+                avatarKey: persona.avatar_key,
+                avatarUrl: normalizeLegacyAvatarUrl(persona.avatar_url),
+            });
+            const normalizedAvatarUrl = resolveAvatarUrlFromStorage({
+                avatarSource: inferredPersonaAvatar.avatarSource,
+                avatarKey: inferredPersonaAvatar.avatarKey,
+                legacyAvatarUrl: normalizeLegacyAvatarUrl(persona.avatar_url),
+            });
+            const runtime = persona.runtime ? { ...persona.runtime } : null;
+            if (runtime) {
+                const inferredRuntimeAvatar = inferAvatarStorage({
+                    avatarSource: runtime.avatarSource,
+                    avatarKey: runtime.avatarKey,
+                    avatarUrl: runtime.avatarUrl || normalizedAvatarUrl || null,
+                });
+                runtime.avatarSource = inferredRuntimeAvatar.avatarSource;
+                runtime.avatarKey = inferredRuntimeAvatar.avatarKey;
+                runtime.avatarUrl = resolveAvatarUrlFromStorage({
+                    avatarSource: inferredRuntimeAvatar.avatarSource,
+                    avatarKey: inferredRuntimeAvatar.avatarKey,
+                    legacyAvatarUrl: inferredRuntimeAvatar.avatarUrl,
+                });
+                if (typeof runtime.personaImageUrl === "string") {
+                    runtime.personaImageUrl = normalizeLegacyAvatarUrl(runtime.personaImageUrl);
+                }
+            }
+
+            return {
+                ...persona,
+                avatar_url: normalizedAvatarUrl,
+                avatar_source: inferredPersonaAvatar.avatarSource,
+                avatar_key: inferredPersonaAvatar.avatarKey,
+                runtime,
+            };
+        });
+
+        return NextResponse.json({ ok: true, personas: normalizedPersonas });
     } catch (error) {
         console.error("[api-persona] failed to fetch personas", error);
         return NextResponse.json({ error: "페르소나 목록을 불러오지 못했습니다." }, { status: 500 });
@@ -154,7 +250,7 @@ export async function PATCH(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { personaId, name, avatarUrl } = body;
+        const { personaId, name, avatarUrl, avatarSource, avatarKey } = body;
         const runtime = body.runtime as PersonaRuntime | undefined;
 
         if (!personaId || !runtime?.personaId) {
@@ -167,27 +263,37 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: "존재하지 않는 페르소나입니다." }, { status: 404 });
         }
 
-        const existingRuntime = existing.runtime as PersonaRuntime | undefined;
-        const prevSummary = (existingRuntime?.summary || "").trim();
-        const nextSummary = (runtime.summary || "").trim();
-
-        if (!memoryPass.limits.summaryEditable && nextSummary !== prevSummary) {
-            return NextResponse.json(
-                { error: "대화 핵심 성향 작성은 기억 패스 전용 기능입니다.", code: "PREMIUM_REQUIRED" },
-                { status: 403 },
-            );
-        }
-
         const limitedRuntime = applyRuntimePlanLimits(runtime, {
             maxMemoryCount: memoryPass.limits.memoryItemMaxCount,
             maxMemoryChars: memoryPass.limits.memoryItemCharMax,
             maxPhraseCount: memoryPass.limits.phraseItemMaxCount,
             maxPhraseChars: memoryPass.limits.phraseItemCharMax,
-            keepSummary: memoryPass.limits.summaryEditable ? runtime.summary : prevSummary,
         });
+        const resolvedAvatar = normalizePersonaAvatar({
+            avatarSource,
+            avatarKey,
+            avatarUrl: avatarUrl || (limitedRuntime as any)?.avatarUrl || null,
+        });
+        const runtimeWithAvatar = {
+            ...(limitedRuntime as any),
+            avatarUrl: resolvedAvatar.avatarUrl || "",
+            avatarSource: resolvedAvatar.avatarSource,
+            avatarKey: resolvedAvatar.avatarKey,
+        } as PersonaRuntime;
 
-        const resolvedName = limitedRuntime.displayName || name || "알 수 없음";
-        await savePersonaToDb(sessionUser.id, personaId, resolvedName, avatarUrl, {}, limitedRuntime);
+        const resolvedName = runtimeWithAvatar.displayName || name || "알 수 없음";
+        await savePersonaToDb(
+            sessionUser.id,
+            personaId,
+            resolvedName,
+            {
+                avatarSource: resolvedAvatar.avatarSource,
+                avatarKey: resolvedAvatar.avatarKey,
+                avatarUrl: resolvedAvatar.avatarUrl,
+            },
+            {},
+            runtimeWithAvatar,
+        );
         return NextResponse.json({ ok: true });
     } catch (error) {
         console.error("[api-persona] failed to update persona", error);

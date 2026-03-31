@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import LoginModal from "./LoginModal";
 import LogoutConfirmModal from "@/app/_components/LogoutConfirmModal";
 
@@ -73,18 +73,19 @@ function MoreVerticalIcon({ className }: { className?: string }) {
   );
 }
 
-function NavigationContent() {
+function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNav?: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeChatId = searchParams.get("id");
   const isPaymentPage = pathname?.startsWith("/payment");
-  const isProfileContext = pathname === "/profile" || pathname?.startsWith("/payment");
+  const isProfileContext = pathname?.startsWith("/profile") || pathname?.startsWith("/payment");
+  const isMessagesContext = pathname?.startsWith("/chat");
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [loginNextPath, setLoginNextPath] = useState("/step-1");
+  const [loginNextPath, setLoginNextPath] = useState("/step-1/start");
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -105,11 +106,12 @@ function NavigationContent() {
 
   const navItems = [
     { id: "home", href: "/", icon: HomeIcon, label: "홈" },
-    { id: "messages", href: "/chat", icon: MessagesIcon, label: "메시지" },
+    { id: "messages", href: "/chat/list", icon: MessagesIcon, label: "메시지" },
     { id: "memory", href: "/persona", icon: MemoryIcon, label: "내 기억" },
   ];
 
   const [savedChats, setSavedChats] = useState<StoredChatState[]>([]);
+  const shouldHideMobileBottomNav = hideMobileBottomNav;
 
   useEffect(() => {
     if (!session) return;
@@ -141,15 +143,12 @@ function NavigationContent() {
   }, [session]);
 
   const UserAvatar = ({ size = "w-8 h-8", textClass = "text-xs" }: { size?: string, textClass?: string }) => (
-    <div className={`${size} shrink-0 overflow-hidden rounded-full border border-[#afb3ac]/20 ring-2 ring-transparent transition-all`}>
-      {session?.user?.image ? (
-        <img src={session.user.image} alt="Profile" className="h-full w-full object-cover" />
-      ) : (
-        <div className={`flex h-full w-full items-center justify-center bg-[#4a626d] text-white font-bold ${textClass}`}>
-          {session?.user?.name?.[0] || <UserDefaultIcon className="h-4 w-4" />}
-        </div>
-      )}
-    </div>
+    <UserAvatarInner
+      size={size}
+      textClass={textClass}
+      image={session?.user?.image ?? null}
+      name={session?.user?.name ?? null}
+    />
   );
 
   return (
@@ -166,7 +165,7 @@ function NavigationContent() {
           <nav className="flex flex-col gap-2">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.href;
+              const isActive = item.id === "messages" ? Boolean(isMessagesContext) : pathname === item.href;
               const isProtected = item.id !== "home";
 
               if (isProtected && !session) {
@@ -255,7 +254,7 @@ function NavigationContent() {
         <aside className="fixed left-64 top-0 z-40 hidden h-screen w-72 flex-col border-r border-[#afb3ac]/20 bg-[#242926] py-8 lg:flex">
           <div className="px-6 mb-6">
             <h2 className="font-headline text-lg font-bold text-[#f0f5f2]">최근 대화</h2>
-            <p className="mt-1 text-[11px] font-medium text-[#afb3ac]">나만의 페르소나와 대화를 이어가세요</p>
+            <p className="mt-1 text-[11px] font-medium text-[#5d605a]">나만의 페르소나와 대화를 이어가세요</p>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 scrollbar-hide">
@@ -284,7 +283,7 @@ function NavigationContent() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-[#f0f5f2] group-hover:text-white">{chat.personaName}</p>
-                      <p className="truncate text-[11px] text-[#afb3ac] group-hover:text-[#f0f5f2]/70">{chat.lastMessage || "새로운 대화"}</p>
+                      <p className="truncate text-[11px] text-[#5d605a] group-hover:text-[#2f342e]">{chat.lastMessage || "새로운 대화"}</p>
                     </div>
                   </Link>
 
@@ -325,7 +324,7 @@ function NavigationContent() {
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/20 px-5 backdrop-blur-md">
           <section className="w-full max-w-sm rounded-[2.5rem] bg-[#303733] p-8 shadow-2xl animate-fade-in relative border border-white/5">
             <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">내 기억 삭제</h3>
-            <p className="mt-4 text-sm leading-relaxed text-[#f0f5f2]/80">
+            <p className="mt-4 text-sm leading-relaxed text-[#5d605a]">
               선택한 대화 기록을 완전히 삭제합니다. 이 작업은 되돌릴 수 없습니다.
             </p>
             <div className="mt-8 grid grid-cols-2 gap-3">
@@ -352,10 +351,11 @@ function NavigationContent() {
       )}
 
       {/* Mobile Bottom Tab Bar */}
-      <nav className="fixed bottom-0 left-0 z-50 flex h-[calc(5.5rem+env(safe-area-inset-bottom))] w-full items-start justify-around border-t border-white/5 bg-[#242926]/90 px-2 pt-3 backdrop-blur-xl lg:hidden shadow-[0_-8px_30px_rgba(0,0,0,0.3)]">
+      {!shouldHideMobileBottomNav ? (
+      <nav className="fixed bottom-0 left-0 z-50 flex h-[calc(5.8rem+max(env(safe-area-inset-bottom),0.5rem))] w-full items-start justify-around bg-white px-2 pt-3 lg:hidden">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href;
+            const isActive = item.id === "messages" ? Boolean(isMessagesContext) : pathname === item.href;
             const isProtected = item.id !== "home";
 
             const handleClick = (e: React.MouseEvent) => {
@@ -370,13 +370,13 @@ function NavigationContent() {
                 key={item.id}
                 href={item.href}
                 onClick={handleClick}
-                className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isActive ? "text-[#f0f9ff]" : "text-[#afb3ac]"
+                className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isActive ? "text-[#3e5560]" : "text-[#111111]"
                   }`}
               >
-                <div className={`flex flex-col items-center gap-1.5 rounded-2xl px-6 py-2.5 transition-all ${isActive ? "bg-white/10 -translate-y-[2px]" : "bg-transparent translate-y-0"
+                <div className={`flex flex-col items-center gap-1.5 px-6 py-2.5 transition-transform ${isActive ? "-translate-y-[2px]" : "translate-y-0"
                   }`}>
-                  <Icon className={`h-6 w-6 transition-transform ${isActive ? "scale-110" : "scale-100"}`} />
-                  <span className={`text-[11px] font-bold tracking-tight transition-colors ${isActive ? "text-[#f0f9ff]" : "text-[#afb3ac]"}`}>
+                  <Icon className={`h-7 w-7 transition-transform ${isActive ? "scale-110" : "scale-100"}`} />
+                  <span className={`text-[12px] font-bold tracking-tight transition-colors ${isActive ? "text-[#3e5560]" : "text-[#111111]"}`}>
                     {item.label}
                   </span>
                 </div>
@@ -387,13 +387,13 @@ function NavigationContent() {
           {!session ? (
             <button
               onClick={() => openLoginModal("/profile")}
-              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"
+              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isProfileContext ? "text-[#3e5560]" : "text-[#111111]"
                 }`}
             >
-              <div className={`flex flex-col items-center gap-1.5 rounded-2xl px-6 py-2.5 transition-all ${isProfileContext ? "bg-white/10 -translate-y-[2px]" : "bg-transparent translate-y-0"
+              <div className={`flex flex-col items-center gap-1.5 px-6 py-2.5 transition-transform ${isProfileContext ? "-translate-y-[2px]" : "translate-y-0"
                 }`}>
-                <UserAvatar size="w-6 h-6" textClass="text-[10px]" />
-                <span className={`text-[11px] font-bold tracking-tight transition-colors ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"}`}>
+                <UserAvatar size="w-7 h-7" textClass="text-[11px]" />
+                <span className={`text-[12px] font-bold tracking-tight transition-colors ${isProfileContext ? "text-[#3e5560]" : "text-[#111111]"}`}>
                   프로필
                 </span>
               </div>
@@ -401,39 +401,83 @@ function NavigationContent() {
           ) : (
             <Link
               href="/profile"
-              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"
+              className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isProfileContext ? "text-[#3e5560]" : "text-[#111111]"
                 }`}
             >
-              <div className={`flex flex-col items-center gap-1.5 rounded-2xl px-6 py-2.5 transition-all ${isProfileContext ? "bg-white/10 -translate-y-[2px]" : "bg-transparent translate-y-0"
+              <div className={`flex flex-col items-center gap-1.5 px-6 py-2.5 transition-transform ${isProfileContext ? "-translate-y-[2px]" : "translate-y-0"
                 }`}>
-                <UserAvatar size="w-6 h-6" textClass="text-[10px]" />
-                <span className={`text-[11px] font-bold tracking-tight transition-colors ${isProfileContext ? "text-[#f0f9ff]" : "text-[#afb3ac]"}`}>
+                <UserAvatar size="w-7 h-7" textClass="text-[11px]" />
+                <span className={`text-[12px] font-bold tracking-tight transition-colors ${isProfileContext ? "text-[#3e5560]" : "text-[#111111]"}`}>
                   프로필
                 </span>
               </div>
             </Link>
           )}
         </nav>
+      ) : null}
 
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} nextPath={loginNextPath} />
     </>
   );
 }
 
-function NavigationFallback() {
+function UserAvatarInner({
+  size,
+  textClass,
+  image,
+  name,
+}: {
+  size: string;
+  textClass: string;
+  image: string | null;
+  name: string | null;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const shouldShowImage = Boolean(image) && !imageFailed;
+
+  return (
+    <div className={`${size} shrink-0 overflow-hidden rounded-full border border-[#afb3ac]/20 ring-2 ring-transparent transition-all`}>
+      {shouldShowImage ? (
+        <img
+          src={image || ""}
+          alt="Profile"
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <div className={`flex h-full w-full items-center justify-center bg-[#4a626d] text-white font-bold ${textClass}`}>
+          {name?.[0] || <UserDefaultIcon className="h-4 w-4" />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavigationFallback({ hideMobileBottomNav = false }: { hideMobileBottomNav?: boolean }) {
   return (
     <>
       <aside className="fixed left-0 top-0 z-50 hidden h-screen w-64 border-r border-[#afb3ac]/20 bg-[#faf9f5] lg:flex" />
-      <nav className="fixed bottom-0 left-0 z-50 flex h-[calc(5.5rem+env(safe-area-inset-bottom))] w-full border-t border-white/5 bg-[#242926]/90 backdrop-blur-xl lg:hidden" />
+      {!hideMobileBottomNav ? (
+      <nav className="fixed bottom-0 left-0 z-50 flex h-[calc(5.8rem+max(env(safe-area-inset-bottom),0.5rem))] w-full bg-white lg:hidden" />
+      ) : null}
     </>
   );
 }
 
-export default function Navigation() {
+export default function Navigation({ hideMobileBottomNav = false }: { hideMobileBottomNav?: boolean }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <NavigationFallback hideMobileBottomNav={hideMobileBottomNav} />;
+  }
+
   return (
-    <Suspense fallback={<NavigationFallback />}>
-      <NavigationContent />
+    <Suspense fallback={<NavigationFallback hideMobileBottomNav={hideMobileBottomNav} />}>
+      <NavigationContent hideMobileBottomNav={hideMobileBottomNav} />
     </Suspense>
   );
 }
-import { Suspense } from "react";

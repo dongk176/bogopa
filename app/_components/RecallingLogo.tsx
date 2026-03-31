@@ -1,14 +1,28 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useState } from "react";
 
-export default function RecallingLogo({ children, delay = 600 }: { children: React.ReactNode, delay?: number }) {
-  const [show, setShow] = useState(false);
+export default function RecallingLogo({
+  children,
+  delay = 600,
+  disableAnimation = false,
+}: {
+  children: React.ReactNode;
+  delay?: number;
+  disableAnimation?: boolean;
+}) {
+  const [show, setShow] = useState(disableAnimation);
 
   useEffect(() => {
+    const shouldDisable = disableAnimation || Capacitor.isNativePlatform();
+    if (shouldDisable) {
+      setShow(true);
+      return;
+    }
     const timer = setTimeout(() => setShow(true), delay);
     return () => clearTimeout(timer);
-  }, [delay]);
+  }, [delay, disableAnimation]);
 
   return (
     <div 

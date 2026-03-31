@@ -16,9 +16,9 @@ export default function SiteFooter() {
                             Bogopa
                         </span>
                         <p className="text-sm leading-relaxed text-[#655d5a]">
-                            기억을 바탕으로,
+                            기억이 있다면,
                             <br />
-                            다시 만나는 대화 동반자
+                            <span className="text-[#4a626d]">다시 만날 수 있습니다</span>
                         </p>
                     </div>
 

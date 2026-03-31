@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getOrCreateSession, getMessagesForSession, updateSessionState, saveMessageToDb } from "@/lib/server/chat-db";
+import {
+    clearSessionMessages,
+    getOrCreateSession,
+    getMessagesForSession,
+    updateSessionState,
+    saveMessageToDb,
+} from "@/lib/server/chat-db";
 
 export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -70,7 +76,6 @@ export async function DELETE(request: NextRequest) {
 
     try {
         const chatSession = await getOrCreateSession(sessionUser.id, personaId);
-        const { clearSessionMessages } = require("@/lib/server/chat-db");
         await clearSessionMessages(chatSession.id);
         
         return NextResponse.json({ ok: true });

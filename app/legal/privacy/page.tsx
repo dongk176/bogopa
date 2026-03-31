@@ -7,9 +7,9 @@ export default function PrivacyPage() {
     return (
         <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
             <LegalExitScrollMarker />
-            <LegalMobileHeader title="개인정보 수집·이용 동의" />
+            <LegalMobileHeader title="개인정보 수집·이용 동의" backHref="/profile/account-settings" />
 
-            <header className="fixed top-0 z-50 hidden w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl md:block">
+            <header className="fixed top-0 z-50 hidden w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:block">
                 <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-6">
                     <Link href="/" className="flex items-center gap-2">
                         <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-6 w-auto object-contain" />
@@ -19,7 +19,7 @@ export default function PrivacyPage() {
                 </div>
             </header>
 
-            <main className="mx-auto w-full max-w-3xl px-6 pb-28 pt-24 md:pt-32">
+            <main className="mx-auto w-full max-w-3xl px-6 pb-28 pt-[calc(6rem+env(safe-area-inset-top))] md:pt-[calc(8rem+env(safe-area-inset-top))]">
                 <h1 className="font-headline mb-10 text-3xl font-extrabold tracking-tight text-[#2f342e]">개인정보 수집·이용 동의</h1>
 
                 <div className="space-y-8 text-sm leading-relaxed text-white">

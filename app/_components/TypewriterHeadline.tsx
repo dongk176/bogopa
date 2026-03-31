@@ -1,18 +1,34 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
 import { useState, useEffect } from "react";
 
-export default function TypewriterHeadline() {
-    const line1 = "기억을 바탕으로,";
-    const line2 = "다시 만나는 대화";
+export default function TypewriterHeadline({ disableAnimation = false }: { disableAnimation?: boolean }) {
+    const line1 = "기억이 있다면,";
+    const line2 = "다시 만날 수 있습니다";
 
-    const [text1, setText1] = useState("");
-    const [text2, setText2] = useState("");
-    const [showCursor1, setShowCursor1] = useState(true);
+    const [runtimeDisable, setRuntimeDisable] = useState(disableAnimation);
+    const [text1, setText1] = useState(disableAnimation ? line1 : "");
+    const [text2, setText2] = useState(disableAnimation ? line2 : "");
+    const [showCursor1, setShowCursor1] = useState(!disableAnimation);
     const [showCursor2, setShowCursor2] = useState(false);
-    const [isIntro, setIsIntro] = useState(true);
+    const [isIntro, setIsIntro] = useState(!disableAnimation);
 
     useEffect(() => {
+        const nativeRuntime = Capacitor.isNativePlatform();
+        const shouldDisable = disableAnimation || nativeRuntime;
+        setRuntimeDisable(shouldDisable);
+
+        if (shouldDisable) {
+            setText1(line1);
+            setText2(line2);
+            setShowCursor1(false);
+            setShowCursor2(false);
+            setIsIntro(false);
+            document.body.style.overflow = "";
+            return;
+        }
+
         // 스크롤 잠금 및 최상단 강제 고정
         document.body.style.overflow = "hidden";
         window.scrollTo(0, 0);
@@ -47,22 +63,22 @@ export default function TypewriterHeadline() {
             }
         };
 
-        const initialDelay = setTimeout(typeLine1, 300);
+        const initialDelay = setTimeout(typeLine1, 0);
 
         return () => {
             clearTimeout(initialDelay);
             document.body.style.overflow = ""; // 언마운트 시 항상 해제
         };
-    }, []);
+    }, [disableAnimation]);
 
     return (
         <div
-            className={`transition-all duration-[1200ms] ease-in-out relative z-10 ${isIntro ? 'translate-y-[28vh] md:translate-y-[32vh] scale-[1.15]' : 'translate-y-0 scale-100'
+            className={`${runtimeDisable ? "relative z-10" : "transition-all duration-[1200ms] ease-in-out relative z-10"} ${isIntro && !runtimeDisable ? 'translate-y-[28vh] md:translate-y-[32vh] scale-[1.15]' : 'translate-y-0 scale-100'
                 }`}
         >
-            <h1 className="font-headline mb-5 text-4xl leading-[1.1] font-extrabold tracking-tight text-[#2f342e] md:mb-8 md:text-6xl">
+            <h1 className="font-headline mb-5 text-3xl leading-[1.1] font-extrabold tracking-tight text-[#2f342e] md:mb-8 md:text-5xl">
                 <span className="inline-block relative">
-                    <span className="opacity-0 pointer-events-none select-none">{line1}</span>
+                    <span suppressHydrationWarning className="opacity-0 pointer-events-none select-none">{line1}</span>
                     <span className="absolute left-0 top-0 whitespace-nowrap text-left">
                         {text1}
                         <span className={`transition-opacity duration-200 ml-0.5 font-light opacity-80 ${showCursor1 ? 'animate-pulse' : 'hidden'}`}>|</span>
@@ -70,7 +86,7 @@ export default function TypewriterHeadline() {
                 </span>
                 <br />
                 <span className="text-[#4a626d] inline-block relative">
-                    <span className="opacity-0 pointer-events-none select-none">{line2}</span>
+                    <span suppressHydrationWarning className="opacity-0 pointer-events-none select-none">{line2}</span>
                     <span className="absolute left-0 top-0 whitespace-nowrap text-left">
                         {text2}
                         <span className={`transition-opacity duration-200 ml-0.5 font-light opacity-80 ${showCursor2 ? 'animate-pulse' : 'hidden'}`}>|</span>

@@ -82,7 +82,7 @@ export default function StepFivePage() {
 
   return (
     <div className="min-h-screen bg-[#faf9f5] text-[#2f342e]">
-      <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/75 backdrop-blur-md">
+      <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/75 pt-[env(safe-area-inset-top)] backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
           <button 
             type="button"
@@ -95,7 +95,7 @@ export default function StepFivePage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 pb-28 pt-24 md:pt-28">
+      <main className="mx-auto max-w-6xl px-6 pb-28 pt-[calc(6rem+env(safe-area-inset-top))] md:pt-28">
         <div className="mb-10 text-center">
           <p className="mb-2 text-xs font-bold uppercase tracking-[0.26em] text-[#4a626d]/45">Persona Analysis</p>
           <h1 className="font-headline text-4xl font-extrabold tracking-tight text-[#2f342e] md:text-5xl">분석 결과</h1>

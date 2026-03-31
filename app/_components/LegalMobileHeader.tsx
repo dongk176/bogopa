@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 
 type LegalMobileHeaderProps = {
   title: string;
+  backHref?: string;
 };
 
 function BackIcon() {
@@ -14,10 +16,22 @@ function BackIcon() {
   );
 }
 
-export default function LegalMobileHeader({ title }: LegalMobileHeaderProps) {
+export default function LegalMobileHeader({ title, backHref }: LegalMobileHeaderProps) {
   const router = useRouter();
 
+  useNativeSwipeBack(() => {
+    if (backHref) {
+      router.push(backHref);
+      return;
+    }
+    router.push("/");
+  });
+
   function handleBack() {
+    if (backHref) {
+      router.push(backHref);
+      return;
+    }
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
       return;
@@ -26,7 +40,7 @@ export default function LegalMobileHeader({ title }: LegalMobileHeaderProps) {
   }
 
   return (
-    <header className="fixed top-0 z-50 w-full border-b border-white/5 bg-[#242926]/80 backdrop-blur-md md:hidden">
+    <header className="fixed top-0 z-50 w-full border-b border-white/5 bg-[#242926]/80 pt-[env(safe-area-inset-top)] backdrop-blur-md md:hidden">
       <div className="relative mx-auto flex h-16 w-full items-center px-4">
         <button
           type="button"

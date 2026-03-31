@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type TouchEvent } from "react";
 import { useRouter } from "next/navigation";
 import { PersonaRuntime, PrimaryGoal } from "@/types/persona";
-import { FREE_PLAN_LIMITS, MEMORY_PASS_REQUIRED_MESSAGE, PlanLimits } from "@/lib/memory-pass/config";
+import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 
 type Props = {
   open: boolean;
@@ -17,7 +17,6 @@ type EditForm = {
   name: string;
   relation: string;
   callsUserAs: string;
-  summary: string;
   frequentPhrases: string[];
   tone: string;
   politeness: string;
@@ -46,33 +45,13 @@ const GOAL_VALUE_TO_LABEL: Record<PrimaryGoal, string> = {
 };
 
 const GOAL_LABELS = Object.values(GOAL_VALUE_TO_LABEL);
-const SUMMARY_PLACEHOLDERS = {
-  parent: [
-    "예: 다그치지 말고 먼저 안심시키는 말투로, 짧게 안부를 묻고 차분히 마무리해줘.",
-    "예: 무리하지 말라는 따뜻한 한마디를 먼저 건네고, 필요한 조언은 짧게 덧붙여줘.",
-    "예: 감정을 먼저 받아주고 현실적인 위로를 한 문장으로 정리해주는 톤으로 말해줘.",
-  ],
-  friend: [
-    "예: 가볍고 솔직한 반말로 근황을 물어보되, 부담 주지 않게 편하게 이어가줘.",
-    "예: 너무 무겁지 않게 공감하고, 필요할 때만 짧고 현실적인 조언을 해줘.",
-    "예: 장난은 가볍게만 하고 상대가 다운되면 바로 차분하게 맞춰주는 톤으로 말해줘.",
-  ],
-  partner: [
-    "예: 다정한 말투로 안부를 먼저 묻고, 감정을 세심하게 받아주는 흐름으로 이어가줘.",
-    "예: 불안한 마음을 안정시키는 표현 위주로, 캐묻지 말고 따뜻하게 공감해줘.",
-    "예: 가까운 사이의 부드러운 톤으로 하루를 물어보고 편안하게 대화를 이어가줘.",
-  ],
-  sibling: [
-    "예: 편한 가족 말투로 시작하되, 챙기는 느낌을 살려 짧고 명확하게 말해줘.",
-    "예: 놀리기보다 실질적으로 도와주는 누나/형 같은 톤으로 대화를 이어가줘.",
-    "예: 감정이 올라오면 한 템포 늦춰서 차분하게 받아주고 부담 없이 마무리해줘.",
-  ],
-  default: [
-    "예: 따뜻하지만 과장되지 않은 말투로 감정을 먼저 수용하고 자연스럽게 이어가줘.",
-    "예: 답을 강요하지 말고 짧고 명확한 문장으로 편안한 대화 흐름을 유지해줘.",
-    "예: 상황을 단정하지 않고 공감 중심으로, 부담 없는 속도로 대화를 이어가줘.",
-  ],
-} as const;
+const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
+const MEMORY_ITEM_CHAR_LIMIT = 50;
+
+function isEditableTarget(target: EventTarget | null): target is HTMLElement {
+  if (!(target instanceof HTMLElement)) return false;
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
+}
 
 function toGoalLabel(value?: string) {
   if (!value) return GOAL_VALUE_TO_LABEL.casual_talk;
@@ -83,21 +62,6 @@ function toGoalValue(label?: string): PrimaryGoal {
   const entry = Object.entries(GOAL_VALUE_TO_LABEL).find(([, text]) => text === label);
   if (!entry) return "casual_talk";
   return entry[0] as PrimaryGoal;
-}
-
-function resolveRelationBucket(relation: string) {
-  const normalized = relation.replace(/\s/g, "");
-  if (/(엄마|아빠|어머니|아버지|부모|할머니|할아버지)/.test(normalized)) return "parent";
-  if (/(친구|절친|베프|동창)/.test(normalized)) return "friend";
-  if (/(연인|애인|남친|여친|배우자|남편|아내|와이프|부인)/.test(normalized)) return "partner";
-  if (/(형|오빠|누나|언니|동생|형제|자매)/.test(normalized)) return "sibling";
-  return "default";
-}
-
-function pickRandomSummaryPlaceholder(relation: string) {
-  const bucket = resolveRelationBucket(relation);
-  const candidates = SUMMARY_PLACEHOLDERS[bucket];
-  return candidates[Math.floor(Math.random() * candidates.length)] || SUMMARY_PLACEHOLDERS.default[0];
 }
 
 function CustomDropdown({
@@ -166,7 +130,6 @@ function buildInitialEditForm(runtime: PersonaRuntime): EditForm {
     name: runtime.displayName || "",
     relation: runtime.relation || "",
     callsUserAs: runtime.addressing?.callsUserAs?.[0] || "나",
-    summary: runtime.summary || "",
     frequentPhrases: runtime.expressions?.frequentPhrases || [],
     tone: (runtime.style?.tone || []).join(", "),
     politeness: runtime.style?.politeness || "편안한 반말",
@@ -185,17 +148,20 @@ function buildInitialEditForm(runtime: PersonaRuntime): EditForm {
 export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, onRuntimeSaved }: Props) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
+  const [isEditInputFocused, setIsEditInputFocused] = useState(false);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [summaryPlaceholder, setSummaryPlaceholder] = useState(() => pickRandomSummaryPlaceholder(""));
   const [limits, setLimits] = useState<PlanLimits>(FREE_PLAN_LIMITS);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [isHandleDragging, setIsHandleDragging] = useState(false);
+  const sheetSwipeStartYRef = useRef<number | null>(null);
+  const sheetSwipeLastYRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open || !runtime) return;
     setEditForm(buildInitialEditForm(runtime));
-    setSummaryPlaceholder(pickRandomSummaryPlaceholder(runtime.relation || ""));
     setIsEditing(false);
+    setIsEditInputFocused(false);
 
     void (async () => {
       try {
@@ -213,11 +179,72 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
   useEffect(() => {
     if (!open) {
       document.body.classList.remove("modal-open");
+      setIsEditInputFocused(false);
+      setIsHandleDragging(false);
+      sheetSwipeStartYRef.current = null;
+      sheetSwipeLastYRef.current = null;
       return;
     }
     document.body.classList.add("modal-open");
     return () => document.body.classList.remove("modal-open");
   }, [open]);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setIsEditInputFocused(false);
+    }
+  }, [isEditing]);
+
+  function handleSheetSwipeStart(event: TouchEvent<HTMLDivElement>) {
+    if (event.touches.length !== 1) return;
+    const y = event.touches[0].clientY;
+    sheetSwipeStartYRef.current = y;
+    sheetSwipeLastYRef.current = y;
+    setIsHandleDragging(true);
+  }
+
+  function handleSheetSwipeMove(event: TouchEvent<HTMLDivElement>) {
+    if (!isHandleDragging || event.touches.length !== 1) return;
+    const y = event.touches[0].clientY;
+    sheetSwipeLastYRef.current = y;
+    if (y > (sheetSwipeStartYRef.current ?? y)) {
+      event.preventDefault();
+    }
+  }
+
+  function handleSheetSwipeEnd() {
+    const startY = sheetSwipeStartYRef.current;
+    const endY = sheetSwipeLastYRef.current;
+    const deltaY = startY !== null && endY !== null ? endY - startY : 0;
+
+    setIsHandleDragging(false);
+    sheetSwipeStartYRef.current = null;
+    sheetSwipeLastYRef.current = null;
+
+    if (deltaY > SHEET_CLOSE_SWIPE_THRESHOLD) {
+      onClose();
+    }
+  }
+
+  function handleEditorFocusCapture(event: FocusEvent<HTMLDivElement>) {
+    if (!isEditing) return;
+    if (isEditableTarget(event.target)) {
+      setIsEditInputFocused(true);
+    }
+  }
+
+  function handleEditorBlurCapture(event: FocusEvent<HTMLDivElement>) {
+    if (!isEditing) return;
+    const container = event.currentTarget;
+    window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      const shouldKeepHidden =
+        active instanceof HTMLElement && container.contains(active) && isEditableTarget(active);
+      if (!shouldKeepHidden) {
+        setIsEditInputFocused(false);
+      }
+    });
+  }
 
   const renderListEditor = (
     label: string,
@@ -227,7 +254,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
     options?: { maxItems?: number; maxChars?: number; onLimitReached?: () => void },
   ) => (
     <div className="space-y-3">
-      <label className="mb-1 block text-sm font-bold uppercase text-[#afb3ac]">{label}</label>
+      <label className="mb-1 block text-sm font-bold uppercase text-[#4a626d]">{label}</label>
       {list.map((item, idx) => (
         <div key={`${label}-${idx}`} className="flex gap-2">
           <input
@@ -239,7 +266,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
               next[idx] = e.target.value.slice(0, options?.maxChars ?? 120);
               setList(next);
             }}
-            className="flex-1 rounded-xl bg-[#f4f4ef] px-4 py-3 text-base font-bold transition-all focus:outline-none focus:ring-2 focus:ring-[#4a626d]/20"
+            className="flex-1 rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] px-4 py-3 text-base font-bold text-[#2f342e] placeholder:text-[#7f867f] transition-all focus:outline-none focus:border-2 focus:border-[#4a626d] focus:ring-0"
           />
           <button
             type="button"
@@ -262,11 +289,11 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
           }
           setList([...list, ""]);
         }}
-        className="w-full rounded-xl border border-dashed border-[#afb3ac] py-2 text-xs font-bold text-[#afb3ac] transition-all hover:border-[#4a626d] hover:text-[#4a626d]"
+        className="w-full rounded-xl border border-dashed border-[#4a626d]/40 py-3.5 text-sm font-bold text-[#4a626d] transition-all hover:border-[#3e5560] hover:text-[#3e5560]"
       >
         + 항목 추가하기
       </button>
-      <p className="text-xs text-[#7f867f]">
+      <p className="text-xs text-[#5d605a]">
         최대 {options?.maxItems ?? 20}개 · 항목당 최대 {options?.maxChars ?? 120}자
       </p>
     </div>
@@ -286,7 +313,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
           relation: editForm.relation,
           goal: toGoalValue(editForm.goal),
           customGoalText: toGoalValue(editForm.goal) === "custom" ? (editForm.customGoalText || "").trim() : "",
-          summary: limits.summaryEditable ? editForm.summary : runtime.summary,
+          summary: "",
           addressing: {
             ...(runtime.addressing || { callsUserAs: [], userCallsPersonaAs: [] }),
             callsUserAs: [editForm.callsUserAs],
@@ -357,8 +384,24 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
     <div className="animate-fade-in fixed inset-0 z-[140] flex items-end justify-center bg-black/40 backdrop-blur-sm lg:items-center lg:p-5">
       <div className="absolute inset-0" onClick={onClose} />
 
-      <div className="animate-slide-up relative flex h-[90vh] w-full flex-col overflow-hidden rounded-t-[3rem] border border-white/20 bg-[#faf9f5] shadow-2xl lg:max-w-5xl lg:rounded-[3rem]">
-        <div className="mx-auto mt-4 h-1.5 w-12 shrink-0 rounded-full bg-[#afb3ac]/30 lg:hidden" />
+      <div
+        className="animate-slide-up relative flex h-[90vh] w-full flex-col overflow-hidden rounded-t-[3rem] border border-white/20 bg-[#faf9f5] shadow-2xl lg:max-w-5xl lg:rounded-[3rem]"
+        onFocusCapture={handleEditorFocusCapture}
+        onBlurCapture={handleEditorBlurCapture}
+      >
+        <div
+          className="mx-auto mt-3 flex w-full shrink-0 touch-none justify-center pb-2 lg:hidden"
+          onTouchStart={handleSheetSwipeStart}
+          onTouchMove={handleSheetSwipeMove}
+          onTouchEnd={handleSheetSwipeEnd}
+          onTouchCancel={handleSheetSwipeEnd}
+        >
+          <div
+            className={`h-1.5 rounded-full transition-all ${
+              isHandleDragging ? "w-16 bg-[#8a928d]/55" : "w-12 bg-[#afb3ac]/30"
+            }`}
+          />
+        </div>
 
         <header className="flex shrink-0 items-center justify-between border-b border-[#afb3ac]/10 bg-[#faf9f5] px-8 py-6 lg:px-12">
           <div className="flex items-center gap-4">
@@ -375,7 +418,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
             </div>
             <div className="min-w-0">
               <h2 className="truncate font-headline text-xl font-bold text-[#2f342e]">{runtime.displayName}와의 기억</h2>
-              <p className="text-xs text-[#655d5a]">{isEditing ? "기억의 파편들을 직접 정교하게 다듬고 있습니다." : "AI가 분석한 대화 스타일과 특징을 확인하세요."}</p>
+              <p className="text-xs text-[#655d5a]">{isEditing ? "저장할 말투와 기억을 직접 다듬고 있습니다." : "저장한 대화 스타일과 기억을 확인하거나 수정하세요."}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -504,51 +547,22 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
 
             <div className="space-y-12">
               <section>
-                <h3 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">대화 핵심 성향 (서술형)</h3>
-                <div className="rounded-[2rem] border border-[#afb3ac]/10 bg-white p-6 shadow-sm md:p-8">
-                  {isEditing ? (
-                    limits.summaryEditable ? (
-                      <textarea
-                        value={editForm.summary}
-                        onChange={(e) => setEditForm({ ...editForm, summary: e.target.value })}
-                        placeholder={summaryPlaceholder}
-                        className="min-h-[140px] w-full rounded-2xl bg-[#f4f4ef] px-5 py-4 text-base font-medium leading-relaxed transition-all focus:outline-none focus:ring-2 focus:ring-[#4a626d]/20"
-                      />
-                    ) : (
-                      <div className="rounded-2xl border border-[#4a626d]/15 bg-[#f4f4ef] p-5 text-center">
-                        <p className="text-sm font-semibold text-[#4a626d]">{MEMORY_PASS_REQUIRED_MESSAGE}</p>
-                        <button
-                          type="button"
-                          onClick={goToPayment}
-                          className="mt-4 rounded-2xl bg-[#4a626d] px-5 py-3 text-sm font-bold text-[#f0f9ff]"
-                        >
-                          기억 패스 등록하기
-                        </button>
-                      </div>
-                    )
-                  ) : (
-                    <p className="text-base font-medium leading-relaxed text-[#2f342e]">{runtime.summary || "설정된 성향이 없습니다."}</p>
-                  )}
-                </div>
-              </section>
-
-              <section>
                 <h3 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">소중한 기억의 조각들</h3>
-                <div className="rounded-[2rem] border border-[#afb3ac]/10 bg-white p-6 shadow-sm md:p-8">
+                <div className="min-h-[168px] rounded-[2rem] border border-[#afb3ac]/10 bg-white p-6 shadow-sm md:p-8">
                   {isEditing ? (
                     renderListEditor(
-                      "핵심 추억 리스트",
+                      "핵심 기억",
                       editForm.memories,
                       (next) => setEditForm({ ...editForm, memories: next }),
                       "예: 2019년 제주도 바닷가 산책",
                       {
                         maxItems: limits.memoryItemMaxCount,
-                        maxChars: limits.memoryItemCharMax,
+                        maxChars: MEMORY_ITEM_CHAR_LIMIT,
                         onLimitReached: isSubscribed ? undefined : goToPayment,
                       },
                     )
                   ) : (
-                    <div className="space-y-4">
+                    <div className="min-h-[104px] space-y-4">
                       {(runtime.memories || []).length > 0 ? (
                         (runtime.memories || []).map((memory, i) => (
                           <div key={i} className="flex items-start gap-4 border-b border-[#afb3ac]/20 py-5 last:border-0">
@@ -559,7 +573,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
                           </div>
                         ))
                       ) : (
-                        <p className="text-sm italic text-[#afb3ac]">아직 공유된 기억이 없습니다.</p>
+                        <p className="text-sm italic text-[#5d605a]">아직 공유된 기억이 없습니다.</p>
                       )}
                     </div>
                   )}
@@ -568,7 +582,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
 
               <section>
                 <h3 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">입버릇처럼 달고 살던 말</h3>
-                <div className="rounded-[2rem] border border-[#afb3ac]/10 bg-white p-6 shadow-sm md:p-8">
+                <div className="min-h-[168px] rounded-[2rem] border border-[#afb3ac]/10 bg-white p-6 shadow-sm md:p-8">
                   {isEditing ? (
                     renderListEditor(
                       "자주 쓰는 문구",
@@ -582,12 +596,18 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
                       },
                     )
                   ) : (
-                    <div className="flex flex-wrap gap-3">
-                      {(runtime.expressions?.frequentPhrases || []).map((phrase, i) => (
-                        <span key={i} className="rounded-2xl border border-[#4a626d]/5 bg-[#f4f4ef] px-4 py-2.5 text-base font-bold text-[#4a626d] shadow-sm">
-                          "{phrase}"
-                        </span>
-                      ))}
+                    <div className="min-h-[104px]">
+                      {(runtime.expressions?.frequentPhrases || []).length > 0 ? (
+                        <div className="flex flex-wrap gap-3">
+                          {(runtime.expressions?.frequentPhrases || []).map((phrase, i) => (
+                            <span key={i} className="rounded-2xl border border-[#4a626d]/5 bg-[#f4f4ef] px-4 py-2.5 text-base font-bold text-[#4a626d] shadow-sm">
+                              "{phrase}"
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm italic text-[#5d605a]">아직 공유된 입버릇이 없습니다.</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -611,7 +631,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
                   대화 계속하기
                 </button>
               </div>
-            ) : (
+            ) : isEditInputFocused ? null : (
               <div className="grid w-full grid-cols-2 gap-3 pb-safe md:flex md:w-auto md:justify-end">
                 <button
                   type="button"

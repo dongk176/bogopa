@@ -1,8 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Manrope, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/app/_components/AuthProvider";
 import StepRouteScrollTop from "@/app/_components/StepRouteScrollTop";
+import OnboardingDraftScopeGuard from "@/app/_components/OnboardingDraftScopeGuard";
+import RouteTransitionShell from "@/app/_components/RouteTransitionShell";
 
 const headlineFont = Manrope({
   subsets: ["latin"],
@@ -25,6 +27,12 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 const rootClassName = `${headlineFont.variable} ${bodyFont.variable} h-full antialiased`;
 
 export default function RootLayout({
@@ -37,10 +45,11 @@ export default function RootLayout({
       <head>
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
       </head>
-      <body className="min-h-full flex flex-col bg-[#faf9f5] text-[#2f342e]">
+      <body className="min-h-full flex flex-col bg-white text-[#2f342e]">
         <AuthProvider>
           <StepRouteScrollTop />
-          {children}
+          <OnboardingDraftScopeGuard />
+          <RouteTransitionShell>{children}</RouteTransitionShell>
         </AuthProvider>
       </body>
     </html>

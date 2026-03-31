@@ -59,6 +59,15 @@ function PersonIcon() {
   );
 }
 
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4" y="5.5" width="16" height="14" rx="2" />
+      <path d="M8 3.5v4M16 3.5v4M4 9.5h16" />
+    </svg>
+  );
+}
+
 function MaleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -258,6 +267,7 @@ function SignupContent() {
   const [mbtiParts, setMbtiParts] = useState<[string, string, string, string]>(["", "", "", ""]);
   const [interests, setInterests] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [interestLimitError, setInterestLimitError] = useState("");
   const [isAgeNoticeOpen, setIsAgeNoticeOpen] = useState(false);
   const ageNoticeTimeoutRef = useRef<number | null>(null);
   const mbti = useMemo(
@@ -350,7 +360,7 @@ function SignupContent() {
       }
       return [...prev, label];
     });
-    setError(isOverLimit ? `관심사는 최대 ${MAX_INTEREST_SELECTION}개까지 선택할 수 있습니다.` : "");
+    setInterestLimitError(isOverLimit ? `관심사 최대 ${MAX_INTEREST_SELECTION}개까지 선택할 수 있습니다.` : "");
   }
 
   function selectMbtiPart(groupIndex: number, letter: string) {
@@ -459,7 +469,7 @@ function SignupContent() {
         isRouteTransitioning ? "pointer-events-none scale-[0.995] opacity-0" : "scale-100 opacity-100"
       }`}
     >
-      <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
+      <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
           <div className="flex items-center gap-2">
             <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
@@ -474,12 +484,12 @@ function SignupContent() {
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-4 pb-28 pt-20 md:px-6 md:pb-12 md:pt-24">
+      <main className="flex flex-1 items-center justify-center px-4 pb-28 pt-[calc(5rem+env(safe-area-inset-top))] md:px-6 md:pb-12 md:pt-24">
         <div className="relative w-full max-w-2xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
           <div className="relative z-10">
             <div className="mb-8 text-center md:text-left">
               <h1 className="font-headline text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
-                {step === 1 ? "먼저 기본 정보를 입력해주세요." : "이제 취향을 설정해주세요."}
+                {step === 1 ? "먼저 기본 정보를 입력해주세요." : "나에 대해서 알려주세요"}
               </h1>
             </div>
 
@@ -498,7 +508,7 @@ function SignupContent() {
                         value={name}
                         onChange={(event) => setName(event.target.value)}
                         placeholder="이름을 입력하세요"
-                        className="w-full rounded-xl border-none bg-[#f4f4ef] px-6 py-4 pr-12 text-lg text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all duration-300 focus:ring-2 focus:ring-[#4a626d]/20"
+                        className="w-full rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] px-6 py-4 pr-12 text-lg text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all duration-300 focus:ring-2 focus:ring-[#4a626d]/20"
                       />
                       <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#787c75]">
                         <PersonIcon />
@@ -510,14 +520,19 @@ function SignupContent() {
                     <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="signupBirthDate">
                       생년월일
                     </label>
-                    <input
-                      id="signupBirthDate"
-                      name="signupBirthDate"
-                      type="date"
-                      value={birthDate}
-                      onChange={(event) => setBirthDate(event.target.value)}
-                      className="w-full rounded-xl border-none bg-[#f4f4ef] px-6 py-4 text-lg text-[#2f342e] outline-none ring-0 transition-all duration-300 focus:ring-2 focus:ring-[#4a626d]/20"
-                    />
+                    <div className="group relative overflow-hidden rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] transition-all duration-300 focus-within:ring-2 focus-within:ring-[#4a626d]/20">
+                      <input
+                        id="signupBirthDate"
+                        name="signupBirthDate"
+                        type="date"
+                        value={birthDate}
+                        onChange={(event) => setBirthDate(event.target.value)}
+                        className="block w-full min-w-0 max-w-full bg-transparent pl-6 pr-14 py-4 text-lg text-[#2f342e] outline-none ring-0 appearance-none [-webkit-appearance:none] [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:pointer-events-none"
+                      />
+                      <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#787c75]">
+                        <CalendarIcon />
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
@@ -541,7 +556,7 @@ function SignupContent() {
                         onClick={() => setGender("female")}
                         className={`group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 px-4 py-6 transition-all duration-300 ${
                           gender === "female"
-                            ? "border-[#8d305a] bg-[#ffd3e3] text-[#4a2c3f]"
+                            ? "border-[#4a626d] bg-[#d9e8f0] text-[#24303a]"
                             : "border-transparent bg-[#f4f4ef] text-[#655d5a] hover:bg-[#e6e9e2]"
                         }`}
                       >
@@ -604,9 +619,13 @@ function SignupContent() {
                   <div className="space-y-3">
                     <div className="ml-1 flex items-center justify-between">
                       <label className="block text-sm font-semibold text-[#f0f5f2]">관심사</label>
-                      <span className="text-xs font-semibold text-[#f0f5f2]/70">
-                        {interests.length}/{MAX_INTEREST_SELECTION}
-                      </span>
+                      {interestLimitError ? (
+                        <span className="text-xs font-semibold text-[#b23a32]">{interestLimitError}</span>
+                      ) : (
+                        <span className="text-xs font-semibold text-[#f0f5f2]/70">
+                          {interests.length}/{MAX_INTEREST_SELECTION}
+                        </span>
+                      )}
                     </div>
                     <div className="grid grid-cols-3 gap-2 xl:grid-cols-4 2xl:grid-cols-5">
                       {INTEREST_OPTIONS.map((option) => {
@@ -657,7 +676,7 @@ function SignupContent() {
                 </>
               )}
 
-              {error ? <p className="pt-1 text-center text-sm text-[#f5b8b2]">{error}</p> : null}
+              {error ? <p className="pt-1 text-center text-sm font-semibold text-[#b23a32]">{error}</p> : null}
             </form>
           </div>
         </div>
@@ -665,7 +684,7 @@ function SignupContent() {
 
       {isAgeNoticeOpen ? (
         <div className="pointer-events-none fixed inset-0 z-[120] grid place-items-center px-6">
-          <div className="rounded-2xl bg-[#1f2421]/92 px-6 py-4 text-center text-sm font-bold text-[#f0f5f2] shadow-2xl ring-1 ring-white/10 backdrop-blur-md">
+          <div className="rounded-2xl border border-[#d8dee3] bg-white px-6 py-4 text-center text-sm font-bold text-[#24303a] shadow-[0_10px_28px_rgba(47,52,46,0.14)]">
             만 14세 이상만 사용가능합니다.
           </div>
         </div>

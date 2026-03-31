@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bogopa</string>
+    <string name="title_activity_main">Bogopa</string>
+    <string name="package_name">co.kr.bogopa.app</string>
+    <string name="custom_url_scheme">co.kr.bogopa.app</string>
+</resources>

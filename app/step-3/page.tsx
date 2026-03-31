@@ -1,29 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   loadStepInputsFromLocalStorage,
   savePersonaRuntime,
 } from "@/lib/persona/storage";
-import { persistOnboardingStep } from "@/lib/onboarding-client";
+import { clearOnboardingDraft, persistOnboardingStep } from "@/lib/onboarding-client";
 import { PersonaAnalyzeInput } from "@/types/persona";
 import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
+import useMobileInputFocus from "@/app/_components/useMobileInputFocus";
 
 const STORAGE_KEY = "bogopa_profile_step4";
 const STEP3_KEY = "bogopa_profile_step3";
 const FREQUENT_PHRASE_EXAMPLES = [
   "예: 밥은 먹었어?",
-  "예: 오늘 하루 어땠어?",
+  "예: 오늘 어땠어?",
   "예: 너무 무리하지 마",
-  "예: 천천히 해도 괜찮아",
   "예: 내가 네 편이야",
   "예: 잠은 잘 잤어?",
-  "예: 따뜻한 거라도 챙겨 먹자",
-  "예: 지금도 충분히 잘하고 있어",
-  "예: 괜찮아, 하나씩 해보자",
+  "예: 따뜻한 거 챙겨 먹자",
+  "예: 지금도 잘하고 있어",
+  "예: 괜찮아, 하나씩 하자",
   "예: 힘들면 바로 말해줘",
   "예: 물 좀 마셔",
   "예: 잘 버텼어",
@@ -34,7 +34,8 @@ const FREQUENT_PHRASE_EXAMPLES = [
   "예: 괜찮아, 있어줄게",
   "예: 지금 어때?",
   "예: 많이 힘들었지",
-  "예: 내가 안아줄게",
+  "예: 언제든 말해줘",
+  "예: 곁에 있을게",
 ];
 const MEMORY_PLACEHOLDER_EXAMPLES = [
   "예: 제주도 바닷가에서 같이 산책하던 날",
@@ -69,6 +70,8 @@ type Step3Raw = {
   personaName?: string;
   userNickname?: string;
   relationship?: string;
+  personaImageKey?: string;
+  personaImageSource?: "default" | "upload";
   personaImageUrl?: string;
 };
 type UserProfileResponse = {
@@ -83,6 +86,12 @@ type Step4Overrides = {
   replyTempo: string;
   empathyStyle: string;
   memories: string[];
+};
+
+type UpgradeCtaState = {
+  title: string;
+  description: string;
+  ctaLabel: string;
 };
 
 type Step4Raw = {
@@ -101,6 +110,12 @@ const DEFAULT_OVERRIDES: Step4Overrides = {
   memories: [],
 };
 const MIN_SUBMIT_LOADING_MS = 4000;
+const LOADING_PROGRESS_MESSAGES = [
+  "대화 스타일을 정리하고 있습니다.",
+  "자주 쓰는 문구를 반영하고 있습니다.",
+  "핵심 기억을 자연스럽게 연결하고 있습니다.",
+  "바로 대화할 수 있게 마무리하고 있습니다.",
+];
 
 function pickRandomExample(examples: string[], exclude?: string) {
   if (examples.length === 0) return "";
@@ -181,14 +196,6 @@ function ArrowRightIcon() {
   );
 }
 
-function SpinnerIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5 animate-spin" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M12 3a9 9 0 1 0 9 9" />
-    </svg>
-  );
-}
-
 function Dropdown({
   label,
   options,
@@ -214,19 +221,19 @@ function Dropdown({
 
   return (
     <div className="relative" ref={ref}>
-      <label className="mb-2 block text-xs font-extrabold uppercase tracking-[0.16em] text-[#f0f5f2]/70">{label}</label>
+      <label className="mb-2 block text-xs font-extrabold uppercase tracking-[0.16em] text-[#5d605a]">{label}</label>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-[#242926] px-4 py-3 text-sm font-bold text-[#f0f5f2] transition-colors hover:bg-[#2b322f]"
+        className="flex w-full items-center justify-between rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#2f342e] transition-colors hover:bg-[#eceee8]"
       >
         <span>{value}</span>
-        <svg className={`h-4 w-4 text-[#b8c3be] transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className={`h-4 w-4 text-[#787c75] transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-40 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#1f2421] shadow-xl">
+        <div className="absolute left-0 top-full z-40 mt-2 w-full overflow-hidden rounded-xl border border-[#afb3ac]/35 bg-white shadow-xl">
           {options.map((option) => (
             <button
               type="button"
@@ -236,7 +243,7 @@ function Dropdown({
                 setOpen(false);
               }}
               className={`block w-full px-4 py-3 text-left text-sm font-bold transition-colors ${
-                option === value ? "bg-[#4a626d] text-[#f0f9ff]" : "text-[#e6ece8] hover:bg-[#323a36]"
+                option === value ? "bg-[#d7e9f2] text-[#3e5560]" : "text-[#2f342e] hover:bg-[#f4f8fa]"
               }`}
             >
               {option}
@@ -266,6 +273,7 @@ function ListEditor({
   onLimitReached?: () => void;
 }) {
   const [rowPlaceholders, setRowPlaceholders] = useState<string[]>([]);
+  const [rowLocked, setRowLocked] = useState<boolean[]>([]);
 
   useEffect(() => {
     setRowPlaceholders((prev) => {
@@ -280,13 +288,29 @@ function ListEditor({
     });
   }, [values.length, placeholderExamples]);
 
+  useEffect(() => {
+    setRowLocked((prev) => {
+      if (values.length === prev.length) return prev;
+      if (values.length < prev.length) return prev.slice(0, values.length);
+
+      // Existing non-empty loaded rows start as completed(deletable),
+      // while newly appended empty rows start editable.
+      const appended = Array.from({ length: values.length - prev.length }, (_, index) => {
+        const value = values[prev.length + index] || "";
+        return value.trim().length > 0;
+      });
+      return [...prev, ...appended];
+    });
+  }, [values, values.length]);
+
   return (
     <div className="space-y-3">
-      <label className="block text-xs font-extrabold uppercase tracking-[0.16em] text-[#f0f5f2]/70">{label}</label>
+      <label className="block text-xs font-extrabold uppercase tracking-[0.16em] text-[#5d605a]">{label}</label>
       {values.map((item, index) => (
         <div key={`${label}-${index}`} className="flex gap-2">
           <input
             type="text"
+            name={`list_${label}_${index}`}
             value={item}
             placeholder={rowPlaceholders[index] || placeholderExamples[0] || ""}
             onChange={(event) => {
@@ -294,17 +318,38 @@ function ListEditor({
               next[index] = event.target.value.slice(0, maxChars);
               onChange(next);
             }}
-            className="flex-1 rounded-xl bg-[#f4f4ef] px-4 py-3 text-sm font-semibold text-[#2f342e] outline-none ring-0 focus:ring-2 focus:ring-[#4a626d]/25"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            data-lpignore="true"
+            data-form-type="other"
+            className="flex-1 rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] px-4 py-3 text-sm font-semibold text-[#2f342e] outline-none ring-0 placeholder:text-[#7f867f]"
           />
           <button
             type="button"
             onClick={() => {
-              onChange(values.filter((_, i) => i !== index));
-              setRowPlaceholders((prev) => prev.filter((_, i) => i !== index));
+              if (rowLocked[index]) {
+                onChange(values.filter((_, i) => i !== index));
+                setRowPlaceholders((prev) => prev.filter((_, i) => i !== index));
+                setRowLocked((prev) => prev.filter((_, i) => i !== index));
+                return;
+              }
+
+              if (!values[index]?.trim()) return;
+              setRowLocked((prev) => {
+                const next = [...prev];
+                next[index] = true;
+                return next;
+              });
             }}
-            className="rounded-xl px-3 text-[#9f403d] hover:bg-[#9f403d]/10"
+            className={`rounded-xl px-3 text-sm font-bold transition-colors ${
+              rowLocked[index]
+                ? "text-[#ff5c5c] hover:bg-[#ff5c5c]/20 hover:text-[#ff8a8a]"
+                : "text-[#4a626d] hover:bg-[#cde6f4]/30 hover:text-[#3e5560]"
+            }`}
           >
-            삭제
+            {rowLocked[index] ? "삭제" : "완료"}
           </button>
         </div>
       ))}
@@ -318,11 +363,11 @@ function ListEditor({
           onChange([...values, ""]);
           setRowPlaceholders((prev) => [...prev, pickRandomExample(placeholderExamples, prev[prev.length - 1])]);
         }}
-        className="w-full rounded-2xl border border-dashed border-[#f0f5f2]/45 py-3.5 text-sm font-extrabold text-[#f0f5f2]/80 hover:border-[#f0f5f2]/80 hover:text-[#f0f5f2]"
+        className="w-full rounded-2xl border border-dashed border-[#4a626d]/40 py-3.5 text-sm font-extrabold text-[#4a626d] hover:border-[#3e5560] hover:text-[#3e5560]"
       >
         + 항목 추가
       </button>
-      <p className="text-xs text-[#f0f5f2]/65">최대 {maxItems}개 · 항목당 최대 {maxChars}자</p>
+      <p className="text-xs text-[#5d605a]">최대 {maxItems}개 · 항목당 최대 {maxChars}자</p>
     </div>
   );
 }
@@ -402,12 +447,27 @@ function buildPersonaJson(
 
 export default function StepThreePage() {
   const router = useRouter();
+  const [isNativeAppRuntime, setIsNativeAppRuntime] = useState(false);
+  const isInputFocused = useMobileInputFocus();
+  const keyboardInsetExpr = isNativeAppRuntime
+    ? "max(var(--bogopa-keyboard-height, 0px), 320px)"
+    : "var(--bogopa-keyboard-height, 0px)";
+  const mobileFocusedMainStyle = isInputFocused
+    ? ({
+        paddingBottom:
+          `calc(${keyboardInsetExpr} + env(safe-area-inset-bottom) + 7.5rem)`,
+        scrollPaddingBottom:
+          `calc(${keyboardInsetExpr} + env(safe-area-inset-bottom) + 7.5rem)`,
+      } as const)
+    : undefined;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
   const [relationLabel, setRelationLabel] = useState("");
   const [step3Nickname, setStep3Nickname] = useState("너");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarKey, setAvatarKey] = useState<string | null>(null);
+  const [avatarSource, setAvatarSource] = useState<"default" | "upload" | null>(null);
   const [overrides, setOverrides] = useState<Step4Overrides>(DEFAULT_OVERRIDES);
   const [planLimits, setPlanLimits] = useState<PlanLimits>(FREE_PLAN_LIMITS);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -416,6 +476,63 @@ export default function StepThreePage() {
     mbti: "",
     interests: [],
   });
+  const [upgradeCta, setUpgradeCta] = useState<UpgradeCtaState | null>(null);
+  const [loadingProgressIndex, setLoadingProgressIndex] = useState(0);
+
+  useEffect(() => {
+    setIsNativeAppRuntime(document.documentElement.classList.contains("native-app"));
+  }, []);
+
+  function buildStep3DraftPayload(source: Step4Overrides) {
+    return {
+      pastedConversation: "",
+      uploadedFileName: null,
+      useManualSettings: true,
+      frequentPhrases: source.frequentPhrases.join("\n"),
+      nickname: step3Nickname,
+      toneStyle: "",
+      emotionDepth: "",
+      emojiStyle: "상황에 맞게 적당히",
+      mode: "manual_only",
+      overrides: source,
+      step: 3,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function handleFormKeyDownCapture(event: ReactKeyboardEvent<HTMLFormElement>) {
+    if (event.key !== "Enter") return;
+    const target = event.target as EventTarget | null;
+    if (target instanceof HTMLTextAreaElement) return;
+    if (target instanceof HTMLButtonElement) return;
+    event.preventDefault();
+  }
+
+  function saveStep3DraftForReturn() {
+    const normalized: Step4Overrides = {
+      ...overrides,
+      frequentPhrases: cleanList(
+        overrides.frequentPhrases.map((item) => item.slice(0, planLimits.phraseItemCharMax)),
+        planLimits.phraseItemMaxCount,
+      ),
+      memories: cleanList(
+        overrides.memories.map((item) => item.slice(0, planLimits.memoryItemCharMax)),
+        planLimits.memoryItemMaxCount,
+      ),
+    };
+
+    const payload = buildStep3DraftPayload(normalized);
+
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore local storage errors
+    }
+
+    void persistOnboardingStep(3, payload).catch((persistError) => {
+      console.warn("[step-3] remote save failed, continue local flow", persistError);
+    });
+  }
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -430,6 +547,8 @@ export default function StepThreePage() {
     setRelationLabel(step3.relationship?.trim() || "");
     setStep3Nickname(step3.userNickname?.trim() || "너");
     setAvatarUrl(step3.personaImageUrl?.trim() || null);
+    setAvatarKey(step3.personaImageKey?.trim() || null);
+    setAvatarSource(step3.personaImageSource || null);
 
     const fromOverrides = step4?.overrides || {};
 
@@ -493,6 +612,33 @@ export default function StepThreePage() {
     }));
   }, [planLimits]);
 
+  useEffect(() => {
+    if (!isSubmitting) {
+      setLoadingProgressIndex(0);
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setLoadingProgressIndex((prev) => (prev + 1) % LOADING_PROGRESS_MESSAGES.length);
+    }, 1200);
+
+    return () => window.clearInterval(intervalId);
+  }, [isSubmitting]);
+
+  useEffect(() => {
+    const hasDraftContent =
+      overrides.frequentPhrases.some((item) => item.trim().length > 0) ||
+      overrides.memories.some((item) => item.trim().length > 0) ||
+      overrides.politeness !== DEFAULT_OVERRIDES.politeness ||
+      overrides.replyTempo !== DEFAULT_OVERRIDES.replyTempo ||
+      overrides.empathyStyle !== DEFAULT_OVERRIDES.empathyStyle;
+
+    if (!hasDraftContent) return;
+
+    const payload = buildStep3DraftPayload(overrides);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }, [overrides, step3Nickname]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting) return;
@@ -520,20 +666,7 @@ export default function StepThreePage() {
       ),
     };
 
-    const payload = {
-      pastedConversation: "",
-      uploadedFileName: null,
-      useManualSettings: true,
-      frequentPhrases: normalized.frequentPhrases.join("\n"),
-      nickname: step3Nickname,
-      toneStyle: "",
-      emotionDepth: "",
-      emojiStyle: "상황에 맞게 적당히",
-      mode: "manual_only",
-      overrides: normalized,
-      step: 3,
-      updatedAt: new Date().toISOString(),
-    };
+    const payload = buildStep3DraftPayload(normalized);
 
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -589,13 +722,50 @@ export default function StepThreePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             avatarUrl,
+            avatarSource,
+            avatarKey,
             runtime: personaJson,
           }),
         });
         if (!response.ok) {
-          const body = (await response.json().catch(() => ({}))) as { error?: string };
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            code?: string;
+            required?: number;
+            balance?: number;
+          };
+
+          if (response.status === 403 && body.code === "PERSONA_LIMIT_REACHED") {
+            await waitMinimumLoading();
+            setUpgradeCta({
+              title: "생성 가능한 기억 수를 초과했어요",
+              description:
+                "무료는 기억 1개까지 가능해요. 기억 패스를 등록하면 더 만들고, 말투와 기억을 더 길고 정확하게 반영해요.",
+              ctaLabel: "기억 패스 등록하기",
+            });
+            setIsSubmitting(false);
+            return;
+          }
+
+          if (response.status === 402 && body.code === "MEMORY_INSUFFICIENT") {
+            await waitMinimumLoading();
+            setUpgradeCta({
+              title: "기억이 부족해요",
+              description: `기억 생성에는 ${body.required ?? 20}기억이 필요해요. 현재 잔액: ${body.balance ?? 0}기억`,
+              ctaLabel: "기억 충전하러 가기",
+            });
+            setIsSubmitting(false);
+            return;
+          }
+
           if (response.status === 402 || response.status === 403) {
-            router.push(`/payment?returnTo=${encodeURIComponent("/step-3")}`);
+            await waitMinimumLoading();
+            setUpgradeCta({
+              title: "이 기능은 업그레이드가 필요해요",
+              description: "기억 패스를 등록하면 확장된 설정으로, 말투와 기억을 더 길고 정확하게 반영해요.",
+              ctaLabel: "기억 패스 등록하기",
+            });
+            setIsSubmitting(false);
             return;
           }
           console.warn("[step-3] persona save failed, continue local flow", body.error || response.statusText);
@@ -605,6 +775,7 @@ export default function StepThreePage() {
       }
 
       await waitMinimumLoading();
+      clearOnboardingDraft();
       router.push(`/chat?id=${personaJson.personaId}`);
     } catch (submitError) {
       await waitMinimumLoading();
@@ -615,48 +786,105 @@ export default function StepThreePage() {
   }
 
   function goToPayment() {
+    saveStep3DraftForReturn();
     router.push(`/payment?returnTo=${encodeURIComponent("/step-3")}`);
   }
 
+  function openFrequentPhraseLimitCta() {
+    setUpgradeCta({
+      title: "자주 쓰는 문구는 1개까지 가능해요",
+      description:
+        "기억 패스를 등록하면 저장 개수와 입력 한도가 넓어지고, 말투와 기억을 더 길고 정확하게 반영해요.",
+      ctaLabel: "기억 패스 등록하기",
+    });
+  }
+
+  function openMemoryLimitCta() {
+    setUpgradeCta({
+      title: "핵심 기억은 1개까지 가능해요",
+      description:
+        "기억 패스를 등록하면 저장 개수와 입력 한도가 넓어지고, 말투와 기억을 더 길고 정확하게 반영해요.",
+      ctaLabel: "기억 패스 등록하기",
+    });
+  }
+
+  if (isSubmitting) {
+    return (
+      <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
+        <main className="flex flex-1 items-center justify-center px-6">
+          <div className="flex flex-col items-center text-center">
+            <h1 className="break-keep font-headline text-4xl font-bold tracking-tight text-[#2f342e] md:text-5xl">
+              내 기억 생성중
+            </h1>
+            <p className="mt-3 break-keep text-sm font-medium text-[#655d5a]">
+              {LOADING_PROGRESS_MESSAGES[loadingProgressIndex]}
+            </p>
+            <div className="relative mt-8 h-20 w-20">
+              <svg
+                viewBox="0 0 80 80"
+                className="absolute inset-0 h-full w-full animate-spin"
+                aria-hidden="true"
+              >
+                <circle cx="40" cy="40" r="34" fill="none" stroke="#d6ddd8" strokeWidth="4" />
+                <path
+                  d="M40 6 A34 34 0 0 1 74 40"
+                  fill="none"
+                  stroke="#4a626d"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M74 40 A34 34 0 0 1 64 64"
+                  fill="none"
+                  stroke="#7fa4b6"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#4a626d]" />
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
-      <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 md:px-12">
-          <button
-            type="button"
-            onClick={() => setIsHomeModalOpen(true)}
-            className="flex items-center gap-2 transition-opacity hover:opacity-80"
-          >
-            <img src="/logo/bogopa%20logo.png" alt="보고파" className="h-8 w-auto object-contain" />
-            <span className="font-headline text-2xl font-bold tracking-tight text-[#4a626d]">Bogopa</span>
-          </button>
+    <div className="relative flex h-[100dvh] overflow-hidden flex-col bg-[#faf9f5] text-[#2f342e]">
+      <header className="fixed inset-x-0 top-0 z-50 w-full bg-[#faf9f5] pt-[var(--native-safe-top)] [transform:translateZ(0)]">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-center px-6 md:px-12">
           <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-[#655d5a]">Step 3/3</span>
-            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#edeee8]">
+            <span className="text-sm font-medium text-[#655d5a]">Step 4/4</span>
+            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#d6ddd8]">
               <div className="h-full w-full bg-[#4a626d] transition-all duration-500" />
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-4 pb-32 pt-20 md:px-6 md:pb-12 md:pt-24">
-        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
+      <main
+        className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto overscroll-y-contain px-4 pb-36 pt-[calc(5rem+var(--native-safe-top))] [-webkit-overflow-scrolling:touch] md:items-center md:px-6 md:pb-12 md:pt-24"
+        style={mobileFocusedMainStyle}
+      >
+        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-white md:p-12 md:shadow-none md:border md:border-[#afb3ac]/20">
           <div className="absolute -right-10 -top-10 -z-0 hidden h-40 w-40 bg-[#cde6f4]/20 [border-radius:40%_60%_70%_30%/40%_50%_60%_50%] md:block" />
 
           <div className="relative z-10">
             <div className="mb-8 text-center md:text-left">
-              <h1 className="font-headline text-3xl font-bold tracking-tight text-[#2f342e] md:text-4xl md:text-[#f0f5f2]">
+              <h1 className="font-headline text-3xl font-bold tracking-tight text-[#2f342e] md:text-4xl">
               기억을 마지막으로 다듬어요
               </h1>
-              <p className="mt-3 text-sm leading-relaxed text-[#655d5a] md:text-[#f0f5f2]/80">
-                마지막 단계에요.
-                {relationLabel ? ` ${relationLabel}와의` : ""} 대화에서 꼭 남기고 싶은 말투와 기억만 가볍게 정리하면 바로 다시 만날 수 있어요.
-              </p>
             </div>
 
-            <form className="space-y-7" onSubmit={handleSubmit}>
-              <section className="rounded-2xl bg-[#303733] p-6 shadow-[0_16px_32px_rgba(0,0,0,0.2)] md:border md:border-white/10 md:bg-[#38403b]">
-                <h2 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#f0f5f2]/70">대화 스타일</h2>
+            <form
+              id="step-three-form"
+              className="space-y-6"
+              onSubmit={handleSubmit}
+              onKeyDownCapture={handleFormKeyDownCapture}
+              autoComplete="off"
+            >
+              <section className="pb-6 border-b border-[#5d605a]/55">
+                <h2 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">대화 스타일</h2>
                 <div className="grid grid-cols-1 gap-4">
                   <Dropdown
                     label="정중함 정도"
@@ -679,7 +907,7 @@ export default function StepThreePage() {
                 </div>
               </section>
 
-              <section className="rounded-2xl bg-[#303733] p-6 shadow-[0_16px_32px_rgba(0,0,0,0.2)] md:border md:border-white/10 md:bg-[#38403b]">
+              <section className="pb-6 border-b border-[#5d605a]/55">
                 <ListEditor
                   label="자주 쓰는 문구"
                   values={overrides.frequentPhrases}
@@ -687,11 +915,11 @@ export default function StepThreePage() {
                   onChange={(values) => setOverrides((prev) => ({ ...prev, frequentPhrases: values }))}
                   maxItems={planLimits.phraseItemMaxCount}
                   maxChars={planLimits.phraseItemCharMax}
-                  onLimitReached={isSubscribed ? undefined : goToPayment}
+                  onLimitReached={isSubscribed ? undefined : openFrequentPhraseLimitCta}
                 />
               </section>
 
-              <section className="rounded-2xl bg-[#303733] p-6 shadow-[0_16px_32px_rgba(0,0,0,0.2)] md:border md:border-white/10 md:bg-[#38403b]">
+              <section className="pb-6 border-b border-[#5d605a]/55">
                 <ListEditor
                   label="핵심 기억"
                   values={overrides.memories}
@@ -699,7 +927,7 @@ export default function StepThreePage() {
                   onChange={(values) => setOverrides((prev) => ({ ...prev, memories: values }))}
                   maxItems={planLimits.memoryItemMaxCount}
                   maxChars={planLimits.memoryItemCharMax}
-                  onLimitReached={isSubscribed ? undefined : goToPayment}
+                  onLimitReached={isSubscribed ? undefined : openMemoryLimitCta}
                 />
               </section>
 
@@ -707,17 +935,17 @@ export default function StepThreePage() {
                 <button
                   type="button"
                   onClick={goToPayment}
-                  className="w-full rounded-2xl border border-[#f0f5f2]/30 bg-white/5 px-4 py-3 text-sm font-bold text-[#f0f5f2] hover:bg-white/10"
+                  className="w-full rounded-2xl border border-[#4a626d]/35 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#4a626d] hover:bg-[#eceee8]"
                 >
                   기억 패스 등록하고 제한 해제하기
                 </button>
               ) : null}
 
               <div className="pt-0 md:pt-2">
-                <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] grid grid-cols-2 gap-2 md:static md:left-auto md:right-auto md:z-auto md:gap-4">
+                <div className="hidden md:grid md:grid-cols-2 md:gap-4">
                   <Link
                     href="/step-2"
-                    className="inline-flex items-center justify-center gap-2 rounded-full border border-[#4a626d] bg-white px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#f4f4ef] active:scale-[0.98] md:rounded-2xl md:text-lg md:font-bold md:shadow-none"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98] md:rounded-2xl md:text-lg md:font-bold md:shadow-none"
                   >
                     <ArrowLeftIcon />
                     이전
@@ -728,19 +956,12 @@ export default function StepThreePage() {
                     disabled={isSubmitting}
                     className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                   >
-                    {isSubmitting ? (
-                      <>
-                        <SpinnerIcon />
-                        분석 중...
-                      </>
-                    ) : (
-                      <>
-                        채팅 시작
-                        <span className="transition-transform group-hover:translate-x-1">
-                          <ArrowRightIcon />
-                        </span>
-                      </>
-                    )}
+                    <>
+                      채팅 시작
+                      <span className="transition-transform group-hover:translate-x-1">
+                        <ArrowRightIcon />
+                      </span>
+                    </>
                   </button>
                 </div>
                 {error ? <p className="mt-3 text-center text-sm text-[#9f403d]">{error}</p> : null}
@@ -749,7 +970,58 @@ export default function StepThreePage() {
           </div>
         </div>
       </main>
+      {!isInputFocused ? (
+        <div className="fixed bottom-0 left-0 right-0 z-[60] bg-[#303733]/96 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden">
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href="/step-2"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
+            >
+              <ArrowLeftIcon />
+              이전
+            </Link>
+
+            <button
+              type="submit"
+              form="step-three-form"
+              disabled={isSubmitting}
+              className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <>
+                채팅 시작
+                <span className="transition-transform group-hover:translate-x-1">
+                  <ArrowRightIcon />
+                </span>
+              </>
+            </button>
+          </div>
+        </div>
+      ) : null}
       <HomeConfirmModal isOpen={isHomeModalOpen} onClose={() => setIsHomeModalOpen(false)} />
+      {upgradeCta ? (
+        <div className="fixed inset-0 z-[170] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-6 text-center shadow-2xl shadow-black/20">
+            <h3 className="break-keep font-headline text-2xl font-bold text-[#2f342e]">{upgradeCta.title}</h3>
+            <p className="mt-3 break-keep text-sm leading-relaxed text-[#5d605a]">{upgradeCta.description}</p>
+            <div className="mt-6 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setUpgradeCta(null)}
+                className="rounded-2xl border border-[#afb3ac]/35 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#4a626d] hover:bg-[#eceee8]"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                onClick={goToPayment}
+                className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661]"
+              >
+                {upgradeCta.ctaLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

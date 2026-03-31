@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isS3Configured, uploadPersonaImage } from "@/lib/server/s3";
+import { buildAvatarProxyUrl } from "@/lib/avatar-storage";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -21,7 +22,15 @@ export async function POST(request: NextRequest) {
     }
 
     const uploaded = await uploadPersonaImage(file);
-    return NextResponse.json({ ok: true, ...uploaded });
+    const proxyUrl = buildAvatarProxyUrl(uploaded.key);
+    return NextResponse.json({
+      ok: true,
+      key: uploaded.key,
+      url: proxyUrl,
+      avatarSource: "upload",
+      avatarKey: uploaded.key,
+      avatarUrl: proxyUrl,
+    });
   } catch (error) {
     console.error("[persona-image-upload] failed", error);
     return NextResponse.json({ error: "이미지 업로드 중 오류가 발생했습니다." }, { status: 500 });

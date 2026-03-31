@@ -36,7 +36,7 @@ export default function LogoutConfirmModal({
     <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm">
       <section className="w-full max-w-sm rounded-[2rem] border border-white/10 bg-[#1f2421] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.55)]">
         <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">로그아웃 하시겠어요?</h3>
-        <p className="mt-3 text-sm leading-relaxed text-[#afb3ac]">
+        <p className="mt-3 text-sm leading-relaxed text-[#5d605a]">
           현재 계정에서 로그아웃됩니다.
         </p>
 

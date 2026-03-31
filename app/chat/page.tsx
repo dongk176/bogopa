@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
+import { NativeChat, type NativeChatPersona } from "@/lib/native-chat";
 import {
   clearPersonaArtifacts,
   loadPersonaRuntime,
@@ -14,6 +17,9 @@ import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import UserProfileMenu from "@/app/_components/UserProfileMenu";
 import Navigation from "@/app/_components/Navigation";
 import PersonaMemorySheet from "@/app/_components/PersonaMemorySheet";
+import MemoryBalanceBadge from "@/app/_components/MemoryBalanceBadge";
+import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
+import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 
 type ChatMessage = {
   id: string;
@@ -44,12 +50,19 @@ type Step3AvatarRaw = {
   personaImageUrl?: string;
 };
 
+type MemoryStorePrompt = {
+  title: string;
+  message: string;
+  returnTo: string;
+};
+
 const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
 const USER_INPUT_CHAR_LIMIT = 100;
 const RECENT_CONTEXT_MESSAGES = 8; // 4 turns
 const COMPRESSION_MIN_USER_TURNS = 10;
 const COMPRESSION_TRIGGER_TOKENS = 2600;
 const TOKEN_ESTIMATE_CHAR_RATIO = 0.7;
+const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
 const ONBOARDING_STORAGE_KEYS = [
   "bogopa_profile_step1",
   "bogopa_profile_step2",
@@ -76,6 +89,18 @@ function readStep3AvatarFromStorage() {
     return typeof parsed.personaImageUrl === "string" ? parsed.personaImageUrl.trim() : "";
   } catch {
     return "";
+  }
+}
+
+function toAbsoluteAvatarUrl(rawValue: string | null | undefined) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return undefined;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (typeof window === "undefined") return undefined;
+  try {
+    return new URL(raw, window.location.origin).toString();
+  } catch {
+    return undefined;
   }
 }
 
@@ -119,10 +144,6 @@ function formatDateLabel(iso: string) {
   }).format(new Date(iso));
 }
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
 function UserAvatarIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -164,8 +185,7 @@ function SendIcon() {
 function ArrowLeftIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M19 12H5" />
-      <path d="m11 6-6 6 6 6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
     </svg>
   );
 }
@@ -188,58 +208,29 @@ function ChevronDownIcon({ className }: { className?: string }) {
   );
 }
 
-function MemoryMarkIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={className} fill="none" stroke="currentColor" strokeWidth="1.7">
-      <circle cx="10" cy="10" r="7" />
-      <path d="M10 6.4v4.2l2.7 1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="10" cy="10" r="0.8" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-type MemoryBalanceBadgeProps = {
-  memoryBalance: number | null;
-  isAnimating: boolean;
-};
-
-function MemoryBalanceBadge({
-  memoryBalance,
-  isAnimating,
-}: MemoryBalanceBadgeProps) {
-  return (
-    <div
-      className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[#f0f5f2] transition-colors duration-200 ${
-        isAnimating
-          ? "border-[#7fa4b6]/35 bg-[#34403b]"
-          : "border-white/10 bg-[#303733]"
-      }`}
-    >
-      <MemoryMarkIcon className="h-5 w-5 text-[#bfe4f5]" />
-      <span className="text-sm font-extrabold leading-none">{memoryBalance === null ? "..." : formatNumber(memoryBalance)}</span>
-    </div>
-  );
-}
-
 function DotTyping() {
+  const [dotCount, setDotCount] = useState(0);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setDotCount((prev) => (prev + 1) % 4);
+    }, 260);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   return (
-    <div className="flex gap-1">
-      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#655d5a]" />
-      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#655d5a] [animation-delay:-0.15s]" />
-      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#655d5a] [animation-delay:-0.3s]" />
-    </div>
+    <span className="text-[13px] font-semibold text-[#655d5a]">{`입력 중${".".repeat(dotCount)}`}</span>
   );
 }
 
 function ChatLoadingScaffold() {
   return (
     <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
-      <Navigation />
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 lg:pl-64">
-        <div className="flex min-h-0 flex-1 items-center justify-center pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-0">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
-        </div>
-      </main>
+      <Navigation hideMobileBottomNav />
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:pl-64" />
     </div>
   );
 }
@@ -282,6 +273,10 @@ function normalizeAddressAlias(value: string) {
 function ChatContainer() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isNativeChatRuntime = Capacitor.isNativePlatform();
+  const isIosRuntime = isNativeChatRuntime && Capacitor.getPlatform() === "ios";
+  const [nativeChatFailed, setNativeChatFailed] = useState(false);
+  const shouldUseNativeChatScreen = isIosRuntime && !nativeChatFailed;
   const chatId = searchParams.get("id");
   const { data: session } = useSession();
   const [runtime, setRuntime] = useState<PersonaRuntime | null>(null);
@@ -308,11 +303,39 @@ function ChatContainer() {
   const [isMemoryBadgeAnimating, setIsMemoryBadgeAnimating] = useState(false);
   const [isChatListOpen, setIsChatListOpen] = useState(false);
   const [isPersonaSheetOpen, setIsPersonaSheetOpen] = useState(false);
+  const [isChatListHandleDragging, setIsChatListHandleDragging] = useState(false);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [isNativeChatPresented, setIsNativeChatPresented] = useState(false);
+  const [nativeQueuedText, setNativeQueuedText] = useState<string | null>(null);
+  const [nativePersonaOverrides, setNativePersonaOverrides] = useState<NativeChatPersona[] | null>(null);
+  const [typingBlockedNotice, setTypingBlockedNotice] = useState("");
+  const [memoryStorePrompt, setMemoryStorePrompt] = useState<MemoryStorePrompt | null>(null);
+  const { guardCreateStart, modalNode, isChecking } = useMemoryCreateGuard();
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const initialMessageRequestIdRef = useRef(0);
   const isComposingRef = useRef(false);
+
+  useNativeSwipeBack(() => {
+    router.push("/chat/list");
+  });
+  const startCreateMemoryFromChat = () => {
+    const returnTo = chatId ? `/chat?id=${chatId}` : "/chat";
+    void guardCreateStart({
+      returnTo,
+      onAllowed: () => router.push("/step-1/start"),
+    });
+  };
+  const startCreateMemoryFromChatRef = useRef(startCreateMemoryFromChat);
+  useEffect(() => {
+    startCreateMemoryFromChatRef.current = startCreateMemoryFromChat;
+  }, [startCreateMemoryFromChat]);
   const memoryBalanceRef = useRef<number | null>(null);
   const memoryBadgeAnimTimeoutRef = useRef<number | null>(null);
+  const typingBlockedNoticeTimeoutRef = useRef<number | null>(null);
+  const chatListSwipeStartYRef = useRef<number | null>(null);
+  const chatListSwipeLastYRef = useRef<number | null>(null);
+  const keepNativeChatOnNextCleanupRef = useRef(false);
 
   function triggerMemorySpendAnimation() {
     setIsMemoryBadgeAnimating(true);
@@ -335,8 +358,55 @@ function ChatContainer() {
       if (memoryBadgeAnimTimeoutRef.current) {
         window.clearTimeout(memoryBadgeAnimTimeoutRef.current);
       }
+      if (typingBlockedNoticeTimeoutRef.current) {
+        window.clearTimeout(typingBlockedNoticeTimeoutRef.current);
+      }
     };
   }, []);
+
+  function showTypingBlockedNotice() {
+    const personaDisplayName = runtime?.displayName?.trim() || "내 기억";
+    setTypingBlockedNotice(`${personaDisplayName}이 입력중에는 메시지를 보낼 수 없습니다.`);
+    if (typingBlockedNoticeTimeoutRef.current) {
+      window.clearTimeout(typingBlockedNoticeTimeoutRef.current);
+    }
+    typingBlockedNoticeTimeoutRef.current = window.setTimeout(() => {
+      setTypingBlockedNotice("");
+    }, 1800);
+  }
+
+  async function promptMoveToMemoryStore(personaId: string) {
+    const returnTo = `/chat?id=${personaId}`;
+    const title = "기억이 부족해요";
+    const message = "확인을 누르면 기억 스토어로 이동합니다.";
+
+    if (shouldUseNativeChatScreen) {
+      try {
+        const result = await NativeChat.confirmMemoryStore({
+          title,
+          message,
+          confirmText: "확인",
+          cancelText: "취소",
+        });
+        if (result?.confirmed) {
+          router.push(`/payment?returnTo=${encodeURIComponent(returnTo)}`);
+        }
+        return;
+      } catch (error) {
+        console.error("[chat] native memory-store confirm failed", error);
+      }
+    }
+
+    setMemoryStorePrompt({ title, message, returnTo });
+  }
+
+  useEffect(() => {
+    if (!isNativeChatRuntime) return;
+    void Keyboard.setResizeMode({ mode: KeyboardResize.Native }).catch(() => {});
+    return () => {
+      void Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => {});
+    };
+  }, [isNativeChatRuntime]);
 
   async function queueInitialAssistantMessage(targetRuntime: PersonaRuntime) {
     const requestId = ++initialMessageRequestIdRef.current;
@@ -417,6 +487,58 @@ function ChatContainer() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!shouldUseNativeChatScreen) {
+      setNativePersonaOverrides(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadNativePersonaOverrides = async () => {
+      try {
+        const response = await fetch("/api/persona", { cache: "no-store" });
+        if (!response.ok) {
+          if (!cancelled) setNativePersonaOverrides(null);
+          return;
+        }
+
+        const data = await response.json();
+        if (cancelled) return;
+
+        if (!data?.ok || !Array.isArray(data.personas)) {
+          setNativePersonaOverrides(null);
+          return;
+        }
+
+        const mapped: NativeChatPersona[] = [];
+        for (const persona of data.personas as any[]) {
+          const personaId = String(persona?.persona_id ?? persona?.personaId ?? "").trim();
+          if (!personaId) continue;
+          mapped.push({
+            personaId,
+            personaName: String(persona?.name ?? persona?.personaName ?? "기억").trim() || "기억",
+            avatarUrl: toAbsoluteAvatarUrl(persona?.avatar_url ?? persona?.avatarUrl),
+            lastMessage:
+              String(persona?.last_message_content ?? persona?.lastMessage ?? "").trim(),
+          });
+        }
+
+        setNativePersonaOverrides(mapped);
+      } catch {
+        if (!cancelled) {
+          setNativePersonaOverrides(null);
+        }
+      }
+    };
+
+    void loadNativePersonaOverrides();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldUseNativeChatScreen, runtime?.personaId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -558,9 +680,44 @@ function ChatContainer() {
     setAvatarLoadError(false);
   }, [(runtime as any)?.avatarUrl, step3AvatarUrl]);
 
+  const scrollChatToBottom = (behavior: ScrollBehavior = "auto", force = false) => {
+    const container = chatScrollRef.current;
+    if (!container) return;
+
+    const canScroll = container.scrollHeight > container.clientHeight + 2;
+    if (!force && !canScroll) return;
+
+    const nextTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+    container.scrollTo({ top: nextTop, behavior });
+  };
+
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    scrollChatToBottom("auto");
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    if (!isComposerFocused) return;
+    const delays = [0, 40];
+    const ids = delays.map((delay) => window.setTimeout(() => scrollChatToBottom("auto"), delay));
+    return () => {
+      ids.forEach((id) => window.clearTimeout(id));
+    };
+  }, [isComposerFocused, messages.length, isTyping]);
+
+  useEffect(() => {
+    if (!isComposerFocused) return;
+    const onViewportChanged = () => {
+      scrollChatToBottom("auto");
+    };
+    window.addEventListener("resize", onViewportChanged);
+    window.visualViewport?.addEventListener("resize", onViewportChanged);
+    window.visualViewport?.addEventListener("scroll", onViewportChanged);
+    return () => {
+      window.removeEventListener("resize", onViewportChanged);
+      window.visualViewport?.removeEventListener("resize", onViewportChanged);
+      window.visualViewport?.removeEventListener("scroll", onViewportChanged);
+    };
+  }, [isComposerFocused]);
 
   useEffect(() => {
     const closeMenu = () => setMenuOpen(false);
@@ -572,6 +729,13 @@ function ChatContainer() {
     if (!isPersonaSheetOpen) return;
     setMenuOpen(false);
   }, [isPersonaSheetOpen]);
+
+  useEffect(() => {
+    if (isChatListOpen) return;
+    setIsChatListHandleDragging(false);
+    chatListSwipeStartYRef.current = null;
+    chatListSwipeLastYRef.current = null;
+  }, [isChatListOpen]);
 
   useEffect(() => {
     if (!runtime) return;
@@ -601,6 +765,69 @@ function ChatContainer() {
     return anchorCount * 10 + phraseCount;
   }, [runtime]);
 
+  const nativeAvatarUrl = useMemo(() => {
+    if (!runtime) return undefined;
+    return toAbsoluteAvatarUrl((runtime as any)?.avatarUrl || step3AvatarUrl || "");
+  }, [runtime, step3AvatarUrl]);
+
+  const nativePersonaList = useMemo(() => {
+    const baseList =
+      nativePersonaOverrides && nativePersonaOverrides.length > 0
+        ? nativePersonaOverrides
+        : savedChats.map((chat) => ({
+            personaId: chat.personaId,
+            personaName: chat.personaName || "기억",
+            avatarUrl: toAbsoluteAvatarUrl(chat.avatarUrl),
+            lastMessage: chat.lastMessage || "",
+          }));
+
+    const deduped: NativeChatPersona[] = [];
+    const seenPersonaIds = new Set<string>();
+    for (const persona of baseList) {
+      const personaId = String(persona.personaId || "").trim();
+      if (!personaId || seenPersonaIds.has(personaId)) continue;
+      seenPersonaIds.add(personaId);
+      deduped.push({
+        personaId,
+        personaName: String(persona.personaName || "기억").trim() || "기억",
+        avatarUrl: toAbsoluteAvatarUrl(persona.avatarUrl),
+        lastMessage: String(persona.lastMessage || ""),
+      });
+    }
+
+    if (runtime) {
+      const currentPersonaId = String(runtime.personaId || "").trim();
+      if (currentPersonaId && !seenPersonaIds.has(currentPersonaId)) {
+        deduped.unshift({
+          personaId: currentPersonaId,
+          personaName: runtime.displayName || "기억",
+          avatarUrl: nativeAvatarUrl,
+          lastMessage: "",
+        });
+      }
+    }
+
+    return deduped;
+  }, [nativePersonaOverrides, savedChats, runtime, nativeAvatarUrl]);
+
+  const nativeChatStatePayload = useMemo(() => {
+    if (!runtime) return null;
+    return {
+      personaId: runtime.personaId,
+      personaName: runtime.displayName || "페르소나",
+      avatarUrl: nativeAvatarUrl,
+      personas: nativePersonaList,
+      messages: messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
+      })),
+      isTyping,
+      memoryBalance,
+    };
+  }, [runtime, nativeAvatarUrl, nativePersonaList, messages, isTyping, memoryBalance]);
+
   function openDeleteFlow() {
     setMenuOpen(false);
     setReviewError("");
@@ -618,6 +845,37 @@ function ChatContainer() {
   }
 
   const reviewUserName = ((runtime as any)?.userName || "").trim();
+
+  function handleChatListSwipeStart(event: TouchEvent<HTMLDivElement>) {
+    if (event.touches.length !== 1) return;
+    const y = event.touches[0].clientY;
+    chatListSwipeStartYRef.current = y;
+    chatListSwipeLastYRef.current = y;
+    setIsChatListHandleDragging(true);
+  }
+
+  function handleChatListSwipeMove(event: TouchEvent<HTMLDivElement>) {
+    if (!isChatListHandleDragging || event.touches.length !== 1) return;
+    const y = event.touches[0].clientY;
+    chatListSwipeLastYRef.current = y;
+    if (y > (chatListSwipeStartYRef.current ?? y)) {
+      event.preventDefault();
+    }
+  }
+
+  function handleChatListSwipeEnd() {
+    const startY = chatListSwipeStartYRef.current;
+    const endY = chatListSwipeLastYRef.current;
+    const deltaY = startY !== null && endY !== null ? endY - startY : 0;
+
+    setIsChatListHandleDragging(false);
+    chatListSwipeStartYRef.current = null;
+    chatListSwipeLastYRef.current = null;
+
+    if (deltaY > SHEET_CLOSE_SWIPE_THRESHOLD) {
+      setIsChatListOpen(false);
+    }
+  }
 
   async function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -664,16 +922,18 @@ function ChatContainer() {
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (isComposingRef.current) return;
-    const trimmed = input.slice(0, USER_INPUT_CHAR_LIMIT).trim();
-    if (!trimmed || !runtime || isTyping) return;
+  async function submitUserText(rawText: string) {
+    const trimmed = rawText.slice(0, USER_INPUT_CHAR_LIMIT).trim();
+    if (!trimmed || !runtime) return;
+    if (isTyping) {
+      showTypingBlockedNotice();
+      return;
+    }
     if (
       typeof memoryBalanceRef.current === "number" &&
       memoryBalanceRef.current < MEMORY_COSTS.chat
     ) {
-      router.push(`/payment?returnTo=${encodeURIComponent(`/chat?id=${runtime.personaId}`)}`);
+      await promptMoveToMemoryStore(runtime.personaId);
       return;
     }
 
@@ -748,7 +1008,7 @@ function ChatContainer() {
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { code?: string };
         if (response.status === 402 || body.code === "MEMORY_INSUFFICIENT") {
-          router.push(`/payment?returnTo=${encodeURIComponent(`/chat?id=${runtime.personaId}`)}`);
+          await promptMoveToMemoryStore(runtime.personaId);
           return;
         }
       } else {
@@ -792,7 +1052,130 @@ function ChatContainer() {
     }
   }
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isComposingRef.current) return;
+    if (isTyping) {
+      showTypingBlockedNotice();
+      return;
+    }
+    await submitUserText(input);
+  }
+
+  useEffect(() => {
+    if (!nativeQueuedText) return;
+    void submitUserText(nativeQueuedText);
+    setNativeQueuedText(null);
+  }, [nativeQueuedText]);
+
+  useEffect(() => {
+    if (!shouldUseNativeChatScreen || !isLoaded || !runtime) return;
+
+    let isActive = true;
+    let sendListener: { remove: () => Promise<void> } | null = null;
+    let closeListener: { remove: () => Promise<void> } | null = null;
+    let selectPersonaListener: { remove: () => Promise<void> } | null = null;
+    let createMemoryListener: { remove: () => Promise<void> } | null = null;
+
+    const openNativeChat = async () => {
+      try {
+        sendListener = await NativeChat.addListener("sendMessage", ({ text }) => {
+          const trimmed = typeof text === "string" ? text.trim() : "";
+          if (!trimmed) return;
+          setNativeQueuedText(trimmed);
+        });
+        closeListener = await NativeChat.addListener("close", () => {
+          router.push("/chat/list");
+        });
+        selectPersonaListener = await NativeChat.addListener("selectPersona", ({ personaId }) => {
+          const targetId = typeof personaId === "string" ? personaId.trim() : "";
+          if (!targetId || targetId === runtime.personaId) return;
+          keepNativeChatOnNextCleanupRef.current = true;
+          setIsChatListOpen(false);
+          router.replace(`/chat?id=${encodeURIComponent(targetId)}`);
+        });
+        createMemoryListener = await NativeChat.addListener("createMemory", () => {
+          startCreateMemoryFromChatRef.current();
+        });
+
+        const presentPayload = {
+          personaId: runtime.personaId,
+          personaName: runtime.displayName || "페르소나",
+          avatarUrl: nativeAvatarUrl,
+          personas: nativePersonaList,
+          messages: messages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            createdAt: message.createdAt,
+          })),
+          isTyping,
+          memoryBalance,
+        };
+
+        await Promise.race([
+          NativeChat.present(presentPayload),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("NativeChat present timeout")), 1500),
+          ),
+        ]);
+        if (isActive) {
+          setIsNativeChatPresented(true);
+        }
+      } catch (error) {
+        console.error("[chat] failed to present native chat", error);
+        if (isActive) {
+          setNativeChatFailed(true);
+        }
+      }
+    };
+
+    void openNativeChat();
+
+    return () => {
+      isActive = false;
+      setIsNativeChatPresented(false);
+      if (sendListener) {
+        void sendListener.remove();
+      }
+      if (closeListener) {
+        void closeListener.remove();
+      }
+      if (selectPersonaListener) {
+        void selectPersonaListener.remove();
+      }
+      if (createMemoryListener) {
+        void createMemoryListener.remove();
+      }
+      if (keepNativeChatOnNextCleanupRef.current) {
+        keepNativeChatOnNextCleanupRef.current = false;
+      } else {
+        void NativeChat.dismiss().catch(() => {});
+      }
+    };
+  }, [shouldUseNativeChatScreen, isLoaded, runtime?.personaId, router]);
+
+  useEffect(() => {
+    if (!shouldUseNativeChatScreen || !isNativeChatPresented || !nativeChatStatePayload) return;
+    void NativeChat.sync(nativeChatStatePayload).catch((error) => {
+      console.error("[chat] failed to sync native chat state", error);
+    });
+  }, [shouldUseNativeChatScreen, isNativeChatPresented, nativeChatStatePayload]);
+
   const chatLayoutPaddingClass = savedChats.length > 0 ? "lg:pl-[34rem]" : "lg:pl-64";
+  const shouldHideMobileBottomNav = true;
+  const chatSectionStyle = {
+    paddingBottom: isNativeChatRuntime
+      ? "calc(6.25rem + env(safe-area-inset-bottom))"
+      : "calc(var(--bogopa-keyboard-height, 0px) + 6.25rem + env(safe-area-inset-bottom))",
+    scrollPaddingBottom: isNativeChatRuntime
+      ? "calc(7.5rem + env(safe-area-inset-bottom))"
+      : "calc(var(--bogopa-keyboard-height, 0px) + 7.5rem + env(safe-area-inset-bottom))",
+  } as const;
+  const chatFooterStyle = {
+    bottom: isNativeChatRuntime ? 0 : "var(--bogopa-keyboard-height, 0px)",
+    paddingBottom: `calc(0.75rem + max(env(safe-area-inset-bottom), 0.5rem))`,
+  } as const;
 
   if (!isLoaded) {
     return <ChatLoadingScaffold />;
@@ -802,9 +1185,9 @@ function ChatContainer() {
     if (savedChats.length > 0) {
       return (
         <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
-          <Navigation />
-          <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ${chatLayoutPaddingClass}`}>
-            <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-center lg:pb-0">
+          <Navigation hideMobileBottomNav={shouldHideMobileBottomNav} />
+          <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${chatLayoutPaddingClass}`}>
+            <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-[calc(5.5rem+max(env(safe-area-inset-bottom),0.5rem))] text-center lg:pb-0">
               <div className="max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 shadow-sm">
                 <p className="mb-2 font-headline text-2xl font-bold text-[#4a626d]">대화를 불러오는 중 문제가 생겼어요</p>
                 <p className="mb-6 text-sm text-[#5d605a]">저장된 대화 목록에서 다시 선택해 주세요.</p>
@@ -823,22 +1206,62 @@ function ChatContainer() {
 
     return (
       <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
-        <Navigation />
-        <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ${chatLayoutPaddingClass}`}>
-          <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-center lg:pb-0">
+        <Navigation hideMobileBottomNav={shouldHideMobileBottomNav} />
+        <main className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${chatLayoutPaddingClass}`}>
+          <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-[calc(5.5rem+max(env(safe-area-inset-bottom),0.5rem))] text-center lg:pb-0">
             <div className="max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 shadow-sm">
               <p className="mb-2 font-headline text-2xl font-bold text-[#4a626d]">새로운 기억을 만들어 대화를 시작하세요.</p>
-              <Link
-                href="/step-1"
-                className="inline-flex items-center justify-center rounded-full bg-[#4a626d] px-5 py-3 text-sm font-semibold text-[#f0f9ff]"
+              <button
+                type="button"
+                onClick={startCreateMemoryFromChat}
+                disabled={isChecking}
+                className="inline-flex items-center justify-center rounded-full bg-[#4a626d] px-5 py-3 text-sm font-semibold text-[#f0f9ff] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 새로운 기억 만들기
-              </Link>
+              </button>
             </div>
           </div>
         </main>
       </div>
       );
+  }
+
+  if (shouldUseNativeChatScreen) {
+    return (
+      <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
+        <Navigation hideMobileBottomNav={shouldHideMobileBottomNav} />
+        <main className={`relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${chatLayoutPaddingClass}`} />
+        {memoryStorePrompt ? (
+          <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm">
+            <section className="w-full max-w-xs rounded-3xl bg-white px-6 py-6 text-center shadow-2xl">
+              <h3 className="font-headline text-lg font-bold text-[#2f342e]">{memoryStorePrompt.title}</h3>
+              <p className="mt-2 text-sm text-[#5d605a]">{memoryStorePrompt.message}</p>
+              <div className="mt-6 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMemoryStorePrompt(null)}
+                  className="rounded-xl border border-[#d9dde1] bg-white px-4 py-2.5 text-sm font-semibold text-[#4b5563]"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = memoryStorePrompt.returnTo;
+                    setMemoryStorePrompt(null);
+                    router.push(`/payment?returnTo=${encodeURIComponent(target)}`);
+                  }}
+                  className="rounded-xl bg-[#3e5560] px-4 py-2.5 text-sm font-semibold text-white"
+                >
+                  확인
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+        {modalNode}
+      </div>
+    );
   }
 
   const personaName = runtime.displayName || "페르소나";
@@ -863,15 +1286,16 @@ function ChatContainer() {
 
   return (
     <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
-      <Navigation />
+      <Navigation hideMobileBottomNav={shouldHideMobileBottomNav} />
       
-      <main className={`flex min-h-0 flex-1 flex-col min-w-0 overflow-hidden transition-all duration-300 ${chatLayoutPaddingClass}`}>
+      <main className={`relative flex min-h-0 flex-1 flex-col min-w-0 overflow-hidden ${chatLayoutPaddingClass}`}>
         {/* Mobile Chat Header (Specific to this chat) */}
-        <div className="fixed top-0 left-0 z-10 flex h-16 w-full items-center justify-between border-b border-white/5 bg-[#242926]/80 px-4 backdrop-blur-md lg:hidden">
+        <header className="chat-header-divider fixed top-0 left-0 right-0 z-30 w-full bg-white pt-[var(--native-safe-top)] lg:hidden">
+          <div className="flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push("/")}
-              className="mr-1 p-1 text-[#afb3ac] hover:text-[#f0f9ff]"
+              onClick={() => router.push("/chat/list")}
+              className="mr-1 rounded-xl p-1 text-[#3e5560] hover:bg-[#f4f8fa]"
             >
               <ArrowLeftIcon />
             </button>
@@ -889,8 +1313,8 @@ function ChatContainer() {
                 )}
               </div>
               <div className="flex items-center gap-1.5">
-                <p className="font-headline text-base font-bold text-[#f0f9ff]">{personaName}</p>
-                <ChevronDownIcon className="h-4 w-4 text-[#afb3ac]" />
+                <p className="font-headline text-base font-bold text-[#2f342e]">{personaName}</p>
+                <ChevronDownIcon className="h-4 w-4 text-[#3e5560]" />
               </div>
             </button>
           </div>
@@ -898,47 +1322,13 @@ function ChatContainer() {
             <MemoryBalanceBadge
               memoryBalance={memoryBalance}
               isAnimating={isMemoryBadgeAnimating}
+              showBorder={false}
             />
-            <button onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }} className="p-2 text-[#afb3ac]">
-              <MenuIcon />
-            </button>
           </div>
-          {menuOpen && (
-            <div className="absolute right-4 top-14 z-40 w-fit min-w-[120px] rounded-2xl bg-[#303733] p-1.5 shadow-2xl ring-1 ring-white/5 border border-white/5" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setIsPersonaSheetOpen(true);
-                  }}
-                  className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5"
-                >
-                  기억 수정하기
-                </button>
-                <div className="mx-2 my-1 h-[1px] bg-white/5" />
-                <button
-                  type="button"
-                  onClick={openDeleteFlow}
-                  className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0b6b4] hover:bg-white/5"
-                >
-                  내 기억 삭제
-                </button>
-                <div className="mx-2 my-1 h-[1px] bg-white/5" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowResetConfirm(true);
-                  }}
-                  className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5"
-                >
-                  채팅 초기화
-                </button>
-            </div>
-          )}
-        </div>
+          </div>
+        </header>
 
-        <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 md:px-6 overflow-hidden">
+        <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden px-4 pt-[calc(4rem+var(--native-safe-top))] md:px-6 lg:pt-0">
           {/* Desktop Chat Header */}
           <header className="hidden items-center justify-between px-2 py-6 lg:flex">
             <div className="flex items-center gap-4">
@@ -951,44 +1341,24 @@ function ChatContainer() {
                   </div>
                 )}
               </div>
-              <h1 className="font-headline text-xl font-bold tracking-tight text-[#4a626d]">{personaName}</h1>
+              <h1 className="font-headline text-xl font-bold tracking-tight text-[#2f342e]">{personaName}</h1>
             </div>
-            <div className="relative flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
               <MemoryBalanceBadge
                 memoryBalance={memoryBalance}
                 isAnimating={isMemoryBadgeAnimating}
+                showBorder={false}
               />
-              <button onClick={() => setMenuOpen(!menuOpen)} className="rounded-xl p-2 text-[#afb3ac] hover:bg-black/5 hover:text-[#4a626d]">
-                <MenuIcon />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-12 z-40 w-fit min-w-[120px] rounded-2xl bg-[#303733] p-1.5 shadow-2xl ring-1 ring-white/5 border border-white/5">
-                <button onClick={openDeleteFlow} className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0b6b4] hover:bg-white/5">
-                  내 기억 삭제
-                </button>
-                <div className="mx-2 my-1 h-[1px] bg-white/5" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setIsPersonaSheetOpen(true);
-                  }}
-                  className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5"
-                >
-                  기억 수정하기
-                </button>
-                <div className="mx-2 my-1 h-[1px] bg-white/5" />
-                <button onClick={() => { setMenuOpen(false); setShowResetConfirm(true); }} className="w-full whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold text-[#f0f5f2] hover:bg-white/5">
-                  채팅 초기화
-                </button>
-              </div>
-            )}
             </div>
           </header>
 
-          <section className="hide-scrollbar flex-1 space-y-8 overflow-y-auto px-2 pb-8 pt-4 lg:pt-0">
-            <div className="flex justify-center mt-20 lg:mt-0">
-              <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] font-semibold tracking-wide text-[#afb3ac]">
+          <section
+            ref={chatScrollRef}
+            className="hide-scrollbar flex-1 space-y-8 overflow-y-auto px-2 pt-4 lg:pt-0"
+            style={chatSectionStyle}
+          >
+            <div className="flex justify-center">
+              <span className="px-1 py-1 text-[11px] font-semibold tracking-wide text-[#2f342e]">
                 {dateLabel || formatDateLabel(nowIso())}
               </span>
             </div>
@@ -1014,7 +1384,7 @@ function ChatContainer() {
                       </div>
                     </div>
                     <div className="max-w-[85%]">
-                      <div className="rounded-3xl rounded-tl-sm bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+                      <div className="rounded-3xl rounded-tl-sm bg-[#e3e8eb] p-5">
                         <p className="whitespace-pre-line text-[15px] leading-relaxed text-[#2f342e]">{message.content}</p>
                       </div>
                       <span className="ml-1 mt-2 block text-[10px] text-[#2f342e]">{formatTime(message.createdAt)}</span>
@@ -1054,48 +1424,82 @@ function ChatContainer() {
             <div ref={chatEndRef} className="h-10" />
           </section>
 
-          <footer className="bg-transparent pb-[calc(6.4rem+env(safe-area-inset-bottom))] pt-4 lg:pb-8">
-            <form onSubmit={handleSubmit} className="relative flex items-end gap-2 px-2">
-              <div className="relative flex-1 flex items-center bg-white rounded-[2rem] shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5 focus-within:ring-2 focus-within:ring-[#4a626d]/20 transition-all">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onCompositionStart={() => {
-                    isComposingRef.current = true;
-                  }}
-                  onCompositionEnd={() => {
-                    isComposingRef.current = false;
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      const nativeEvent = e.nativeEvent as KeyboardEvent;
-                      if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
-                        return;
-                      }
-                      e.preventDefault();
-                      const form = e.currentTarget.closest("form");
-                      if (form) form.requestSubmit();
-                    }
-                  }}
-                  placeholder={placeholder}
-                  className="w-full max-h-32 resize-none border-none bg-transparent p-4 pl-6 pr-14 text-[15px] leading-relaxed text-[#2f342e] outline-none transition-all font-body"
-                  rows={1}
-                />
-                <button
-                  type="submit"
-                  disabled={!input.trim() || isTyping}
-                  className="absolute inset-y-0 right-2 my-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#4a626d] text-white shadow-lg shadow-[#4a626d]/20 transition-all hover:scale-105 active:scale-95 disabled:scale-100 disabled:opacity-30"
-                >
-                  <SendIcon />
-                </button>
-              </div>
-            </form>
-            <p className="mt-3 text-center text-[10px] font-medium text-[#afb3ac] hidden lg:block">
-              {personaName}가 {memoryCount}개의 정리된 기억을 바탕으로 답장을 준비하고 있어요.
-            </p>
+          <footer
+            className="absolute bottom-0 left-0 right-0 z-20 border-t border-[#dfe4e7] bg-white/95 px-4 pt-3 backdrop-blur-md lg:static lg:z-auto lg:border-t-0 lg:bg-transparent lg:px-0 lg:pt-4 lg:backdrop-blur-0 lg:pb-8"
+            style={chatFooterStyle}
+          >
+            <div className="mx-auto w-full max-w-3xl">
+              <form onSubmit={handleSubmit} className="relative flex items-end gap-2 lg:px-2">
+                <div className="relative flex-1 flex items-center rounded-[2rem] bg-[#f8fbfd] focus-within:ring-2 focus-within:ring-[#3e5560]/20 transition-all">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onFocus={() => setIsComposerFocused(true)}
+                    onBlur={() => setIsComposerFocused(false)}
+                    onCompositionStart={() => {
+                      isComposingRef.current = true;
+                    }}
+                    onCompositionEnd={() => {
+                      isComposingRef.current = false;
+                    }}
+                    enterKeyHint="enter"
+                    placeholder={placeholder}
+                    className="w-full max-h-32 resize-none border-none bg-transparent p-4 pl-6 pr-14 text-[16px] leading-relaxed text-[#2f342e] outline-none transition-all font-body"
+                    rows={1}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!input.trim()}
+                    className="absolute inset-y-0 right-2 my-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#3e5560] text-[#ffffff] transition-all hover:scale-105 active:scale-95 disabled:scale-100 disabled:opacity-30"
+                  >
+                    <SendIcon />
+                  </button>
+                </div>
+              </form>
+              <p className="mt-3 text-center text-[10px] font-medium text-[#afb3ac] hidden lg:block">
+                {personaName}가 {memoryCount}개의 정리된 기억을 바탕으로 답장을 준비하고 있어요.
+              </p>
+            </div>
           </footer>
         </div>
       </main>
+
+      {typingBlockedNotice ? (
+        <div className="pointer-events-none fixed inset-0 z-[180] flex items-center justify-center px-6">
+          <div className="rounded-2xl bg-[#2f342e]/92 px-5 py-3 text-center text-sm font-semibold text-white shadow-2xl">
+            {typingBlockedNotice}
+          </div>
+        </div>
+      ) : null}
+
+      {memoryStorePrompt ? (
+        <div className="fixed inset-0 z-[181] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm">
+          <section className="w-full max-w-xs rounded-3xl bg-white px-6 py-6 text-center shadow-2xl">
+            <h3 className="font-headline text-lg font-bold text-[#2f342e]">{memoryStorePrompt.title}</h3>
+            <p className="mt-2 text-sm text-[#5d605a]">{memoryStorePrompt.message}</p>
+            <div className="mt-6 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMemoryStorePrompt(null)}
+                className="rounded-xl border border-[#d9dde1] bg-white px-4 py-2.5 text-sm font-semibold text-[#4b5563]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = memoryStorePrompt.returnTo;
+                  setMemoryStorePrompt(null);
+                  router.push(`/payment?returnTo=${encodeURIComponent(target)}`);
+                }}
+                className="rounded-xl bg-[#3e5560] px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                확인
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {/* Modals */}
       {showResetConfirm && (
@@ -1195,7 +1599,19 @@ function ChatContainer() {
         <div className="fixed inset-0 z-[150] lg:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsChatListOpen(false)} />
           <div className="absolute bottom-0 left-0 w-full max-h-[70vh] rounded-t-[2.5rem] bg-[#242926] p-6 pb-12 shadow-[0_-8px_30px_rgba(0,0,0,0.3)] animate-slide-up flex flex-col border-t border-white/5">
-            <div className="mx-auto mb-6 h-1 w-12 rounded-full bg-white/10 shrink-0" />
+            <div
+              className="mx-auto mb-6 flex w-full shrink-0 touch-none justify-center"
+              onTouchStart={handleChatListSwipeStart}
+              onTouchMove={handleChatListSwipeMove}
+              onTouchEnd={handleChatListSwipeEnd}
+              onTouchCancel={handleChatListSwipeEnd}
+            >
+              <div
+                className={`h-1 rounded-full transition-all ${
+                  isChatListHandleDragging ? "w-16 bg-white/35" : "w-12 bg-white/10"
+                }`}
+              />
+            </div>
             
             <h3 className="mb-6 font-headline text-xl font-bold text-[#f0f5f2] px-2 text-center">대화 상대 바꾸기</h3>
             
@@ -1224,7 +1640,7 @@ function ChatContainer() {
                   </div>
                   <div className="min-w-0 flex-1 text-left">
                     <p className={`truncate text-base font-bold text-[#f0f5f2] ${chatId === chat.personaId ? "text-white" : ""}`}>{chat.personaName}</p>
-                    <p className="truncate text-xs text-[#afb3ac] mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                    <p className="truncate text-xs text-[#5d605a] mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
                       {chat.lastMessage || "새로운 대화"}
                     </p>
                   </div>
@@ -1236,8 +1652,9 @@ function ChatContainer() {
             </div>
             
             <button
-               onClick={() => router.push('/step-1')}
-               className="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-white/10 py-4 text-sm font-bold text-[#afb3ac] active:bg-white/5"
+               onClick={startCreateMemoryFromChat}
+               disabled={isChecking}
+               className="mt-6 flex items-center justify-center gap-2 rounded-2xl border-2 border-[#3e5560] py-4 text-sm font-bold text-[#111111] active:bg-black/5 disabled:cursor-not-allowed disabled:opacity-70"
             >
                <span>새로운 기억 만들기</span>
                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -1247,6 +1664,7 @@ function ChatContainer() {
           </div>
         </div>
       )}
+      {modalNode}
     </div>
   );
 }

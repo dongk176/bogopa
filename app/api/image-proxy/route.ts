@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { extractAvatarStorageKey, isAllowedUploadKey } from "@/lib/avatar-storage";
 
 const REGION = process.env.AWS_REGION?.trim() || process.env.AWS_DEFAULT_REGION?.trim() || "ap-northeast-2";
 const BUCKET = (process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "").trim();
@@ -17,19 +18,17 @@ function getS3() {
 }
 
 export async function GET(request: NextRequest) {
-    try {
+  try {
+        const directKey = request.nextUrl.searchParams.get("key")?.trim() || "";
         const url = request.nextUrl.searchParams.get("url");
-        if (!url) return new NextResponse("Missing url parameter", { status: 400 });
-
-        const keyMatch = url.match(/(bogopa\/persona\/.*)$/);
-        if (!keyMatch) {
-            return NextResponse.redirect(url, 307);
+        const extractedKey = extractAvatarStorageKey(directKey) || extractAvatarStorageKey(url);
+        if (!extractedKey || !isAllowedUploadKey(extractedKey)) {
+            return new NextResponse("Invalid image key", { status: 400 });
         }
-        const key = keyMatch[1];
+        const key = extractedKey;
 
         if (!BUCKET || !REGION) {
-            console.warn("[image-proxy] S3 not configured, redirecting to original url");
-            return NextResponse.redirect(url, 307);
+            return new NextResponse("S3 not configured", { status: 500 });
         }
 
         const command = new GetObjectCommand({
@@ -41,8 +40,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(presignedUrl, 307);
     } catch (error) {
         console.error("[image-proxy] error generating presigned url", error);
-        const fallbackUrl = request.nextUrl.searchParams.get("url");
-        if (fallbackUrl) return NextResponse.redirect(fallbackUrl, 307);
         return new NextResponse("Internal Server Error", { status: 500 });
     }
 }

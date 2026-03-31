@@ -6,6 +6,9 @@ export const MEMORY_COSTS = {
   personaCreate: 20,
 } as const;
 
+export const MEMORY_ITEM_CHAR_LIMIT = 50;
+export const FREQUENT_PHRASE_CHAR_LIMIT = 25;
+
 export type PlanLimits = {
   summaryEditable: boolean;
   maxPersonas: number;
@@ -18,18 +21,18 @@ export type PlanLimits = {
 export const FREE_PLAN_LIMITS: PlanLimits = {
   summaryEditable: false,
   maxPersonas: 1,
-  memoryItemCharMax: 100,
+  memoryItemCharMax: MEMORY_ITEM_CHAR_LIMIT,
   memoryItemMaxCount: 1,
-  phraseItemCharMax: 10,
+  phraseItemCharMax: FREQUENT_PHRASE_CHAR_LIMIT,
   phraseItemMaxCount: 1,
 };
 
 export const PAID_PLAN_LIMITS: PlanLimits = {
   summaryEditable: true,
   maxPersonas: 15,
-  memoryItemCharMax: FREE_PLAN_LIMITS.memoryItemCharMax * 10,
+  memoryItemCharMax: MEMORY_ITEM_CHAR_LIMIT,
   memoryItemMaxCount: FREE_PLAN_LIMITS.memoryItemMaxCount * 10,
-  phraseItemCharMax: FREE_PLAN_LIMITS.phraseItemCharMax * 10,
+  phraseItemCharMax: FREQUENT_PHRASE_CHAR_LIMIT,
   phraseItemMaxCount: FREE_PLAN_LIMITS.phraseItemMaxCount * 10,
 };
 

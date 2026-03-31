@@ -1,14 +1,32 @@
 import { getDbPool } from "@/lib/server/db";
+import { buildAvatarProxyUrl, extractAvatarStorageKey, inferAvatarStorage, isAllowedUploadKey, resolveAvatarUrlFromStorage } from "@/lib/avatar-storage";
+import { isS3Configured, uploadRemoteProfileImageToS3 } from "@/lib/server/s3";
 
 export type UserProfile = {
   userId: string;
   name: string;
+  provider: string | null;
   birthDate: string | null;
   gender: "male" | "female" | "other" | null;
   mbti: string | null;
   interests: string[];
   profileCompleted: boolean;
 };
+
+export type UserAuthSnapshot = {
+  userId: string;
+  name: string;
+  email: string | null;
+  image: string | null;
+};
+
+function normalizeImageUrl(url: string | null | undefined) {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://")) return `https://${trimmed.slice("http://".length)}`;
+  return trimmed;
+}
 
 const CREATE_SCHEMA_SQL = `CREATE SCHEMA IF NOT EXISTS bogopa;`;
 
@@ -18,6 +36,8 @@ CREATE TABLE IF NOT EXISTS bogopa."users" (
   "name" VARCHAR,
   "email" VARCHAR,
   "image" TEXT,
+  "image_source" VARCHAR(24),
+  "image_key" TEXT,
   "provider" VARCHAR,
   "birth_date" DATE,
   "gender" VARCHAR(16),
@@ -40,6 +60,8 @@ export async function ensureUsersTable() {
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "name" VARCHAR;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "email" VARCHAR;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "image" TEXT;`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "image_source" VARCHAR(24);`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "image_key" TEXT;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "provider" VARCHAR;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "birth_date" DATE;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "gender" VARCHAR(16);`);
@@ -48,6 +70,30 @@ export async function ensureUsersTable() {
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "profile_completed" BOOLEAN NOT NULL DEFAULT FALSE;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+      await pool.query(`
+        UPDATE bogopa."users"
+        SET "image_source" = 'default',
+            "image_key" = "image"
+        WHERE COALESCE("image_source", '') = ''
+          AND "image" IS NOT NULL
+          AND "image" LIKE '/%';
+      `);
+      await pool.query(`
+        UPDATE bogopa."users"
+        SET "image_source" = 'upload',
+            "image_key" = substring("image" from '(bogopa/(?:persona|user-profile)/[^?]+)')
+        WHERE COALESCE("image_source", '') = ''
+          AND "image" IS NOT NULL
+          AND "image" ~ 'bogopa/(persona|user-profile)/';
+      `);
+      await pool.query(`
+        UPDATE bogopa."users"
+        SET "image_source" = 'external',
+            "image_key" = "image"
+        WHERE COALESCE("image_source", '') = ''
+          AND "image" IS NOT NULL
+          AND "image" LIKE 'http%';
+      `);
     })().catch((error) => {
       ensureUsersTablePromise = null;
       throw error;
@@ -55,6 +101,46 @@ export async function ensureUsersTable() {
   }
 
   await ensureUsersTablePromise;
+}
+
+async function resolveOAuthImageStorage(input: {
+  imageUrl: string | null;
+  userId: string;
+}) {
+  const normalized = normalizeImageUrl(input.imageUrl);
+  if (!normalized) {
+    return { image: null, imageSource: null as string | null, imageKey: null as string | null };
+  }
+
+  const inferred = inferAvatarStorage({ avatarUrl: normalized });
+  if (inferred.avatarSource === "upload" && inferred.avatarKey && isAllowedUploadKey(inferred.avatarKey)) {
+    return {
+      image: buildAvatarProxyUrl(inferred.avatarKey),
+      imageSource: "upload",
+      imageKey: inferred.avatarKey,
+    };
+  }
+
+  if (inferred.avatarSource === "default" && inferred.avatarKey) {
+    return { image: inferred.avatarUrl, imageSource: "default", imageKey: inferred.avatarKey };
+  }
+
+  if (isS3Configured()) {
+    const uploaded = await uploadRemoteProfileImageToS3({ imageUrl: normalized, userId: input.userId });
+    if (uploaded?.key) {
+      return {
+        image: buildAvatarProxyUrl(uploaded.key),
+        imageSource: "upload",
+        imageKey: uploaded.key,
+      };
+    }
+  }
+
+  return {
+    image: normalized,
+    imageSource: "external",
+    imageKey: normalized,
+  };
 }
 
 export async function upsertUserFromOAuth(input: {
@@ -66,20 +152,39 @@ export async function upsertUserFromOAuth(input: {
 }) {
   await ensureUsersTable();
   const pool = getDbPool();
+  const resolvedImage = await resolveOAuthImageStorage({
+    imageUrl: input.image,
+    userId: input.userId,
+  });
 
   await pool.query(
     `
-    INSERT INTO bogopa."users" ("id", "name", "email", "image", "provider", "updated_at")
-    VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+    INSERT INTO bogopa."users" ("id", "name", "email", "image", "image_source", "image_key", "provider", "updated_at")
+    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
     ON CONFLICT ("id") DO UPDATE
     SET "name" = COALESCE(NULLIF(bogopa."users"."name", ''), EXCLUDED.name),
         "email" = EXCLUDED.email,
-        "image" = EXCLUDED.image,
+        "image" = COALESCE(EXCLUDED.image, bogopa."users"."image"),
+        "image_source" = COALESCE(EXCLUDED.image_source, bogopa."users"."image_source"),
+        "image_key" = COALESCE(EXCLUDED.image_key, bogopa."users"."image_key"),
         "provider" = EXCLUDED.provider,
         "updated_at" = CURRENT_TIMESTAMP;
     `,
-    [input.userId, input.name, input.email, input.image, input.provider],
+    [
+      input.userId,
+      input.name,
+      input.email,
+      resolvedImage.image,
+      resolvedImage.imageSource,
+      resolvedImage.imageKey,
+      input.provider,
+    ],
   );
+
+  return {
+    userId: input.userId,
+    image: resolvedImage.image,
+  };
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile> {
@@ -91,6 +196,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     SELECT
       "id",
       "name",
+      "provider",
       "birth_date",
       "gender",
       "mbti",
@@ -107,6 +213,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     return {
       userId,
       name: "",
+      provider: null,
       birthDate: null,
       gender: null,
       mbti: null,
@@ -138,11 +245,44 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
   return {
     userId: String(row.id),
     name: typeof row.name === "string" ? row.name : "",
+    provider: typeof row.provider === "string" && row.provider.trim() ? row.provider.trim() : null,
     birthDate,
     gender,
     mbti,
     interests,
     profileCompleted: hasRequiredProfileFields,
+  };
+}
+
+export async function getUserAuthSnapshot(userId: string): Promise<UserAuthSnapshot | null> {
+  await ensureUsersTable();
+  const pool = getDbPool();
+
+  const res = await pool.query(
+    `
+    SELECT "id", "name", "email", "image", "image_source", "image_key"
+    FROM bogopa."users"
+    WHERE "id" = $1
+    LIMIT 1
+    `,
+    [userId],
+  );
+
+  const row = res.rows[0];
+  if (!row) return null;
+
+  return {
+    userId: String(row.id),
+    name: typeof row.name === "string" && row.name.trim() ? row.name : "사용자",
+    email: typeof row.email === "string" ? row.email : null,
+    image: resolveAvatarUrlFromStorage({
+      avatarSource: typeof row.image_source === "string" ? row.image_source : null,
+      avatarKey:
+        typeof row.image_key === "string"
+          ? (extractAvatarStorageKey(row.image_key) || row.image_key)
+          : null,
+      legacyAvatarUrl: normalizeImageUrl(typeof row.image === "string" ? row.image : null),
+    }),
   };
 }
 
@@ -153,9 +293,30 @@ export async function saveUserProfile(input: {
   gender: "male" | "female" | "other";
   mbti: string;
   interests: string[];
+  provider?: string | null;
 }) {
   await ensureUsersTable();
   const pool = getDbPool();
+  const requestedProvider = typeof input.provider === "string" ? input.provider.trim() : "";
+
+  let provider = requestedProvider;
+  if (!provider) {
+    const providerRow = await pool.query(
+      `
+      SELECT "provider"
+      FROM bogopa."users"
+      WHERE "id" = $1
+      LIMIT 1
+      `,
+      [input.userId],
+    );
+    const existingProvider = providerRow.rows[0]?.provider;
+    provider = typeof existingProvider === "string" ? existingProvider.trim() : "";
+  }
+  if (!provider) {
+    // Keep INSERT safe even when OAuth snapshot row was not created yet.
+    provider = "unknown";
+  }
 
   await pool.query(
     `
@@ -173,6 +334,7 @@ export async function saveUserProfile(input: {
     VALUES ($1, $2, $3, $4::date, $5, $6, $7::text[], TRUE, CURRENT_TIMESTAMP)
     ON CONFLICT ("id") DO UPDATE
     SET "name" = EXCLUDED.name,
+        "provider" = COALESCE(NULLIF(bogopa."users"."provider", ''), EXCLUDED.provider),
         "birth_date" = EXCLUDED.birth_date,
         "gender" = EXCLUDED.gender,
         "mbti" = EXCLUDED.mbti,
@@ -180,6 +342,6 @@ export async function saveUserProfile(input: {
         "profile_completed" = TRUE,
         "updated_at" = CURRENT_TIMESTAMP;
     `,
-    [input.userId, input.name, "oauth", input.birthDate, input.gender, input.mbti, input.interests],
+    [input.userId, input.name, provider, input.birthDate, input.gender, input.mbti, input.interests],
   );
 }

@@ -1,6 +1,5 @@
 const SESSION_STORAGE_KEY = "bogopa_onboarding_session_id";
 const STEP_DRAFT_KEYS = [
-  "bogopa_profile_step1",
   "bogopa_profile_step2",
   "bogopa_profile_step3",
   "bogopa_profile_step4",

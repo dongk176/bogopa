@@ -17,7 +17,9 @@ export default function HomeConfirmModal({ isOpen, onClose }: { isOpen: boolean;
         <div className="mb-6 text-center">
           <h2 className="font-headline mb-3 text-2xl font-bold text-[#2f342e]">홈으로 돌아갈까요?</h2>
           <p className="text-sm leading-relaxed text-[#655d5a]">
-            지금 돌아가면 작성중인 내용은 삭제됩니다.
+            작성 내용은 임시 저장돼요.
+            <br />
+            언제든 이어서 만들 수 있어요.
           </p>
         </div>
         <div className="flex flex-col gap-3">

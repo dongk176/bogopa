@@ -1,4 +1,7 @@
 import { listRecentUserReviews } from "@/lib/server/reviews";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth/next";
 import SiteFooter from "@/app/_components/SiteFooter";
 import TypewriterHeadline from "@/app/_components/TypewriterHeadline";
 import FadeIn from "@/app/_components/FadeIn";
@@ -6,8 +9,13 @@ import { StartChatButtonDesktop, StartChatButtonMobile } from "@/app/_components
 import UserProfileMenu from "@/app/_components/UserProfileMenu";
 import Navigation from "@/app/_components/Navigation";
 import RecallingLogo from "@/app/_components/RecallingLogo";
-import HomeSignupGate from "@/app/_components/HomeSignupGate";
 import SignupCompleteModal from "@/app/_components/SignupCompleteModal";
+import HomeWebOnly from "@/app/_components/HomeWebOnly";
+import HomeAppOnly from "@/app/_components/HomeAppOnly";
+import HomeMemoryCarouselClientOnly from "@/app/_components/HomeMemoryCarouselClientOnly";
+import NativeAppLoginScreen from "@/app/_components/NativeAppLoginScreen";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { getUserProfile } from "@/lib/server/user-profile";
 
 type ReflectionItem = {
   name: string;
@@ -345,7 +353,34 @@ function ChatIcon() {
   );
 }
 
+function isLikelyNativeAppUserAgent(userAgent: string) {
+  const ua = userAgent.toLowerCase();
+  return ua.includes("capacitor") || ua.includes("cordova") || ua.includes("co.kr.bogopa.app") || ua.includes("bogopanativeapp") || ua.includes("bogopa-native");
+}
+
 export default async function Home() {
+  const requestHeaders = await headers();
+  const userAgent = requestHeaders.get("user-agent") || "";
+  const initialIsNativeApp = isLikelyNativeAppUserAgent(userAgent);
+
+  const session = await getServerSession(authOptions);
+  const sessionUser = session?.user as { id?: string; profileCompleted?: boolean } | undefined;
+
+  if (initialIsNativeApp && !sessionUser?.id) {
+    return <NativeAppLoginScreen />;
+  }
+
+  if (sessionUser?.id && sessionUser.profileCompleted !== true) {
+    try {
+      const profile = await getUserProfile(sessionUser.id);
+      if (!profile.profileCompleted) {
+        redirect("/signup?returnTo=%2Fstep-1");
+      }
+    } catch {
+      redirect("/signup?returnTo=%2Fstep-1");
+    }
+  }
+
   const year = new Date().getFullYear();
   let liveReflections: ReflectionItem[] = [];
 
@@ -376,160 +411,202 @@ export default async function Home() {
   const reflectionRowBottom = mergedReflections.filter((_, index) => index % 3 === 2);
 
   return (
-    <div className="min-h-screen bg-[#faf9f5]">
-      <HomeSignupGate />
+    <div className={`min-h-screen bg-[#faf9f5] ${initialIsNativeApp ? "native-home-static" : ""}`}>
       <SignupCompleteModal />
       <Navigation />
 
-      <main className="overflow-hidden pb-28 pt-12 md:pb-20 md:pt-16 lg:pt-20 lg:pl-64">
-        <div className="lg:hidden">
-          <RecallingLogo delay={800}>
-            <div className="flex flex-col items-center mb-10 md:mb-16">
-              <div className="flex items-center gap-3">
-                <img src="/logo/bogopa%20logo.png" alt="Logo" className="h-10 w-10 object-contain shadow-sm" />
-                <span className="font-headline text-3xl font-extrabold tracking-tight text-[#4a626d]">Bogopa</span>
-              </div>
+      <HomeAppOnly initialIsNativeApp={initialIsNativeApp}>
+        <header className="fixed left-0 top-0 z-20 w-full bg-[#242926] pt-[env(safe-area-inset-top)] lg:hidden">
+          <div className="flex h-16 items-center justify-center">
+            <div className="flex items-center gap-3">
+              <img src="/logo/bogopa%20logo.png" alt="Logo" className="h-9 w-9 object-contain shadow-sm" />
+              <span className="font-headline text-3xl font-extrabold tracking-tight text-[#4a626d]">Bogopa</span>
             </div>
-          </RecallingLogo>
-        </div>
+          </div>
+        </header>
+      </HomeAppOnly>
 
-        <section className="mx-auto max-w-4xl lg:max-w-6xl px-6 text-center">
-          <TypewriterHeadline />
-          <FadeIn delay={1900}>
-            <p className="mx-auto mb-4 max-w-2xl break-keep text-lg leading-relaxed text-[#655d5a] md:mb-12 md:text-xl">
-              대화 내용을 분석해, AI로 그 사람의 말투처럼 다시 대화할 수 있어요.
-            </p>
-            <div className="flex flex-col items-center gap-8">
-              <div className="hidden flex-col gap-3 sm:flex-row md:flex">
-                <StartChatButtonDesktop />
+      <main
+        className={`home-main overflow-hidden pt-[max(env(safe-area-inset-top),3.5rem)] md:pt-14 lg:pt-20 lg:pl-64 ${
+          initialIsNativeApp ? "pb-0 md:pb-0" : "pb-28 md:pb-20"
+        }`}
+      >
+        <HomeWebOnly initialIsNativeApp={initialIsNativeApp}>
+          <div className="lg:hidden">
+            <RecallingLogo delay={800}>
+              <div className="mb-10 flex flex-col items-center md:mb-16">
+                <div className="flex items-center gap-3">
+                  <img src="/logo/bogopa%20logo.png" alt="Logo" className="h-10 w-10 object-contain shadow-sm" />
+                  <span className="font-headline text-3xl font-extrabold tracking-tight text-[#4a626d]">Bogopa</span>
+                </div>
               </div>
+            </RecallingLogo>
+          </div>
+        </HomeWebOnly>
 
-              <div className="relative mt-0 w-full max-w-none overflow-hidden md:mt-8">
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-[#242926] via-[#242926]/80 to-transparent md:w-32" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-[#242926] via-[#242926]/80 to-transparent md:w-32" />
-                <div className="space-y-3 py-4">
-                  <div className="animate-marquee whitespace-nowrap">
-                    {[...reflectionRowTop, ...reflectionRowTop].map((review, index) => (
-                      <span
-                        key={`top-${review.name}-${index}`}
-                        className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
-                      >
-                        <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
-                        <span>“{review.text}”</span>
-                      </span>
-                    ))}
-                  </div>
+        <section className="mx-auto w-full max-w-md px-3 text-center lg:max-w-6xl lg:px-6">
+          <HomeAppOnly initialIsNativeApp={initialIsNativeApp}>
+            <h1 className="font-headline mb-4 text-3xl font-extrabold leading-[1.1] tracking-tight text-[#2f342e] md:text-5xl">
+              기억이 있다면,
+              <br />
+              <span className="text-[#4a626d]">다시 만날 수 있습니다</span>
+            </h1>
+            <div className="flex flex-col items-center gap-3">
+              <HomeMemoryCarouselClientOnly />
+            </div>
+          </HomeAppOnly>
 
-                  <div className="animate-marquee whitespace-nowrap">
-                    {[...reflectionRowMiddle, ...reflectionRowMiddle].map((review, index) => (
-                      <span
-                        key={`middle-${review.name}-${index}`}
-                        className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
-                      >
-                        <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
-                        <span>“{review.text}”</span>
-                      </span>
-                    ))}
-                  </div>
+          <HomeWebOnly initialIsNativeApp={initialIsNativeApp}>
+            <TypewriterHeadline disableAnimation={initialIsNativeApp} />
+            <FadeIn delay={1900} disableAnimation={initialIsNativeApp}>
+              <p className="mx-auto mb-4 max-w-2xl break-keep text-lg leading-relaxed text-[#655d5a] md:mb-12 md:text-xl">
+                대화 내용을 분석해, AI로 그 사람의 말투처럼 다시 대화할 수 있어요.
+              </p>
+              <div className="flex flex-col items-center gap-8">
+                <div className="hidden flex-col gap-3 sm:flex-row md:flex">
+                  <StartChatButtonDesktop />
+                </div>
+                <div
+                  className="relative mt-0 w-full max-w-none overflow-hidden md:mt-8"
+                  style={{
+                    WebkitMaskImage:
+                      "linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)",
+                    maskImage:
+                      "linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)",
+                    WebkitMaskRepeat: "no-repeat",
+                    maskRepeat: "no-repeat",
+                    WebkitMaskSize: "100% 100%",
+                    maskSize: "100% 100%",
+                  }}
+                >
+                  <div className="space-y-3 py-4">
+                    <div className="animate-marquee whitespace-nowrap">
+                      {[...reflectionRowTop, ...reflectionRowTop].map((review, index) => (
+                        <span
+                          key={`top-${review.name}-${index}`}
+                          className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
+                        >
+                          <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
+                          <span>“{review.text}”</span>
+                        </span>
+                      ))}
+                    </div>
 
-                  <div className="animate-marquee whitespace-nowrap">
-                    {[...reflectionRowBottom, ...reflectionRowBottom].map((review, index) => (
-                      <span
-                        key={`bottom-${review.name}-${index}`}
-                        className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
-                      >
-                        <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
-                        <span>“{review.text}”</span>
-                      </span>
-                    ))}
+                    <div className="animate-marquee whitespace-nowrap">
+                      {[...reflectionRowMiddle, ...reflectionRowMiddle].map((review, index) => (
+                        <span
+                          key={`middle-${review.name}-${index}`}
+                          className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
+                        >
+                          <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
+                          <span>“{review.text}”</span>
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="animate-marquee whitespace-nowrap">
+                      {[...reflectionRowBottom, ...reflectionRowBottom].map((review, index) => (
+                        <span
+                          key={`bottom-${review.name}-${index}`}
+                          className="mx-2 inline-flex items-center gap-2 rounded-full border border-[#afb3ac]/20 bg-white px-5 py-2 text-sm text-[#58504d] shadow-sm"
+                        >
+                          <strong className="font-semibold text-[#3e5560]">{review.name}</strong>
+                          <span>“{review.text}”</span>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </FadeIn>
+            </FadeIn>
+          </HomeWebOnly>
         </section>
 
-        <FadeIn delay={1900}>
-          <section className="mx-auto mt-24 max-w-6xl px-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              {featureCards.map((feature) => (
-                <div
-                  key={feature.title}
-                  className={`rounded-2xl border p-8 text-center transition-transform duration-300 hover:-translate-y-1 ${feature.cardClassName}`}
-                >
+        <HomeWebOnly initialIsNativeApp={initialIsNativeApp}>
+          <FadeIn delay={1900}>
+            <section className="mx-auto mt-24 max-w-6xl px-6">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                {featureCards.map((feature) => (
                   <div
-                    className={`mx-auto mb-6 grid h-14 w-14 place-items-center rounded-full ${feature.badgeClassName}`}
+                    key={feature.title}
+                    className={`rounded-2xl border p-8 text-center transition-transform duration-300 hover:-translate-y-1 ${feature.cardClassName}`}
                   >
-                    {feature.icon}
-                  </div>
-                  <h3 className="font-headline mb-3 text-xl font-bold text-[#2f342e]">{feature.title}</h3>
-                  <p className="text-sm leading-relaxed text-[#655d5a]">{feature.description}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="mx-auto mt-20 grid max-w-6xl grid-cols-1 gap-8 px-6 lg:grid-cols-2">
-            <article className="rounded-3xl border border-[#afb3ac]/30 bg-white p-8 shadow-[0_8px_24px_rgba(47,52,46,0.05)]">
-              <h2 className="font-headline mb-6 text-2xl font-extrabold tracking-tight text-[#2f342e]">
-                대화 기반 페르소나 생성 플로우
-              </h2>
-              <div className="space-y-4">
-                {flowSteps.map((step, idx) => (
-                  <div key={step.title} className="flex gap-4 rounded-2xl bg-[#f4f4ef] p-4">
-                    <div className="font-headline mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#4a626d] text-sm font-bold text-[#f0f9ff]">
-                      {idx + 1}
+                    <div
+                      className={`mx-auto mb-6 grid h-14 w-14 place-items-center rounded-full ${feature.badgeClassName}`}
+                    >
+                      {feature.icon}
                     </div>
-                    <div>
-                      <h3 className="mb-1 font-semibold text-[#2f342e]">{step.title}</h3>
-                      <p className="text-sm leading-relaxed text-[#655d5a]">{step.body}</p>
-                    </div>
+                    <h3 className="font-headline mb-3 text-xl font-bold text-[#2f342e]">{feature.title}</h3>
+                    <p className="text-sm leading-relaxed text-[#655d5a]">{feature.description}</p>
                   </div>
                 ))}
               </div>
-            </article>
+            </section>
 
-            <article
-              id="demo"
-              className="rounded-3xl border border-[#afb3ac]/30 bg-[#2f342e] p-8 text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.2)]"
-            >
-              <h2 className="font-headline mb-2 text-2xl font-extrabold tracking-tight">실제 대화 미리보기</h2>
-              <p className="mb-6 text-sm leading-relaxed text-[#d6dcd2]">
-                생성된 페르소나는 말투, 공감 방식, 문장 길이까지 반영해 자연스럽게 응답합니다.
-              </p>
-              <div className="space-y-3">
-                {demoMessages.map((message, idx) => {
-                  const isAi = message.role === "ai";
-                  return (
-                    <div
-                      key={`${message.role}-${idx}`}
-                      className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isAi
-                        ? "bg-[#4a626d] text-[#f0f9ff]"
-                        : "ml-auto bg-[#ece0dc] text-[#3e5560]"
-                        }`}
-                    >
-                      {message.text}
+            <section className="mx-auto mt-20 grid max-w-6xl grid-cols-1 gap-8 px-6 lg:grid-cols-2">
+              <article className="rounded-3xl border border-[#afb3ac]/30 bg-white p-8 shadow-[0_8px_24px_rgba(47,52,46,0.05)]">
+                <h2 className="font-headline mb-6 text-2xl font-extrabold tracking-tight text-[#2f342e]">
+                  대화 기반 페르소나 생성 플로우
+                </h2>
+                <div className="space-y-4">
+                  {flowSteps.map((step, idx) => (
+                    <div key={step.title} className="flex gap-4 rounded-2xl bg-[#f4f4ef] p-4">
+                      <div className="font-headline mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#4a626d] text-sm font-bold text-[#f0f9ff]">
+                        {idx + 1}
+                      </div>
+                      <div>
+                        <h3 className="mb-1 font-semibold text-[#2f342e]">{step.title}</h3>
+                        <p className="text-sm leading-relaxed text-[#655d5a]">{step.body}</p>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            </article>
-          </section>
+                  ))}
+                </div>
+              </article>
 
-          <section className="mx-auto mt-32 max-w-3xl px-6 text-center">
-            <div className="mx-auto mb-10 h-px w-12 bg-[#afb3ac]/40" />
-            <p className="font-body text-2xl leading-relaxed italic text-[#f0f5f2]">
-              &quot;기억은 사라지는 것이 아니라,
-              <br className="hidden md:block" />우리 마음 속 어딘가에서 잠시 대화를 멈춘 것뿐입니다.&quot;
-            </p>
-            <div className="mx-auto mt-10 h-px w-12 bg-[#afb3ac]/40" />
-          </section>
-        </FadeIn>
+              <article
+                id="demo"
+                className="rounded-3xl border border-[#afb3ac]/30 bg-[#2f342e] p-8 text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.2)]"
+              >
+                <h2 className="font-headline mb-2 text-2xl font-extrabold tracking-tight">실제 대화 미리보기</h2>
+                <p className="mb-6 text-sm leading-relaxed text-[#d6dcd2]">
+                  생성된 페르소나는 말투, 공감 방식, 문장 길이까지 반영해 자연스럽게 응답합니다.
+                </p>
+                <div className="space-y-3">
+                  {demoMessages.map((message, idx) => {
+                    const isAi = message.role === "ai";
+                    return (
+                      <div
+                        key={`${message.role}-${idx}`}
+                        className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isAi
+                          ? "bg-[#4a626d] text-[#f0f9ff]"
+                          : "ml-auto bg-[#ece0dc] text-[#3e5560]"
+                          }`}
+                      >
+                        {message.text}
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+            </section>
+
+            <section className="mx-auto mt-32 max-w-3xl px-6 text-center">
+              <div className="mx-auto mb-10 h-px w-12 bg-[#afb3ac]/40" />
+              <p className="font-body text-2xl leading-relaxed italic text-[#f0f5f2]">
+                &quot;기억은 사라지는 것이 아니라,
+                <br className="hidden md:block" />우리 마음 속 어딘가에서 잠시 대화를 멈춘 것뿐입니다.&quot;
+              </p>
+              <div className="mx-auto mt-10 h-px w-12 bg-[#afb3ac]/40" />
+            </section>
+          </FadeIn>
+        </HomeWebOnly>
       </main>
 
       <FadeIn delay={1900}>
-        <StartChatButtonMobile />
-        <SiteFooter />
+        <HomeWebOnly initialIsNativeApp={initialIsNativeApp}>
+          <StartChatButtonMobile />
+          <SiteFooter />
+        </HomeWebOnly>
       </FadeIn>
     </div>
   );

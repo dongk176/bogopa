@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type FocusEvent, type TouchEvent } from "react";
 import { useRouter } from "next/navigation";
 import Navigation from "@/app/_components/Navigation";
 import { useSession } from "next-auth/react";
 import { PersonaAnalysis, PersonaRuntime, PrimaryGoal } from "@/types/persona";
-import { FREE_PLAN_LIMITS, MEMORY_PASS_REQUIRED_MESSAGE, PlanLimits } from "@/lib/memory-pass/config";
+import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
+import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 
 type Persona = {
     persona_id: string;
     name: string;
     avatar_url: string | null;
+    created_at?: string;
     updated_at: string;
     last_message_content: string | null;
     analysis?: PersonaAnalysis;
@@ -33,33 +35,22 @@ const GOAL_VALUE_TO_LABEL: Record<PrimaryGoal, string> = {
 };
 
 const GOAL_LABELS = Object.values(GOAL_VALUE_TO_LABEL);
-const SUMMARY_PLACEHOLDERS = {
-    parent: [
-        "예: 다그치지 말고 먼저 안심시키는 말투로, 짧게 안부를 묻고 차분히 마무리해줘.",
-        "예: 무리하지 말라는 따뜻한 한마디를 먼저 건네고, 필요한 조언은 짧게 덧붙여줘.",
-        "예: 감정을 먼저 받아주고 현실적인 위로를 한 문장으로 정리해주는 톤으로 말해줘.",
-    ],
-    friend: [
-        "예: 가볍고 솔직한 반말로 근황을 물어보되, 부담 주지 않게 편하게 이어가줘.",
-        "예: 너무 무겁지 않게 공감하고, 필요할 때만 짧고 현실적인 조언을 해줘.",
-        "예: 장난은 가볍게만 하고 상대가 다운되면 바로 차분하게 맞춰주는 톤으로 말해줘.",
-    ],
-    partner: [
-        "예: 다정한 말투로 안부를 먼저 묻고, 감정을 세심하게 받아주는 흐름으로 이어가줘.",
-        "예: 불안한 마음을 안정시키는 표현 위주로, 캐묻지 말고 따뜻하게 공감해줘.",
-        "예: 가까운 사이의 부드러운 톤으로 하루를 물어보고 편안하게 대화를 이어가줘.",
-    ],
-    sibling: [
-        "예: 편한 가족 말투로 시작하되, 챙기는 느낌을 살려 짧고 명확하게 말해줘.",
-        "예: 놀리기보다 실질적으로 도와주는 누나/형 같은 톤으로 대화를 이어가줘.",
-        "예: 감정이 올라오면 한 템포 늦춰서 차분하게 받아주고 부담 없이 마무리해줘.",
-    ],
-    default: [
-        "예: 따뜻하지만 과장되지 않은 말투로 감정을 먼저 수용하고 자연스럽게 이어가줘.",
-        "예: 답을 강요하지 말고 짧고 명확한 문장으로 편안한 대화 흐름을 유지해줘.",
-        "예: 상황을 단정하지 않고 공감 중심으로, 부담 없는 속도로 대화를 이어가줘.",
-    ],
-} as const;
+const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
+const MEMORY_ITEM_CHAR_LIMIT = 50;
+const BRAND_BORDER_COLOR = "#3e5560";
+
+function isEditableTarget(target: EventTarget | null): target is HTMLElement {
+    if (!(target instanceof HTMLElement)) return false;
+    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
+}
+
+function readNativeKeyboardInset() {
+    const raw =
+        document.documentElement.style.getPropertyValue("--bogopa-keyboard-height") ||
+        window.getComputedStyle(document.documentElement).getPropertyValue("--bogopa-keyboard-height");
+    const parsed = Number.parseFloat(raw || "0");
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
 
 function toGoalLabel(value?: string) {
     if (!value) return GOAL_VALUE_TO_LABEL.casual_talk;
@@ -70,21 +61,6 @@ function toGoalValue(label?: string): PrimaryGoal {
     const entry = Object.entries(GOAL_VALUE_TO_LABEL).find(([, text]) => text === label);
     if (!entry) return "casual_talk";
     return entry[0] as PrimaryGoal;
-}
-
-function resolveRelationBucket(relation: string) {
-    const normalized = relation.replace(/\s/g, "");
-    if (/(엄마|아빠|어머니|아버지|부모|할머니|할아버지)/.test(normalized)) return "parent";
-    if (/(친구|절친|베프|동창)/.test(normalized)) return "friend";
-    if (/(연인|애인|남친|여친|배우자|남편|아내|와이프|부인)/.test(normalized)) return "partner";
-    if (/(형|오빠|누나|언니|동생|형제|자매)/.test(normalized)) return "sibling";
-    return "default";
-}
-
-function pickRandomSummaryPlaceholder(relation: string) {
-    const bucket = resolveRelationBucket(relation);
-    const candidates = SUMMARY_PLACEHOLDERS[bucket];
-    return candidates[Math.floor(Math.random() * candidates.length)] || SUMMARY_PLACEHOLDERS.default[0];
 }
 
 function CustomDropdown({ label, options, value, onChange }: { label: string, options: string[], value: string, onChange: (val: string) => void }) {
@@ -142,20 +118,207 @@ export default function PersonaPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
     const [isEditing, setIsEditing] = useState(false);
+    const [isEditInputFocused, setIsEditInputFocused] = useState(false);
     const [editForm, setEditForm] = useState<any>(null);
     const [isSaving, setIsSaving] = useState(false);
-    const [summaryPlaceholder, setSummaryPlaceholder] = useState(() => pickRandomSummaryPlaceholder(""));
     const [limits, setLimits] = useState<PlanLimits>(FREE_PLAN_LIMITS);
     const [isSubscribed, setIsSubscribed] = useState(false);
+    const [isNativeAppRuntime, setIsNativeAppRuntime] = useState(false);
+    const [isDetailHandleDragging, setIsDetailHandleDragging] = useState(false);
+    const detailSwipeStartYRef = useRef<number | null>(null);
+    const detailSwipeLastYRef = useRef<number | null>(null);
+    const detailContentScrollRef = useRef<HTMLDivElement | null>(null);
+    const detailRevealTimersRef = useRef<number[]>([]);
+    const detailRevealRafRef = useRef<number | null>(null);
+    const detailBodyLockRef = useRef<{
+        scrollY: number;
+        bodyPosition: string;
+        bodyTop: string;
+        bodyLeft: string;
+        bodyRight: string;
+        bodyWidth: string;
+        bodyOverflow: string;
+        htmlOverflow: string;
+    } | null>(null);
+    const { guardCreateStart, modalNode, isChecking } = useMemoryCreateGuard();
+
+    useEffect(() => {
+        setIsNativeAppRuntime(document.documentElement.classList.contains("native-app"));
+    }, []);
 
     useEffect(() => {
         if (selectedPersona) {
             document.body.classList.add("modal-open");
+            document.documentElement.classList.add("modal-open");
+            if (!detailBodyLockRef.current) {
+                const body = document.body;
+                const html = document.documentElement;
+                const scrollY = window.scrollY;
+                detailBodyLockRef.current = {
+                    scrollY,
+                    bodyPosition: body.style.position,
+                    bodyTop: body.style.top,
+                    bodyLeft: body.style.left,
+                    bodyRight: body.style.right,
+                    bodyWidth: body.style.width,
+                    bodyOverflow: body.style.overflow,
+                    htmlOverflow: html.style.overflow,
+                };
+                body.style.position = "fixed";
+                body.style.top = `-${scrollY}px`;
+                body.style.left = "0";
+                body.style.right = "0";
+                body.style.width = "100%";
+                body.style.overflow = "hidden";
+                html.style.overflow = "hidden";
+            }
         } else {
             document.body.classList.remove("modal-open");
+            document.documentElement.classList.remove("modal-open");
+            setIsEditInputFocused(false);
+            setIsDetailHandleDragging(false);
+            clearDetailRevealSchedule();
+            detailSwipeStartYRef.current = null;
+            detailSwipeLastYRef.current = null;
+            if (detailBodyLockRef.current) {
+                const body = document.body;
+                const html = document.documentElement;
+                const prev = detailBodyLockRef.current;
+                body.style.position = prev.bodyPosition;
+                body.style.top = prev.bodyTop;
+                body.style.left = prev.bodyLeft;
+                body.style.right = prev.bodyRight;
+                body.style.width = prev.bodyWidth;
+                body.style.overflow = prev.bodyOverflow;
+                html.style.overflow = prev.htmlOverflow;
+                window.scrollTo(0, prev.scrollY);
+                detailBodyLockRef.current = null;
+            }
         }
-        return () => document.body.classList.remove("modal-open");
+        return () => {
+            document.body.classList.remove("modal-open");
+            document.documentElement.classList.remove("modal-open");
+            clearDetailRevealSchedule();
+            if (detailBodyLockRef.current) {
+                const body = document.body;
+                const html = document.documentElement;
+                const prev = detailBodyLockRef.current;
+                body.style.position = prev.bodyPosition;
+                body.style.top = prev.bodyTop;
+                body.style.left = prev.bodyLeft;
+                body.style.right = prev.bodyRight;
+                body.style.width = prev.bodyWidth;
+                body.style.overflow = prev.bodyOverflow;
+                html.style.overflow = prev.htmlOverflow;
+                window.scrollTo(0, prev.scrollY);
+                detailBodyLockRef.current = null;
+            }
+        };
     }, [selectedPersona]);
+
+    function clearDetailRevealSchedule() {
+        if (detailRevealRafRef.current !== null) {
+            window.cancelAnimationFrame(detailRevealRafRef.current);
+            detailRevealRafRef.current = null;
+        }
+        while (detailRevealTimersRef.current.length > 0) {
+            const timer = detailRevealTimersRef.current.pop();
+            if (typeof timer === "number") {
+                window.clearTimeout(timer);
+            }
+        }
+    }
+
+    function handleDetailSheetSwipeStart(event: TouchEvent<HTMLDivElement>) {
+        if (event.touches.length !== 1) return;
+        const y = event.touches[0].clientY;
+        detailSwipeStartYRef.current = y;
+        detailSwipeLastYRef.current = y;
+        setIsDetailHandleDragging(true);
+    }
+
+    function handleDetailSheetSwipeMove(event: TouchEvent<HTMLDivElement>) {
+        if (!isDetailHandleDragging || event.touches.length !== 1) return;
+        const y = event.touches[0].clientY;
+        detailSwipeLastYRef.current = y;
+        if (y > (detailSwipeStartYRef.current ?? y)) {
+            event.preventDefault();
+        }
+    }
+
+    function handleDetailSheetSwipeEnd() {
+        const startY = detailSwipeStartYRef.current;
+        const endY = detailSwipeLastYRef.current;
+        const deltaY = startY !== null && endY !== null ? endY - startY : 0;
+
+        setIsDetailHandleDragging(false);
+        detailSwipeStartYRef.current = null;
+        detailSwipeLastYRef.current = null;
+
+        if (deltaY > SHEET_CLOSE_SWIPE_THRESHOLD) {
+            closeDetail();
+        }
+    }
+
+    function scrollEditableIntoView(target: HTMLElement, smooth = true) {
+        const scroller = detailContentScrollRef.current;
+        if (!scroller) return;
+        if (!scroller.contains(target)) return;
+
+        target.scrollIntoView({
+            behavior: "auto",
+            block: "nearest",
+            inline: "nearest",
+        });
+
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop ?? 0;
+        const viewportHeight = viewport?.height ?? window.innerHeight;
+        const viewportBottomBase = viewportTop + viewportHeight;
+        const viewportKeyboardInset = Math.max(0, window.innerHeight - viewportHeight - viewportTop);
+        const nativeKeyboardInset = readNativeKeyboardInset();
+        const fallbackKeyboardInset =
+            document.documentElement.classList.contains("native-app") &&
+            viewportKeyboardInset < 20 &&
+            nativeKeyboardInset < 20
+                ? 320
+                : 0;
+        const effectiveKeyboardInset = Math.max(viewportKeyboardInset, nativeKeyboardInset, fallbackKeyboardInset);
+        const viewportBottom = Math.max(viewportTop, viewportBottomBase - effectiveKeyboardInset);
+        const targetRect = target.getBoundingClientRect();
+        const scrollerRect = scroller.getBoundingClientRect();
+        const topSafe = Math.max(scrollerRect.top + 12, viewportTop + 8);
+        const bottomSafe = viewportBottom - 14;
+
+        let delta = 0;
+        if (targetRect.bottom > bottomSafe) {
+            delta = targetRect.bottom - bottomSafe + 10;
+        } else if (targetRect.top < topSafe) {
+            delta = targetRect.top - topSafe - 10;
+        }
+
+        if (Math.abs(delta) > 1) {
+            scroller.scrollBy({ top: delta, behavior: smooth ? "smooth" : "auto" });
+        }
+    }
+
+    function scheduleDetailReveal(target: HTMLElement) {
+        if (!isEditing) return;
+        clearDetailRevealSchedule();
+
+        const runAuto = () => scrollEditableIntoView(target, false);
+        const runSmooth = () => scrollEditableIntoView(target, true);
+
+        detailRevealRafRef.current = window.requestAnimationFrame(runAuto);
+
+        [60, 140, 260, 420, 620].forEach((delay) => {
+            const id = window.setTimeout(runAuto, delay);
+            detailRevealTimersRef.current.push(id);
+        });
+
+        const smoothId = window.setTimeout(runSmooth, 760);
+        detailRevealTimersRef.current.push(smoothId);
+    }
 
     useEffect(() => {
         if (session === null) {
@@ -168,7 +331,12 @@ export default function PersonaPage() {
                 const res = await fetch("/api/persona", { cache: "no-store" });
                 const data = await res.json();
                 if (data.ok && Array.isArray(data.personas)) {
-                    setPersonas(data.personas);
+                    const sorted = [...data.personas].sort((a: Persona, b: Persona) => {
+                        const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+                        const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+                        return bCreated - aCreated;
+                    });
+                    setPersonas(sorted);
                 }
             } catch (err) {
                 console.error("[persona-page] failed to fetch", err);
@@ -196,16 +364,15 @@ export default function PersonaPage() {
     const handleOpenDetail = (persona: Persona) => {
         setSelectedPersona(persona);
         setIsEditing(false);
+        setIsEditInputFocused(false);
         const rt = persona.runtime;
         const al = persona.analysis;
         const relation = rt?.relation || al?.personaInput?.relation || "";
-        setSummaryPlaceholder(pickRandomSummaryPlaceholder(relation));
 
         setEditForm({
             name: persona.name,
             relation,
             callsUserAs: rt?.addressing?.callsUserAs?.[0] || al?.addressing?.callsUserAs?.[0] || "나",
-            summary: rt?.summary || al?.analysisSummary?.oneLineSummary || "",
             frequentPhrases: rt?.expressions?.frequentPhrases || al?.textHabits?.frequentPhrases || [],
             tone: (rt?.style?.tone || al?.speechStyle?.baseTone || []).join(", "),
 
@@ -233,7 +400,7 @@ export default function PersonaPage() {
                 relation: editForm.relation,
                 goal: toGoalValue(editForm.goal),
                 customGoalText: toGoalValue(editForm.goal) === "custom" ? (editForm.customGoalText || "").trim() : "",
-                summary: limits.summaryEditable ? editForm.summary : (selectedPersona.runtime?.summary || ""),
+                summary: "",
                 addressing: {
                     ...(selectedPersona.runtime?.addressing || { callsUserAs: [], userCallsPersonaAs: [] }),
                     callsUserAs: [editForm.callsUserAs],
@@ -297,7 +464,57 @@ export default function PersonaPage() {
     const closeDetail = () => {
         setSelectedPersona(null);
         setIsEditing(false);
+        setIsEditInputFocused(false);
     };
+
+    useEffect(() => {
+        if (!isEditing) {
+            setIsEditInputFocused(false);
+            clearDetailRevealSchedule();
+        }
+    }, [isEditing]);
+
+    function handleDetailEditorFocusCapture(event: FocusEvent<HTMLDivElement>) {
+        if (!isEditing) return;
+        if (isEditableTarget(event.target)) {
+            setIsEditInputFocused(true);
+            scheduleDetailReveal(event.target);
+        }
+    }
+
+    function handleDetailEditorBlurCapture(event: FocusEvent<HTMLDivElement>) {
+        if (!isEditing) return;
+        const container = event.currentTarget;
+        window.requestAnimationFrame(() => {
+            const active = document.activeElement;
+            const shouldKeepHidden =
+                active instanceof HTMLElement && container.contains(active) && isEditableTarget(active);
+            if (!shouldKeepHidden) {
+                setIsEditInputFocused(false);
+            }
+        });
+    }
+
+    useEffect(() => {
+        if (!selectedPersona || !isEditing || !isEditInputFocused) return;
+
+        const onViewportChanged = () => {
+            const active = document.activeElement;
+            if (!isEditableTarget(active)) return;
+            scheduleDetailReveal(active);
+        };
+
+        window.addEventListener("resize", onViewportChanged);
+        window.visualViewport?.addEventListener("resize", onViewportChanged);
+        window.visualViewport?.addEventListener("scroll", onViewportChanged);
+
+        return () => {
+            window.removeEventListener("resize", onViewportChanged);
+            window.visualViewport?.removeEventListener("resize", onViewportChanged);
+            window.visualViewport?.removeEventListener("scroll", onViewportChanged);
+            clearDetailRevealSchedule();
+        };
+    }, [selectedPersona, isEditing, isEditInputFocused]);
 
     const goToPayment = () => {
         router.push(`/payment?returnTo=${encodeURIComponent("/persona")}`);
@@ -311,7 +528,7 @@ export default function PersonaPage() {
         options?: { maxItems?: number; maxChars?: number; onLimitReached?: () => void },
     ) => (
         <div className="space-y-3">
-            <label className="text-sm font-bold text-[#afb3ac] uppercase block mb-1">{label}</label>
+            <label className="text-sm font-bold text-[#4a626d] uppercase block mb-1">{label}</label>
             {list.map((item, idx) => (
                 <div key={idx} className="flex gap-2">
                     <input
@@ -323,7 +540,7 @@ export default function PersonaPage() {
                             next[idx] = e.target.value.slice(0, options?.maxChars ?? 120);
                             setList(next);
                         }}
-                        className="flex-1 rounded-xl bg-[#f4f4ef] px-4 py-3 text-base font-bold focus:outline-none focus:ring-2 focus:ring-[#4a626d]/20"
+                        className="flex-1 rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] px-4 py-3 text-base font-bold text-[#2f342e] placeholder:text-[#7f867f] focus:outline-none focus:border-2 focus:border-[#4a626d] focus:ring-0"
                     />
                     <button
                         onClick={() => setList(list.filter((_, i) => i !== idx))}
@@ -345,11 +562,11 @@ export default function PersonaPage() {
                     }
                     setList([...list, ""]);
                 }}
-                className="w-full rounded-xl border border-dashed border-[#afb3ac] py-2 text-xs font-bold text-[#afb3ac] hover:text-[#4a626d] hover:border-[#4a626d] transition-all"
+                className="w-full rounded-xl border border-dashed border-[#4a626d]/40 py-3.5 text-sm font-bold text-[#4a626d] hover:text-[#3e5560] hover:border-[#3e5560] transition-all"
             >
                 + 항목 추가하기
             </button>
-            <p className="text-xs text-[#7f867f]">
+            <p className="text-xs text-[#5d605a]">
                 최대 {options?.maxItems ?? 20}개 · 항목당 최대 {options?.maxChars ?? 120}자
             </p>
         </div>
@@ -359,12 +576,29 @@ export default function PersonaPage() {
         <div className="min-h-screen bg-[#faf9f5]">
             <Navigation />
 
-            <main className="mx-auto max-w-5xl px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-12 md:pt-20 md:pb-20 lg:pl-64">
-                <div className="mb-10 flex flex-col justify-between gap-4 md:flex-row md:items-end text-center md:text-left">
-                    <div className="w-full">
-                        <h1 className="font-headline text-3xl font-bold text-[#2f342e]">내 기억</h1>
-                        <p className="mt-2 text-[#655d5a]">소중한 기억의 파편을 관리하고, 대화의 결을 다듬을 수 있습니다.</p>
-                    </div>
+            <header className="fixed top-0 z-40 w-full border-b border-[#d6ddd8] bg-[#ffffff]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden">
+                <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-center px-3 md:px-6">
+                    <h1 className="font-headline text-lg font-bold tracking-tight text-[#4a626d]">내 기억</h1>
+                </div>
+            </header>
+
+            <main className="mx-auto max-w-5xl px-3 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[calc(5rem+env(safe-area-inset-top))] md:px-6 md:pt-20 md:pb-20 lg:pl-64">
+                <header className="mb-10 hidden text-center lg:block">
+                    <h1 className="font-headline text-lg font-bold tracking-tight text-[#4a626d]">내 기억</h1>
+                </header>
+
+                <div className="mb-6 flex justify-center">
+                    <button
+                        type="button"
+                        onClick={() => router.push("/letters/inbox")}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-[#4a626d] px-5 py-3 text-sm font-extrabold text-[#f0f9ff] shadow-[0_10px_24px_rgba(47,52,46,0.22)] transition-all hover:bg-[#3e5661] active:scale-95"
+                    >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9">
+                            <rect x="3.5" y="6" width="17" height="12" rx="2.5" />
+                            <path d="m4.8 7.5 7.2 6 7.2-6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        편지 보관함 가기
+                    </button>
                 </div>
 
                 {isLoading ? (
@@ -372,7 +606,7 @@ export default function PersonaPage() {
                         <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
                     </div>
                 ) : personas.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-[2.5rem] bg-white p-20 text-center shadow-sm border border-[#afb3ac]/10">
+                    <div className="flex flex-col items-center justify-center rounded-[2.5rem] bg-white p-20 text-center shadow-sm border" style={{ borderColor: BRAND_BORDER_COLOR }}>
                         <div className="mb-6 grid h-20 w-20 place-items-center rounded-3xl bg-[#f4f4ef] text-[#afb3ac]">
                             <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -381,8 +615,14 @@ export default function PersonaPage() {
                         <h3 className="text-xl font-bold text-[#2f342e]">아직 생성된 기억이 없어요</h3>
                         <p className="mt-2 text-[#655d5a]">첫 기억을 만들어 대화를 시작해보세요.</p>
                         <button
-                            onClick={() => router.push("/step-1")}
-                            className="mt-8 rounded-2xl bg-[#4a626d] px-8 py-4 text-base font-bold text-white shadow-lg shadow-[#4a626d]/20 transition-transform active:scale-95"
+                            onClick={() => {
+                                void guardCreateStart({
+                                    returnTo: "/persona",
+                                    onAllowed: () => router.push("/step-1/start"),
+                                });
+                            }}
+                            disabled={isChecking}
+                            className="mt-8 rounded-2xl bg-[#4a626d] px-8 py-4 text-base font-bold text-white shadow-lg shadow-[#4a626d]/20 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
                         >
                             기억 생성하러 가기
                         </button>
@@ -393,40 +633,58 @@ export default function PersonaPage() {
                             <div
                                 key={persona.persona_id}
                                 onClick={() => handleOpenDetail(persona)}
-                                className="group cursor-pointer overflow-hidden rounded-[2rem] bg-white p-6 shadow-sm transition-all border border-[#afb3ac]/10 hover:shadow-xl hover:-translate-y-1"
+                                className="group cursor-pointer overflow-hidden rounded-[2rem] bg-white p-4 transition-all hover:-translate-y-1"
+                                style={{ boxShadow: "0 12px 30px rgba(47,52,46,0.14)" }}
                             >
-                                <div className="mb-4 flex items-center justify-between">
-                                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-[#4a626d]/10">
-                                        {persona.avatar_url ? (
-                                            <img
-                                                src={persona.avatar_url.includes("amazonaws.com") ? `/api/image-proxy?url=${encodeURIComponent(persona.avatar_url)}` : persona.avatar_url}
-                                                alt={persona.name}
-                                                className="h-full w-full object-cover"
-                                            />
-                                        ) : (
-                                            <div className="flex h-full w-full items-center justify-center text-[#4a626d]">
-                                                <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                </svg>
+                                {(() => {
+                                    const relationText =
+                                        persona.runtime?.relation?.trim() ||
+                                        persona.analysis?.personaInput?.relation?.trim() ||
+                                        "관계 미설정";
+
+                                    return (
+                                        <>
+                                <div className="flex min-h-[172px] items-stretch gap-4">
+                                    <div className="w-[44%] min-w-[132px] shrink-0 overflow-hidden rounded-2xl bg-[#4a626d]/10">
+                                            {persona.avatar_url ? (
+                                                <img
+                                                    src={persona.avatar_url.includes("amazonaws.com") ? `/api/image-proxy?url=${encodeURIComponent(persona.avatar_url)}` : persona.avatar_url}
+                                                    alt={persona.name}
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center text-[#4a626d]">
+                                                    <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                    </svg>
+                                                </div>
+                                            )}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex h-full flex-col justify-between">
+                                            <div className="min-w-0">
+                                                <h3 className="truncate text-xl font-bold text-[#2f342e]">{persona.name}</h3>
+                                                <p className="mt-1 truncate text-sm font-semibold text-[#655d5a]">{relationText}</p>
+                                                <span className="mt-2 block text-xs font-medium text-[#2f342e]">
+                                                    {new Date(persona.updated_at).toLocaleDateString()}
+                                                </span>
                                             </div>
-                                        )}
-                                    </div>
-                                    <span className="text-xs font-medium text-[#afb3ac]">
-                                        {new Date(persona.updated_at).toLocaleDateString()}
-                                    </span>
-                                </div>
-                                <h3 className="text-xl font-bold text-[#2f342e]">{persona.name}</h3>
-                                <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[#655d5a]">
-                                    {persona.last_message_content || "대화 스타일과 특징을 확인하거나 수정하세요."}
-                                </p>
-                                <div className="mt-6 flex items-center justify-between border-t border-[#afb3ac]/10 pt-4">
-                                    <span className="text-[12px] font-extrabold uppercase tracking-tight text-[#4a626d]">기억 확인 & 편집</span>
-                                    <div className="h-6 w-6 rounded-full bg-[#f4f4ef] grid place-items-center group-hover:bg-[#4a626d] group-hover:text-white transition-colors">
-                                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
-                                        </svg>
+                                            <div className="no-brand-border mt-4 border-t border-[#d6ddd8] pt-4">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm font-extrabold uppercase tracking-tight text-[#4a626d]">기억 확인 & 편집</span>
+                                                    <div className="grid h-6 w-6 place-items-center rounded-full bg-[#f4f4ef] transition-colors group-hover:bg-[#4a626d] group-hover:text-white">
+                                                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                                                        </svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
                         ))}
                     </div>
@@ -439,9 +697,24 @@ export default function PersonaPage() {
                     {/* Backdrop click to close */}
                     <div className="absolute inset-0" onClick={closeDetail} />
 
-                    <div className="relative h-[90vh] w-full overflow-hidden rounded-t-[3rem] bg-[#faf9f5] shadow-2xl lg:max-w-5xl lg:rounded-[3rem] animate-slide-up flex flex-col border border-white/20">
+                    <div
+                        className="relative h-[90vh] w-full overflow-hidden rounded-t-[3rem] bg-[#faf9f5] shadow-2xl lg:max-w-5xl lg:rounded-[3rem] animate-slide-up flex flex-col"
+                        onFocusCapture={handleDetailEditorFocusCapture}
+                        onBlurCapture={handleDetailEditorBlurCapture}
+                    >
                         {/* Drag Handle on Mobile */}
-                        <div className="mx-auto mt-4 shrink-0 h-1.5 w-12 rounded-full bg-[#afb3ac]/30 lg:hidden" />
+                        <div
+                            className="mx-auto mt-3 flex w-full shrink-0 touch-none justify-center pb-2 lg:hidden"
+                            onTouchStart={handleDetailSheetSwipeStart}
+                            onTouchMove={handleDetailSheetSwipeMove}
+                            onTouchEnd={handleDetailSheetSwipeEnd}
+                            onTouchCancel={handleDetailSheetSwipeEnd}
+                        >
+                            <div
+                                className={`h-1.5 rounded-full transition-all ${isDetailHandleDragging ? "w-16 bg-[#8a928d]/55" : "w-12 bg-[#afb3ac]/30"
+                                    }`}
+                            />
+                        </div>
 
                         {/* Modal Header */}
                         <header className="flex shrink-0 items-center justify-between border-b border-[#afb3ac]/10 bg-[#faf9f5] px-8 py-6 lg:px-12">
@@ -459,7 +732,7 @@ export default function PersonaPage() {
                                 </div>
                                 <div className="min-w-0">
                                     <h2 className="font-headline text-xl font-bold text-[#2f342e] truncate">{selectedPersona.name}와의 기억</h2>
-                                    <p className="text-xs text-[#655d5a]">{isEditing ? "기억의 파편들을 직접 정교하게 다듬고 있습니다." : "AI가 분석한 대화 스타일과 특징을 확인하세요."}</p>
+                                    <p className="text-xs text-[#655d5a]">{isEditing ? "저장할 말투와 기억을 직접 다듬고 있습니다." : "기억을 확인하고 수정하세요."}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -480,7 +753,22 @@ export default function PersonaPage() {
                         </header>
 
                         {/* Modal Content - Scrollable */}
-                        <div className="flex-1 overflow-y-auto p-8 lg:p-12 scrollbar-hide">
+                        <div
+                            ref={detailContentScrollRef}
+                            className="flex-1 overflow-y-auto overscroll-contain p-8 lg:p-12 scrollbar-hide"
+                            style={
+                                isEditing && isEditInputFocused
+                                    ? {
+                                        paddingBottom: isNativeAppRuntime
+                                            ? "calc(max(var(--bogopa-keyboard-height, 0px), 320px) + env(safe-area-inset-bottom) + 8rem)"
+                                            : "calc(var(--bogopa-keyboard-height, 0px) + env(safe-area-inset-bottom) + 6rem)",
+                                        scrollPaddingBottom: isNativeAppRuntime
+                                            ? "calc(max(var(--bogopa-keyboard-height, 0px), 320px) + env(safe-area-inset-bottom) + 4rem)"
+                                            : "calc(var(--bogopa-keyboard-height, 0px) + env(safe-area-inset-bottom) + 3rem)",
+                                    }
+                                    : undefined
+                            }
+                        >
                             <div className="grid grid-cols-1 gap-12 lg:grid-cols-2">
                                 {/* Left Section: Core Vibe & Settings */}
                                 <div className="space-y-12">
@@ -586,64 +874,32 @@ export default function PersonaPage() {
                                 {/* Right Section: Memory & Text */}
                                 <div className="space-y-12">
                                     <section>
-                                        <h3 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">대화 핵심 성향 (서술형)</h3>
-                                        <div className="rounded-[2rem] bg-white p-6 md:p-8 shadow-sm border border-[#afb3ac]/10">
-                                            {isEditing ? (
-                                                limits.summaryEditable ? (
-                                                    <textarea
-                                                        value={editForm.summary}
-                                                        onChange={e => setEditForm({ ...editForm, summary: e.target.value })}
-                                                        placeholder={summaryPlaceholder}
-                                                        className="w-full min-h-[140px] rounded-2xl bg-[#f4f4ef] px-5 py-4 text-base leading-relaxed font-medium focus:outline-none focus:ring-2 focus:ring-[#4a626d]/20 transition-all"
-                                                    />
-                                                ) : (
-                                                    <div className="rounded-2xl border border-[#4a626d]/15 bg-[#f4f4ef] p-5 text-center">
-                                                        <p className="text-sm font-semibold text-[#4a626d]">{MEMORY_PASS_REQUIRED_MESSAGE}</p>
-                                                        <button
-                                                            type="button"
-                                                            onClick={goToPayment}
-                                                            className="mt-4 rounded-2xl bg-[#4a626d] px-5 py-3 text-sm font-bold text-[#f0f9ff]"
-                                                        >
-                                                            기억 패스 등록하기
-                                                        </button>
-                                                    </div>
-                                                )
-                                            ) : (
-                                                <p className="text-base leading-relaxed text-[#2f342e] font-medium">
-                                                    {selectedPersona.runtime?.summary || selectedPersona.analysis?.analysisSummary?.oneLineSummary || "설정된 성향이 없습니다."}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </section>
-
-                                    <section>
                                         <h3 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">소중한 기억의 조각들</h3>
-                                        <div className="rounded-[2rem] bg-white p-6 md:p-8 shadow-sm border border-[#afb3ac]/10">
+                                        <div className="min-h-[168px] rounded-[2rem] bg-white p-6 md:p-8 shadow-sm border border-[#afb3ac]/10">
                                             {isEditing ? (
                                                 renderListEditor(
-                                                    "핵심 추억 리스트",
+                                                    "핵심 기억",
                                                     editForm.memories,
                                                     (next) => setEditForm({ ...editForm, memories: next }),
                                                     "예: 2019년 제주도 바닷가 산책",
                                                     {
                                                         maxItems: limits.memoryItemMaxCount,
-                                                        maxChars: limits.memoryItemCharMax,
+                                                        maxChars: MEMORY_ITEM_CHAR_LIMIT,
                                                         onLimitReached: isSubscribed ? undefined : goToPayment,
                                                     },
                                                 )
                                             ) : (
-                                                <div className="space-y-4">
+                                                <div className="min-h-[104px] space-y-4">
                                                     {(selectedPersona.runtime?.memories || []).length > 0 ? (
-                                                        (selectedPersona.runtime?.memories || []).map((memory, i) => (
-                                                            <div key={i} className="flex items-start gap-4 py-5 border-b border-[#afb3ac]/20 last:border-0">
-                                                                <svg className="h-5 w-5 shrink-0 text-[#4a626d] mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.456-2.455l.259-1.036.259 1.036a3.375 3.375 0 002.455 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
-                                                                </svg>
-                                                                <p className="text-base font-medium text-[#2f342e] leading-relaxed">{memory}</p>
-                                                            </div>
-                                                        ))
+                                                        <div className="flex flex-wrap gap-3">
+                                                            {(selectedPersona.runtime?.memories || []).map((memory, i) => (
+                                                                <span key={i} className="rounded-2xl bg-[#f4f4ef] px-4 py-2.5 text-base font-bold text-[#4a626d] border border-[#4a626d]/45 shadow-sm">
+                                                                    "{memory}"
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     ) : (
-                                                        <p className="text-sm text-[#afb3ac] italic">아직 공유된 기억이 없습니다.</p>
+                                                        <p className="text-sm text-[#5d605a] italic">아직 공유된 기억이 없습니다.</p>
                                                     )}
                                                 </div>
                                             )}
@@ -652,7 +908,7 @@ export default function PersonaPage() {
 
                                     <section>
                                         <h3 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">입버릇처럼 달고 살던 말</h3>
-                                        <div className="rounded-[2rem] bg-white p-6 md:p-8 shadow-sm border border-[#afb3ac]/10">
+                                        <div className="min-h-[168px] rounded-[2rem] bg-white p-6 md:p-8 shadow-sm border border-[#afb3ac]/10">
                                             {isEditing ? (
                                                 renderListEditor(
                                                     "자주 쓰는 문구",
@@ -666,12 +922,18 @@ export default function PersonaPage() {
                                                     },
                                                 )
                                             ) : (
-                                                <div className="flex flex-wrap gap-3">
-                                                    {(selectedPersona.runtime?.expressions?.frequentPhrases || []).map((phrase, i) => (
-                                                        <span key={i} className="rounded-2xl bg-[#f4f4ef] px-4 py-2.5 text-base font-bold text-[#4a626d] border border-[#4a626d]/5 shadow-sm">
-                                                            "{phrase}"
-                                                        </span>
-                                                    ))}
+                                                <div className="min-h-[104px]">
+                                                    {(selectedPersona.runtime?.expressions?.frequentPhrases || []).length > 0 ? (
+                                                        <div className="flex flex-wrap gap-3">
+                                                            {(selectedPersona.runtime?.expressions?.frequentPhrases || []).map((phrase, i) => (
+                                                                <span key={i} className="rounded-2xl bg-[#f4f4ef] px-4 py-2.5 text-base font-bold text-[#4a626d] border border-[#4a626d]/45 shadow-sm">
+                                                                    "{phrase}"
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-sm text-[#5d605a] italic">아직 공유된 입버릇이 없습니다.</p>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -681,8 +943,9 @@ export default function PersonaPage() {
                         </div>
 
                         {/* Modal Footer */}
-                        <footer className="shrink-0 bg-white border-t border-[#afb3ac]/10 p-6 lg:px-12 flex justify-between items-center">
-                            <div className="flex justify-end gap-3 ml-auto w-full md:w-auto pb-safe">
+                        {!(isEditing && isEditInputFocused) ? (
+                        <footer className="shrink-0 border-t border-white/10 bg-[#303733]/96 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md lg:flex lg:min-h-[calc(5.5rem+env(safe-area-inset-bottom))] lg:items-center lg:justify-between lg:border-[#afb3ac]/10 lg:bg-white lg:px-12 lg:py-6 lg:backdrop-blur-0">
+                            <div className="ml-auto flex w-full justify-end gap-3 pb-safe md:w-auto">
                                 {!isEditing ? (
                                     <div className="grid w-full grid-cols-2 gap-3 pb-safe md:flex md:w-auto md:justify-end">
                                         <button
@@ -705,17 +968,17 @@ export default function PersonaPage() {
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="grid w-full grid-cols-2 gap-3 pb-safe md:flex md:w-auto md:justify-end">
+                                    <div className="grid w-full grid-cols-2 gap-2 pb-safe md:gap-4">
                                         <button
                                             onClick={() => setIsEditing(false)}
-                                            className="rounded-2xl bg-[#f4f4ef] px-6 py-4 text-sm font-bold text-[#655d5a] md:py-3 transition-colors"
+                                            className="w-full inline-flex items-center justify-center gap-2 rounded-full border border-[#4a626d] bg-white px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#cde6f4]/25 active:scale-[0.98] md:rounded-2xl md:text-lg md:font-bold md:shadow-none"
                                         >
                                             취소
                                         </button>
                                         <button
                                             onClick={handleSave}
                                             disabled={isSaving}
-                                            className="rounded-2xl bg-[#4a626d] px-6 py-4 text-sm font-extrabold text-white shadow-xl shadow-[#4a626d]/30 md:py-3 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                                            className="group w-full flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                                         >
                                             {isSaving ? (
                                                 <div className="h-4 w-4 animate-spin rounded-full border-3 border-white border-t-transparent" />
@@ -725,9 +988,11 @@ export default function PersonaPage() {
                                 )}
                             </div>
                         </footer>
+                        ) : null}
                     </div>
                 </div>
             )}
+            {modalNode}
         </div>
     );
 }
