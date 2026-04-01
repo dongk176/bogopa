@@ -26,6 +26,7 @@
     "@capacitor/ios": "^8.2.0",
     "@capacitor/keyboard": "^8.0.2",
     "@capacitor/splash-screen": "^8.0.1",
+    "jose": "^6.2.2",
     "next": "16.2.1",
     "next-auth": "^4.24.13",
     "openai": "^6.32.0",

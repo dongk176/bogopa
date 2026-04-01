@@ -4,10 +4,13 @@ import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { NativeAppleAuth } from "@/lib/native-apple-auth";
 
 export default function NativeAppLoginScreen() {
   const router = useRouter();
   const callbackUrl = "/auth/entry?next=%2F";
+  const [isAppleSigningIn, setIsAppleSigningIn] = useState(false);
 
   const openNativeLogin = async (provider: "kakao" | "google" | "apple") => {
     if (!Capacitor.isNativePlatform()) return;
@@ -17,6 +20,78 @@ export default function NativeAppLoginScreen() {
       url: startUrl,
       windowName: "_self",
     });
+  };
+
+  const signInWithNativeApple = async () => {
+    if (isAppleSigningIn) return;
+
+    const isNativePlatform = Capacitor.isNativePlatform();
+    const platform = Capacitor.getPlatform();
+
+    if (!isNativePlatform) {
+      await signIn("apple", { callbackUrl });
+      return;
+    }
+    if (platform !== "ios") {
+      window.alert("Apple 로그인은 iOS 앱에서만 지원됩니다.");
+      return;
+    }
+
+    try {
+      setIsAppleSigningIn(true);
+      const credential = await NativeAppleAuth.signIn({ state: "bogopa-native-apple" });
+      const response = await fetch("/api/auth/native-apple", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          identityToken: credential.identityToken,
+          authorizationCode: credential.authorizationCode,
+          userIdentifier: credential.userIdentifier,
+          email: credential.email,
+          givenName: credential.givenName,
+          familyName: credential.familyName,
+          nextPath: "/",
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        token?: string;
+        nextPath?: string;
+        error?: string;
+      };
+      const transferToken = typeof payload.token === "string" ? payload.token.trim() : "";
+      const nextPath = typeof payload.nextPath === "string" && payload.nextPath.startsWith("/") ? payload.nextPath : "/";
+
+      if (!response.ok || !transferToken) {
+        throw new Error(payload.error || "Native Apple login transfer failed");
+      }
+
+      const result = await signIn("mobile-token", {
+        token: transferToken,
+        redirect: false,
+        callbackUrl: nextPath,
+      });
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      router.replace(nextPath);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("취소") || /cancel/i.test(errorMessage)) {
+        return;
+      }
+      if (errorMessage.includes("진행 중")) {
+        return;
+      }
+      console.error("[native-apple-login] failed", error);
+      window.alert(errorMessage || "Apple 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsAppleSigningIn(false);
+    }
   };
 
   return (
@@ -54,24 +129,6 @@ export default function NativeAppLoginScreen() {
             onClick={(event) => {
               event.preventDefault();
               if (Capacitor.isNativePlatform()) {
-                void openNativeLogin("apple");
-                return;
-              }
-              void signIn("apple", { callbackUrl });
-            }}
-            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#111111] px-6 py-4 text-[15px] font-bold text-white"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-              <path d="M16.37 12.22c.02 2.16 1.9 2.88 1.92 2.89-.02.05-.3 1.03-.99 2.04-.6.87-1.23 1.74-2.21 1.76-.96.02-1.27-.57-2.37-.57-1.1 0-1.44.55-2.35.59-.95.04-1.67-.95-2.28-1.82-1.24-1.8-2.18-5.1-.91-7.31.64-1.1 1.78-1.8 3.02-1.82.94-.02 1.83.64 2.37.64.54 0 1.56-.79 2.63-.68.45.02 1.7.18 2.5 1.34-.06.04-1.49.87-1.47 2.94zM14.9 6.72c.5-.61.83-1.45.74-2.3-.72.03-1.59.48-2.1 1.09-.46.53-.86 1.39-.75 2.21.81.06 1.63-.41 2.11-1z" />
-            </svg>
-            Apple로 로그인
-          </button>
-
-          <button
-            type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              if (Capacitor.isNativePlatform()) {
                 void openNativeLogin("google");
                 return;
               }
@@ -86,6 +143,25 @@ export default function NativeAppLoginScreen() {
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
             </svg>
             Google로 로그인
+          </button>
+
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              void signInWithNativeApple();
+            }}
+            disabled={isAppleSigningIn}
+            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#111111] px-6 py-4 text-[15px] font-bold text-[#ffffff] disabled:opacity-60"
+          >
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center">
+              <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor" aria-hidden="true">
+                <path d="M16.37 12.22c.02 2.16 1.9 2.88 1.92 2.89-.02.05-.3 1.03-.99 2.04-.6.87-1.23 1.74-2.21 1.76-.96.02-1.27-.57-2.37-.57-1.1 0-1.44.55-2.35.59-.95.04-1.67-.95-2.28-1.82-1.24-1.8-2.18-5.1-.91-7.31.64-1.1 1.78-1.8 3.02-1.82.94-.02 1.83.64 2.37.64.54 0 1.56-.79 2.63-.68.45.02 1.7.18 2.5 1.34-.06.04-1.49.87-1.47 2.94zM14.9 6.72c.5-.61.83-1.45.74-2.3-.72.03-1.59.48-2.1 1.09-.46.53-.86 1.39-.75 2.21.81.06 1.63-.41 2.11-1z" />
+              </svg>
+            </span>
+            <span className="leading-none text-[#ffffff]">
+              {isAppleSigningIn ? "Apple 로그인 중..." : "Apple로 로그인"}
+            </span>
           </button>
         </div>
 

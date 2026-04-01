@@ -357,6 +357,9 @@ function StepTwoPageContent() {
           `calc(${keyboardInsetExpr} + env(safe-area-inset-bottom) + 7.5rem)`,
       } as const)
     : undefined;
+  const mobileFooterStyle = isNativeAppRuntime
+    ? ({ bottom: "var(--bogopa-keyboard-height, 0px)" } as const)
+    : undefined;
   const transitionTimeoutRef = useRef<number | null>(null);
   const relationshipSectionRef = useRef<HTMLDivElement | null>(null);
   const genderSectionRef = useRef<HTMLDivElement | null>(null);
@@ -388,6 +391,7 @@ function StepTwoPageContent() {
   const [isImageProcessing, setIsImageProcessing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
+  const [isStepReady, setIsStepReady] = useState(false);
   const [viewMode, setViewMode] = useState<"relationship" | "form">("relationship");
   const [isSwitchingToForm, setIsSwitchingToForm] = useState(false);
   const [isFormEntering, setIsFormEntering] = useState(false);
@@ -464,6 +468,20 @@ function StepTwoPageContent() {
     return getRelationshipLabel(item, userGender).trim();
   }
 
+  const finalRelationshipForValidation = getFinalRelationshipLabel(relationship);
+  const isRelationshipStepValid =
+    Boolean(relationship) &&
+    (!relationship || !requiresGenderSelection(relationship) || isIntroGenderConfirmed);
+  const isFormStepValid =
+    finalRelationshipForValidation.length > 0 &&
+    personaName.trim().length > 0 &&
+    personaOccupation.trim().length > 0 &&
+    userNickname.trim().length > 0 &&
+    !isImageProcessing &&
+    !imageError;
+  const isStepTwoNextDisabled =
+    !isStepReady || isSubmitting || (viewMode === "relationship" ? !isRelationshipStepValid : !isFormStepValid);
+
   function applyRelationshipSelection(item: RelationshipKey) {
     setRelationship(item);
     setRelationshipLabelOverride(null);
@@ -515,6 +533,7 @@ function StepTwoPageContent() {
   }
 
   useEffect(() => {
+    setIsStepReady(false);
     let nextGender: StepOneGender | null = null;
     let hasSavedRelationship = false;
     let canSkipRelationshipView = false;
@@ -536,7 +555,10 @@ function StepTwoPageContent() {
     setUserGender(nextGender);
 
     const rawStep3 = localStorage.getItem(STORAGE_KEY);
-    if (!rawStep3) return;
+    if (!rawStep3) {
+      setIsStepReady(true);
+      return;
+    }
 
     try {
       const saved = JSON.parse(rawStep3) as Partial<StepThreeData>;
@@ -616,6 +638,7 @@ function StepTwoPageContent() {
       setIsSwitchingToForm(false);
       setIsFormEntering(false);
     }
+    setIsStepReady(true);
   }, [forceRelationshipFromStep1, step1EntryNonce]);
 
   useEffect(() => {
@@ -1070,7 +1093,8 @@ function StepTwoPageContent() {
                   <button
                     type="button"
                     onClick={handleIntroNext}
-                    className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
+                    disabled={isStepTwoNextDisabled}
+                    className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                   >
                     다음으로
                     <span className="transition-transform group-hover:translate-x-1">
@@ -1238,7 +1262,7 @@ function StepTwoPageContent() {
 
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isStepTwoNextDisabled}
                     className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                   >
                     {isSubmitting || isImageProcessing ? (
@@ -1264,52 +1288,53 @@ function StepTwoPageContent() {
           </div>
         </div>
       </main>
-      {!isInputFocused ? (
-        <div className="fixed bottom-0 left-0 right-0 z-[60] bg-[#303733]/96 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden">
-          <div className="grid grid-cols-2 gap-2">
-            {viewMode === "relationship" ? (
-              <Link
-                href="/step-1"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
-              >
-                <ArrowLeftIcon />
-                이전
-              </Link>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setViewMode("relationship")}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
-              >
-                <ArrowLeftIcon />
-                이전
-              </button>
-            )}
-
-            <button
-              type={viewMode === "form" ? "submit" : "button"}
-              form={viewMode === "form" ? "step-two-form" : undefined}
-              onClick={viewMode === "relationship" ? handleIntroNext : undefined}
-              disabled={isSubmitting}
-              className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+      <div
+        className="fixed bottom-0 left-0 right-0 z-[60] bg-[#303733]/96 px-6 pb-[calc(1.28rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden"
+        style={mobileFooterStyle}
+      >
+        <div className="grid grid-cols-2 gap-2">
+          {viewMode === "relationship" ? (
+            <Link
+              href="/step-1"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
             >
-              {isSubmitting || isImageProcessing ? (
-                <>
-                  <SpinnerIcon />
-                  {isImageProcessing ? "이미지 처리 중..." : "저장 중..."}
-                </>
-              ) : (
-                <>
-                  다음으로
-                  <span className="transition-transform group-hover:translate-x-1">
-                    <ArrowRightIcon />
-                  </span>
-                </>
-              )}
+              <ArrowLeftIcon />
+              이전
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setViewMode("relationship")}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
+            >
+              <ArrowLeftIcon />
+              이전
             </button>
-          </div>
+          )}
+
+          <button
+            type={viewMode === "form" ? "submit" : "button"}
+            form={viewMode === "form" ? "step-two-form" : undefined}
+            onClick={viewMode === "relationship" ? handleIntroNext : undefined}
+            disabled={isStepTwoNextDisabled}
+            className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSubmitting || isImageProcessing ? (
+              <>
+                <SpinnerIcon />
+                {isImageProcessing ? "이미지 처리 중..." : "저장 중..."}
+              </>
+            ) : (
+              <>
+                다음으로
+                <span className="transition-transform group-hover:translate-x-1">
+                  <ArrowRightIcon />
+                </span>
+              </>
+            )}
+          </button>
         </div>
-      ) : null}
+      </div>
       <HomeConfirmModal 
         isOpen={isHomeModalOpen} 
         onClose={() => setIsHomeModalOpen(false)} 

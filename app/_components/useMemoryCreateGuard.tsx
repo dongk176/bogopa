@@ -142,7 +142,7 @@ export default function useMemoryCreateGuard() {
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeModal} />
       <section className="relative w-full max-w-sm rounded-[2rem] border border-white/10 bg-[#303733] p-7 shadow-2xl">
         <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">{modal.title}</h3>
-        <p className="mt-3 text-sm font-semibold leading-relaxed text-[#e8f1ec]">{modal.description}</p>
+        <p className="mt-3 text-sm font-semibold leading-relaxed text-[#5d605a]">{modal.description}</p>
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button
             type="button"

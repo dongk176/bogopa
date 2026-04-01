@@ -4,10 +4,147 @@ import LegalMobileHeader from "@/app/_components/LegalMobileHeader";
 import LegalExitScrollMarker from "@/app/_components/LegalExitScrollMarker";
 
 export default function PrivacyPage() {
+    const sections: Array<{
+        title: string;
+        paragraphs?: string[];
+        bullets?: string[];
+    }> = [
+        {
+            title: "1. 총칙",
+            paragraphs: [
+                "보고파(이하 \"회사\")는 이용자의 개인정보를 중요하게 생각하며, 「개인정보 보호법」 등 관련 법령을 준수합니다.",
+                "본 개인정보 처리방침은 회사가 제공하는 웹/앱 서비스(로그인, 회원가입, 내 기억 생성·관리, AI 대화, 편지 기능, 출석체크, 유료 상품 이용 등)에서 수집·이용·보관·파기되는 개인정보 처리 기준을 설명합니다.",
+                "본 처리방침은 서비스 화면 하단 또는 계정 설정 메뉴를 통해 언제든지 확인할 수 있습니다.",
+            ],
+        },
+        {
+            title: "2. 수집하는 개인정보 항목",
+            paragraphs: ["회사는 서비스 제공을 위해 아래 정보를 수집·처리할 수 있습니다."],
+            bullets: [
+                "계정 및 인증 정보: 사용자 식별값(ID), 로그인 제공자(provider), 이름, 이메일, 프로필 이미지, 인증 처리에 필요한 토큰/식별값",
+                "회원 프로필 정보: 이름, 생년월일, 성별, MBTI, 관심사, 프로필 완료 여부",
+                "내 기억(페르소나) 정보: 기억 이름, 관계, 성별 관련 설정, 직업/소개 입력값, 프로필 이미지, 대화 스타일·성향 설정, 자주 쓰는 문구, 기억 조각, 대화 목적 등 이용자가 직접 입력한 데이터",
+                "대화/콘텐츠 정보: 채팅 메시지(이용자/AI), 대화 세션 요약 정보, 편지 설정 및 편지 본문, 후기/피드백, 서비스 내 입력한 기타 텍스트",
+                "서비스 이용 정보: 출석체크 기록, 기억 잔액/변동 내역, 구독/충전 등 권한(Entitlement) 상태, IAP 구매 식별값(스토어 영수증 관련 값 포함)",
+                "기기/접속 정보: IP, 접속 시간, 사용자 에이전트, 쿠키·세션·로컬스토리지 등 서비스 운영에 필요한 기술 정보",
+            ],
+        },
+        {
+            title: "3. 개인정보 수집 방법",
+            bullets: [
+                "회원가입 및 로그인(카카오/구글/애플/아이디·비밀번호) 과정에서 수집",
+                "이용자가 서비스 화면에서 직접 입력·업로드(텍스트, 이미지)한 정보 수집",
+                "API 호출, 로그 기록, 쿠키/세션/로컬스토리지 등 기술적 수단을 통한 자동 수집",
+                "결제/구독 처리 시 앱마켓(구글 플레이/애플 앱스토어) 연동 과정에서 필요한 범위 내 수집",
+            ],
+        },
+        {
+            title: "4. 개인정보 이용 목적",
+            bullets: [
+                "회원 식별, 로그인 상태 유지, 계정 보호 및 부정 이용 방지",
+                "내 기억 생성·편집·삭제, AI 대화 생성, 편지 생성·보관 등 핵심 기능 제공",
+                "출석체크, 기억 충전/차감, 구독 상태 반영, 결제 검증 및 권한 부여",
+                "서비스 안정성 확보, 오류 분석, 품질 개선, 고객 문의 대응",
+                "법령 준수, 분쟁 대응, 이용약관·운영정책 위반 행위 대응",
+            ],
+        },
+        {
+            title: "5. 제3자 제공에 관한 사항",
+            paragraphs: [
+                "회사는 원칙적으로 이용자의 개인정보를 외부에 판매하거나 무단 제공하지 않습니다.",
+                "다만, 이용자가 사전에 동의한 경우, 법령에 근거가 있는 경우, 또는 수사·재판 등 적법한 절차에 따라 요구되는 경우에는 예외적으로 제공될 수 있습니다.",
+            ],
+        },
+        {
+            title: "6. 처리위탁 및 국외 이전",
+            paragraphs: [
+                "회사는 서비스 제공을 위해 일부 업무를 외부 서비스에 위탁하거나 국외 인프라를 이용할 수 있습니다. 회사는 계약을 통해 개인정보 보호 의무를 관리·감독합니다.",
+            ],
+            bullets: [
+                "인증/로그인 연동: 카카오, 구글, 애플",
+                "클라우드/저장소: Supabase(데이터베이스), AWS S3(이미지 저장)",
+                "AI 응답 생성 처리: OpenAI API",
+                "앱 내 결제 처리: Google Play / Apple App Store 결제 시스템",
+                "국외 이전은 각 서비스 사업자의 운영 인프라 위치에 따라 발생할 수 있으며, 서비스 제공 목적 범위 내에서 최소한으로 처리됩니다.",
+            ],
+        },
+        {
+            title: "7. 보유 및 이용 기간",
+            paragraphs: [
+                "회사는 원칙적으로 개인정보 수집·이용 목적 달성 시 지체 없이 파기합니다. 다만 이용자가 계정을 유지하는 동안 서비스 제공 목적상 필요한 정보는 보관될 수 있습니다.",
+                "이용자가 회원탈퇴를 요청하면 관련 데이터는 법령상 보관 의무가 없는 범위에서 지체 없이 삭제됩니다.",
+                "관계 법령에 따라 보관이 필요한 경우 아래 기간 동안 보관 후 파기합니다.",
+            ],
+            bullets: [
+                "계약 또는 청약철회 등에 관한 기록: 5년",
+                "대금결제 및 재화·서비스 공급에 관한 기록: 5년",
+                "소비자 불만 또는 분쟁처리에 관한 기록: 3년",
+                "표시·광고에 관한 기록: 6개월",
+                "통신사실확인자료(접속기록 등): 3개월",
+            ],
+        },
+        {
+            title: "8. 파기 절차 및 방법",
+            bullets: [
+                "전자적 파일: 복구 또는 재생이 어려운 방식으로 안전하게 삭제",
+                "출력물/문서: 분쇄 또는 소각 등으로 파기",
+                "법령상 보관 정보는 별도 분리 보관 후 보관 기간 종료 시 즉시 파기",
+            ],
+        },
+        {
+            title: "9. 이용자 권리와 행사 방법",
+            bullets: [
+                "이용자는 언제든지 본인의 개인정보 열람, 정정, 삭제, 처리정지, 회원탈퇴를 요청할 수 있습니다.",
+                "앱 내 계정 설정 또는 고객 문의 채널을 통해 요청할 수 있으며, 회사는 관련 법령이 정한 기간 내 조치합니다.",
+                "법령상 제한 사유가 있는 경우 일부 요청이 제한될 수 있습니다.",
+            ],
+        },
+        {
+            title: "10. 자동 수집 장치(쿠키·세션·로컬스토리지)",
+            paragraphs: [
+                "회사는 로그인 유지, 보안 처리, 이용 환경 개선을 위해 쿠키·세션·로컬스토리지 등을 사용할 수 있습니다.",
+                "이용자는 브라우저 또는 기기 설정을 통해 쿠키 저장을 거부할 수 있으나, 이 경우 일부 기능 이용이 제한될 수 있습니다.",
+            ],
+        },
+        {
+            title: "11. 아동의 개인정보",
+            paragraphs: [
+                "회사는 만 14세 미만 아동의 가입을 제한합니다. 연령 기준 미충족 시 서비스 이용이 제한될 수 있습니다.",
+            ],
+        },
+        {
+            title: "12. 개인정보 보호를 위한 기술적·관리적 조치",
+            bullets: [
+                "접근 권한 최소화 및 권한 관리",
+                "민감 데이터 접근 통제, 전송 구간 보안 적용",
+                "로그 모니터링, 이상 행위 탐지, 취약점 점검",
+                "내부 운영자 대상 보안·개인정보 보호 기준 적용",
+            ],
+        },
+        {
+            title: "13. 개인정보 보호책임자 및 문의처",
+            paragraphs: [
+                "개인정보 처리 관련 문의, 불만 처리, 피해 구제 요청은 아래 채널로 접수하실 수 있습니다.",
+            ],
+            bullets: [
+                "이메일: artiroom176@gmail.com",
+                "문의 내용 확인 후 관련 법령 및 내부 절차에 따라 신속히 답변드립니다.",
+            ],
+        },
+        {
+            title: "14. 고지 의무",
+            paragraphs: [
+                "본 개인정보 처리방침은 관련 법령, 서비스 내용, 보안 정책 변경에 따라 수정될 수 있습니다.",
+                "중요한 변경사항이 있는 경우 서비스 내 공지사항 또는 별도 안내를 통해 고지합니다.",
+                "시행일: 2026-04-01",
+            ],
+        },
+    ];
+
     return (
         <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
             <LegalExitScrollMarker />
-            <LegalMobileHeader title="개인정보 수집·이용 동의" backHref="/profile/account-settings" />
+            <LegalMobileHeader title="개인정보 처리방침" backHref="/profile/account-settings" />
 
             <header className="fixed top-0 z-50 hidden w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:block">
                 <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-6">
@@ -20,39 +157,24 @@ export default function PrivacyPage() {
             </header>
 
             <main className="mx-auto w-full max-w-3xl px-6 pb-28 pt-[calc(6rem+env(safe-area-inset-top))] md:pt-[calc(8rem+env(safe-area-inset-top))]">
-                <h1 className="font-headline mb-10 text-3xl font-extrabold tracking-tight text-[#2f342e]">개인정보 수집·이용 동의</h1>
+                <h1 className="font-headline mb-10 text-3xl font-extrabold tracking-tight text-[#2f342e]">개인정보 처리방침</h1>
 
-                <div className="space-y-8 text-sm leading-relaxed text-white">
-                    <section className="space-y-3">
-                        <h2 className="text-base font-bold text-[#4a626d]">1. 수집하는 개인정보 항목</h2>
-                        <p>보고파 서비스 제공을 위해 아래와 같은 개인정보를 수집 및 이용합니다.</p>
-                        <ul className="list-inside list-disc space-y-2">
-                            <li><strong>필수 항목:</strong> 이용자의 성명, 성별, 대화 대상의 이름(혹은 애칭), 대상의 직업, 성별 및 입력하신 텍스트/대화 기록.</li>
-                            <li><strong>선택 항목:</strong> 대화 대상의 이미지 (아바타용 이미지).</li>
-                        </ul>
-                    </section>
-
-                    <section className="space-y-3">
-                        <h2 className="text-base font-bold text-[#4a626d]">2. 수집 및 이용 목적</h2>
-                        <p>
-                            입력하신 텍스트 및 대화 기록은 오직 <strong className="text-[#4a626d]">AI 페르소나를 분석하고 생성하기 위한 목적</strong>으로만 처리되며, 분석이 완료된 이후 페르소나와의 대화를 유지하는 용도로 사용됩니다.
-                            입력된 대화 데이터는 어떠한 경우에도 외부 제3자 AI 모델 학습에 영구적으로 제공되지 않으며, 세션이 종료되면 설정된 주기에 따라 파기됩니다.
-                        </p>
-                    </section>
-
-                    <section className="space-y-3">
-                        <h2 className="text-base font-bold text-[#4a626d]">3. 개인정보의 보유 및 이용기간</h2>
-                        <p>
-                            원칙적으로 이용자의 명시적인 삭제 요청(내 기억 삭제) 시 즉시 파기하며, 그렇지 않은 경우에는 서비스 환경의 로컬 스토리지 한도 내지는 1년이 경과하는 시점에서 자동 파기됩니다. 단, 관련 법령에 의해 보존할 필요가 있는 경우에는 해당 법령이 정한 기간 동안 보관합니다.
-                        </p>
-                    </section>
-
-                    <section className="space-y-3">
-                        <h2 className="text-base font-bold text-[#4a626d]">4. 동의를 거부할 권리</h2>
-                        <p>
-                            이용자는 개인정보 수집 및 이용에 대한 동의를 거부할 권리가 있습니다. 단, 필수 정보 수집에 동의하지 않을 경우 보고파 서비스의 핵심 기능인 '페르소나 생성 및 대화 기능'을 이용하실 수 없습니다.
-                        </p>
-                    </section>
+                <div className="space-y-8 text-sm leading-relaxed text-[#2f342e]">
+                    {sections.map((section) => (
+                        <section key={section.title} className="space-y-3">
+                            <h2 className="text-base font-bold text-[#4a626d]">{section.title}</h2>
+                            {(section.paragraphs || []).map((paragraph, index) => (
+                                <p key={`${section.title}-p-${index}`}>{paragraph}</p>
+                            ))}
+                            {(section.bullets || []).length > 0 ? (
+                                <ul className="list-inside list-disc space-y-2">
+                                    {section.bullets?.map((bullet, index) => (
+                                        <li key={`${section.title}-b-${index}`}>{bullet}</li>
+                                    ))}
+                                </ul>
+                            ) : null}
+                        </section>
+                    ))}
                 </div>
             </main>
         </div>

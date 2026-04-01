@@ -42,10 +42,6 @@ export default function SignupCompleteModal() {
     }, 260);
   }
 
-  function handleConfirm() {
-    closeModal(false);
-  }
-
   function handleStart() {
     closeModal(true);
   }
@@ -87,17 +83,6 @@ export default function SignupCompleteModal() {
         </div>
 
         <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={isClosing}
-            className={`inline-flex w-full items-center justify-center rounded-2xl border border-[#d6dde2] bg-[#f4f6f5] px-6 py-3 text-[14px] font-bold text-[#4a626d] transition-all duration-300 hover:bg-[#edf1ef] active:scale-[0.98] ${
-              isClosing ? "cursor-default opacity-80" : ""
-            }`}
-          >
-            확인
-          </button>
-
           <button
             type="button"
             onClick={handleStart}

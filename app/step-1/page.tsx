@@ -83,6 +83,8 @@ export default function StepOnePage() {
   const [saveError, setSaveError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
+  const [isStepReady, setIsStepReady] = useState(false);
+  const isStepOneNextDisabled = !isStepReady || !goal || isSubmitting;
 
   function triggerAttention(element: HTMLElement | null, setAttention: (next: boolean) => void, focus?: () => void) {
     setAttention(true);
@@ -117,16 +119,17 @@ export default function StepOnePage() {
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-
-    try {
-      const saved = JSON.parse(raw) as Partial<StepTwoData>;
-      if (saved.goal && GOALS.some((item) => item.value === saved.goal)) {
-        setGoal(saved.goal);
+    if (raw) {
+      try {
+        const saved = JSON.parse(raw) as Partial<StepTwoData>;
+        if (saved.goal && GOALS.some((item) => item.value === saved.goal)) {
+          setGoal(saved.goal);
+        }
+      } catch {
+        // noop
       }
-    } catch {
-      // noop
     }
+    setIsStepReady(true);
   }, []);
 
   useEffect(() => {
@@ -259,7 +262,7 @@ export default function StepOnePage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isStepOneNextDisabled}
                     className="group w-full flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                   >
                     {isSubmitting ? (
@@ -284,7 +287,7 @@ export default function StepOnePage() {
         </div>
       </main>
       {!isInputFocused ? (
-        <div className="fixed bottom-0 left-0 right-0 z-[60] bg-[#303733]/96 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden">
+        <div className="fixed bottom-0 left-0 right-0 z-[60] bg-[#303733]/96 px-6 pb-[calc(1.28rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden">
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -296,7 +299,7 @@ export default function StepOnePage() {
             <button
               type="submit"
               form="step-one-form"
-              disabled={isSubmitting}
+              disabled={isStepOneNextDisabled}
               className="group w-full flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? (

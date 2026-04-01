@@ -104,9 +104,9 @@ type Step4Raw = {
 
 const DEFAULT_OVERRIDES: Step4Overrides = {
   frequentPhrases: [],
-  politeness: DROPDOWN_OPTIONS.politeness[0],
-  replyTempo: DROPDOWN_OPTIONS.replyTempo[1],
-  empathyStyle: DROPDOWN_OPTIONS.empathyStyle[0],
+  politeness: "",
+  replyTempo: "",
+  empathyStyle: "",
   memories: [],
 };
 const MIN_SUBMIT_LOADING_MS = 4000;
@@ -197,37 +197,47 @@ function ArrowRightIcon() {
 }
 
 function Dropdown({
+  id,
+  activeDropdown,
+  onToggle,
   label,
   options,
   value,
   onChange,
 }: {
+  id: string;
+  activeDropdown: string | null;
+  onToggle: (next: string | null) => void;
   label: string;
   options: string[];
   value: string;
   onChange: (value: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const open = activeDropdown === id;
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
+      if (!open) return;
       if (!ref.current) return;
-      if (!ref.current.contains(event.target as Node)) setOpen(false);
+      if (!ref.current.contains(event.target as Node)) onToggle(null);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
-  }, []);
+  }, [open, onToggle]);
+
+  const displayValue = value || "선택";
+  const isSelected = value.trim().length > 0;
 
   return (
     <div className="relative" ref={ref}>
       <label className="mb-2 block text-xs font-extrabold uppercase tracking-[0.16em] text-[#5d605a]">{label}</label>
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => onToggle(open ? null : id)}
         className="flex w-full items-center justify-between rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#2f342e] transition-colors hover:bg-[#eceee8]"
       >
-        <span>{value}</span>
+        <span className={isSelected ? "text-[#2f342e]" : "text-[#7f867f]"}>{displayValue}</span>
         <svg className={`h-4 w-4 text-[#787c75] transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
         </svg>
@@ -240,10 +250,10 @@ function Dropdown({
               key={option}
               onClick={() => {
                 onChange(option);
-                setOpen(false);
+                onToggle(null);
               }}
               className={`block w-full px-4 py-3 text-left text-sm font-bold transition-colors ${
-                option === value ? "bg-[#d7e9f2] text-[#3e5560]" : "text-[#2f342e] hover:bg-[#f4f8fa]"
+                value.trim().length > 0 && option === value ? "bg-[#d7e9f2] text-[#3e5560]" : "text-[#2f342e] hover:bg-[#f4f8fa]"
               }`}
             >
               {option}
@@ -460,6 +470,9 @@ export default function StepThreePage() {
           `calc(${keyboardInsetExpr} + env(safe-area-inset-bottom) + 7.5rem)`,
       } as const)
     : undefined;
+  const mobileFooterStyle = isNativeAppRuntime
+    ? ({ bottom: "var(--bogopa-keyboard-height, 0px)" } as const)
+    : undefined;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isHomeModalOpen, setIsHomeModalOpen] = useState(false);
@@ -478,6 +491,19 @@ export default function StepThreePage() {
   });
   const [upgradeCta, setUpgradeCta] = useState<UpgradeCtaState | null>(null);
   const [loadingProgressIndex, setLoadingProgressIndex] = useState(0);
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [isStepReady, setIsStepReady] = useState(false);
+  const areStyleFieldsSelected =
+    overrides.politeness.trim().length > 0 &&
+    overrides.replyTempo.trim().length > 0 &&
+    overrides.empathyStyle.trim().length > 0;
+  const isAnyDropdownOpen = activeDropdown !== null;
+  const isStepThreeSubmitDisabled =
+    !isStepReady ||
+    isSubmitting ||
+    relationLabel.trim().length === 0 ||
+    step3Nickname.trim().length === 0 ||
+    !areStyleFieldsSelected;
 
   useEffect(() => {
     setIsNativeAppRuntime(document.documentElement.classList.contains("native-app"));
@@ -536,6 +562,7 @@ export default function StepThreePage() {
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
+    setIsStepReady(false);
 
     const step3 = safeParse<Step3Raw>(window.localStorage.getItem(STEP3_KEY));
     const step4 = safeParse<Step4Raw>(window.localStorage.getItem(STORAGE_KEY));
@@ -559,11 +586,12 @@ export default function StepThreePage() {
 
     setOverrides({
       frequentPhrases,
-      politeness: fromOverrides.politeness || DEFAULT_OVERRIDES.politeness,
-      replyTempo: fromOverrides.replyTempo || DEFAULT_OVERRIDES.replyTempo,
-      empathyStyle: fromOverrides.empathyStyle || DEFAULT_OVERRIDES.empathyStyle,
+      politeness: (fromOverrides.politeness || "").trim(),
+      replyTempo: (fromOverrides.replyTempo || "").trim(),
+      empathyStyle: (fromOverrides.empathyStyle || "").trim(),
       memories: fromOverrides.memories || [],
     });
+    setIsStepReady(true);
 
     void (async () => {
       try {
@@ -626,6 +654,18 @@ export default function StepThreePage() {
   }, [isSubmitting]);
 
   useEffect(() => {
+    if (!isAnyDropdownOpen) return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [isAnyDropdownOpen]);
+
+  useEffect(() => {
     const hasDraftContent =
       overrides.frequentPhrases.some((item) => item.trim().length > 0) ||
       overrides.memories.some((item) => item.trim().length > 0) ||
@@ -642,6 +682,11 @@ export default function StepThreePage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting) return;
+
+    if (!areStyleFieldsSelected) {
+      setError("정중함 정도, 성격, 공감 방식을 선택해주세요.");
+      return;
+    }
 
     const submitStartedAt = Date.now();
     const waitMinimumLoading = async () => {
@@ -863,7 +908,9 @@ export default function StepThreePage() {
       </header>
 
       <main
-        className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto overscroll-y-contain px-4 pb-36 pt-[calc(5rem+var(--native-safe-top))] [-webkit-overflow-scrolling:touch] md:items-center md:px-6 md:pb-12 md:pt-24"
+        className={`flex min-h-0 flex-1 items-start justify-center overscroll-y-contain px-4 pb-36 pt-[calc(5rem+var(--native-safe-top))] [-webkit-overflow-scrolling:touch] md:items-center md:px-6 md:pb-12 md:pt-24 ${
+          isAnyDropdownOpen ? "overflow-y-hidden" : "overflow-y-auto"
+        }`}
         style={mobileFocusedMainStyle}
       >
         <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-white md:p-12 md:shadow-none md:border md:border-[#afb3ac]/20">
@@ -887,22 +934,40 @@ export default function StepThreePage() {
                 <h2 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">대화 스타일</h2>
                 <div className="grid grid-cols-1 gap-4">
                   <Dropdown
+                    id="politeness"
+                    activeDropdown={activeDropdown}
+                    onToggle={setActiveDropdown}
                     label="정중함 정도"
                     options={DROPDOWN_OPTIONS.politeness}
                     value={overrides.politeness}
-                    onChange={(value) => setOverrides((prev) => ({ ...prev, politeness: value }))}
+                    onChange={(value) => {
+                      setOverrides((prev) => ({ ...prev, politeness: value }));
+                      if (error) setError("");
+                    }}
                   />
                   <Dropdown
+                    id="reply-tempo"
+                    activeDropdown={activeDropdown}
+                    onToggle={setActiveDropdown}
                     label="성격"
                     options={DROPDOWN_OPTIONS.replyTempo}
                     value={overrides.replyTempo}
-                    onChange={(value) => setOverrides((prev) => ({ ...prev, replyTempo: value }))}
+                    onChange={(value) => {
+                      setOverrides((prev) => ({ ...prev, replyTempo: value }));
+                      if (error) setError("");
+                    }}
                   />
                   <Dropdown
+                    id="empathy-style"
+                    activeDropdown={activeDropdown}
+                    onToggle={setActiveDropdown}
                     label="공감 방식"
                     options={DROPDOWN_OPTIONS.empathyStyle}
                     value={overrides.empathyStyle}
-                    onChange={(value) => setOverrides((prev) => ({ ...prev, empathyStyle: value }))}
+                    onChange={(value) => {
+                      setOverrides((prev) => ({ ...prev, empathyStyle: value }));
+                      if (error) setError("");
+                    }}
                   />
                 </div>
               </section>
@@ -953,7 +1018,7 @@ export default function StepThreePage() {
 
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isStepThreeSubmitDisabled}
                     className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                   >
                     <>
@@ -970,33 +1035,34 @@ export default function StepThreePage() {
           </div>
         </div>
       </main>
-      {!isInputFocused ? (
-        <div className="fixed bottom-0 left-0 right-0 z-[60] bg-[#303733]/96 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden">
-          <div className="grid grid-cols-2 gap-2">
-            <Link
-              href="/step-2"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
-            >
-              <ArrowLeftIcon />
-              이전
-            </Link>
+      <div
+        className="fixed bottom-0 left-0 right-0 z-[60] bg-[#303733]/96 px-6 pb-[calc(1.28rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden"
+        style={mobileFooterStyle}
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <Link
+            href="/step-2"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
+          >
+            <ArrowLeftIcon />
+            이전
+          </Link>
 
-            <button
-              type="submit"
-              form="step-three-form"
-              disabled={isSubmitting}
-              className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <>
-                채팅 시작
-                <span className="transition-transform group-hover:translate-x-1">
-                  <ArrowRightIcon />
-                </span>
-              </>
-            </button>
-          </div>
+          <button
+            type="submit"
+            form="step-three-form"
+            disabled={isStepThreeSubmitDisabled}
+            className="group flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <>
+              채팅 시작
+              <span className="transition-transform group-hover:translate-x-1">
+                <ArrowRightIcon />
+              </span>
+            </>
+          </button>
         </div>
-      ) : null}
+      </div>
       <HomeConfirmModal isOpen={isHomeModalOpen} onClose={() => setIsHomeModalOpen(false)} />
       {upgradeCta ? (
         <div className="fixed inset-0 z-[170] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">

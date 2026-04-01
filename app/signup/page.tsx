@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { INTEREST_OPTIONS, InterestKey, MAX_INTEREST_SELECTION } from "@/lib/user-profile/options";
@@ -579,16 +580,29 @@ function SignupContent() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={goNext}
-                    className="group fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-6 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] md:static md:left-auto md:right-auto md:z-auto md:w-full md:rounded-2xl md:px-0 md:py-5 md:text-lg md:font-bold md:shadow-lg"
-                  >
-                    다음
-                    <span className="transition-transform group-hover:translate-x-1">
-                      <ArrowRightIcon />
-                    </span>
-                  </button>
+                  <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] space-y-2 md:static md:left-auto md:right-auto md:z-auto md:space-y-0">
+                    <button
+                      type="button"
+                      onClick={goNext}
+                      className="group flex w-full items-center justify-center gap-2 rounded-full bg-[#4a626d] px-6 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] md:rounded-2xl md:px-0 md:py-5 md:text-lg md:font-bold md:shadow-lg"
+                    >
+                      다음
+                      <span className="transition-transform group-hover:translate-x-1">
+                        <ArrowRightIcon />
+                      </span>
+                    </button>
+                    <p className="text-center text-[11px] leading-relaxed text-[#5d605a] md:hidden">
+                      보고파의{" "}
+                      <Link href="/legal/terms" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                        서비스 이용약관
+                      </Link>
+                      {" "}및{" "}
+                      <Link href="/legal/privacy" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                        개인정보 처리방침
+                      </Link>
+                      에 동의하시면 계속 진행해주세요.
+                    </p>
+                  </div>
                 </>
               ) : (
                 <>
@@ -649,29 +663,42 @@ function SignupContent() {
                     </div>
                   </div>
 
-                  <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] grid grid-cols-2 gap-2 md:static md:left-auto md:right-auto md:z-auto md:mt-4">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="flex items-center justify-center gap-1 rounded-full border border-[#4a626d] bg-white px-4 py-4 text-base font-semibold text-[#4a626d] md:rounded-2xl"
-                    >
-                      <ArrowLeftIcon />
-                      이전
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !canSubmit}
-                      className="flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] transition-all duration-300 hover:bg-[#3e5661] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <SpinnerIcon />
-                          저장 중...
-                        </>
-                      ) : (
-                        "가입 완료"
-                      )}
-                    </button>
+                  <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] space-y-2 md:static md:left-auto md:right-auto md:z-auto md:mt-4 md:space-y-0">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="flex items-center justify-center gap-1 rounded-full border border-[#4a626d] bg-white px-4 py-4 text-base font-semibold text-[#4a626d] md:rounded-2xl"
+                      >
+                        <ArrowLeftIcon />
+                        이전
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || !canSubmit}
+                        className="flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] transition-all duration-300 hover:bg-[#3e5661] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <SpinnerIcon />
+                            저장 중...
+                          </>
+                        ) : (
+                          "가입 완료"
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-center text-[11px] leading-relaxed text-[#5d605a] md:hidden">
+                      보고파의{" "}
+                      <Link href="/legal/terms" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                        서비스 이용약관
+                      </Link>
+                      {" "}및{" "}
+                      <Link href="/legal/privacy" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                        개인정보 처리방침
+                      </Link>
+                      에 동의하시면 계속 진행해주세요.
+                    </p>
                   </div>
                 </>
               )}

@@ -1,11 +1,13 @@
 import UIKit
 import Capacitor
+import AuthenticationServices
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private var didRegisterNativeChatPlugin = false
+    private var didRegisterNativeAppleAuthPlugin = false
 
     private var bogopaBackgroundColor: UIColor {
         UIColor.white
@@ -51,7 +53,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func registerNativeChatPluginIfNeeded(attempt: Int = 0) {
-        if didRegisterNativeChatPlugin { return }
+        if didRegisterNativeChatPlugin && didRegisterNativeAppleAuthPlugin { return }
         guard let window else { return }
         guard let bridgeViewController = findBridgeViewController(from: window.rootViewController),
               let bridge = bridgeViewController.bridge else {
@@ -63,8 +65,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             return
         }
 
-        bridge.registerPluginInstance(NativeChatPlugin())
-        didRegisterNativeChatPlugin = true
+        if !didRegisterNativeChatPlugin {
+            bridge.registerPluginInstance(NativeChatPlugin())
+            didRegisterNativeChatPlugin = true
+        }
+        if !didRegisterNativeAppleAuthPlugin {
+            bridge.registerPluginInstance(NativeAppleAuthPlugin())
+            didRegisterNativeAppleAuthPlugin = true
+        }
     }
 
 
@@ -1483,5 +1491,144 @@ public final class NativeChatPlugin: CAPPlugin, CAPBridgedPlugin {
             memoryBalance: memoryBalance,
             personas: parsedPersonas.isEmpty ? (fallback?.personas ?? []) : parsedPersonas
         )
+    }
+}
+
+@objc(NativeAppleAuthPlugin)
+public final class NativeAppleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    public let identifier = "NativeAppleAuthPlugin"
+    public let jsName = "NativeAppleAuth"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "signIn", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var pendingCall: CAPPluginCall?
+    private var activePresentationAnchor: ASPresentationAnchor?
+
+    private func resolvePresentationAnchor() -> ASPresentationAnchor? {
+        if let window = bridge?.viewController?.view.window {
+            return window
+        }
+        if let window = bridge?.viewController?.viewIfLoaded?.window {
+            return window
+        }
+
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        if let keyWindow = windows.first(where: { $0.isKeyWindow }) {
+            return keyWindow
+        }
+        return windows.first
+    }
+
+    @objc public func signIn(_ call: CAPPluginCall) {
+        if #available(iOS 13.0, *) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    call.reject("Plugin is unavailable.")
+                    return
+                }
+                guard self.pendingCall == nil else {
+                    call.reject("Apple 로그인 진행 중입니다.")
+                    return
+                }
+                guard let anchor = self.resolvePresentationAnchor() else {
+                    call.reject("Apple 로그인 화면을 표시할 수 없습니다. 앱을 다시 열고 시도해주세요.")
+                    return
+                }
+
+                let request = ASAuthorizationAppleIDProvider().createRequest()
+                request.requestedScopes = [.fullName, .email]
+                if let state = call.getString("state"), !state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    request.state = state
+                }
+
+                let controller = ASAuthorizationController(authorizationRequests: [request])
+                controller.delegate = self
+                controller.presentationContextProvider = self
+
+                self.pendingCall = call
+                self.activePresentationAnchor = anchor
+                controller.performRequests()
+            }
+            return
+        }
+
+        call.reject("iOS 13 이상에서만 Apple 로그인이 지원됩니다.")
+    }
+
+    public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        if let anchor = activePresentationAnchor {
+            return anchor
+        }
+        if let fallback = resolvePresentationAnchor() {
+            return fallback
+        }
+        return ASPresentationAnchor(frame: .zero)
+    }
+
+    public func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+        guard let call = pendingCall else { return }
+        pendingCall = nil
+        activePresentationAnchor = nil
+
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            call.reject("Apple 인증 결과를 읽지 못했습니다.")
+            return
+        }
+
+        guard let identityTokenData = credential.identityToken,
+              let identityToken = String(data: identityTokenData, encoding: .utf8),
+              !identityToken.isEmpty else {
+            call.reject("Apple identity token을 받지 못했습니다.")
+            return
+        }
+
+        var result: [String: Any] = [
+            "identityToken": identityToken,
+            "userIdentifier": credential.user
+        ]
+
+        if let authorizationCodeData = credential.authorizationCode,
+           let authorizationCode = String(data: authorizationCodeData, encoding: .utf8),
+           !authorizationCode.isEmpty {
+            result["authorizationCode"] = authorizationCode
+        }
+
+        if let email = credential.email, !email.isEmpty {
+            result["email"] = email
+        }
+
+        if let givenName = credential.fullName?.givenName, !givenName.isEmpty {
+            result["givenName"] = givenName
+        }
+
+        if let familyName = credential.fullName?.familyName, !familyName.isEmpty {
+            result["familyName"] = familyName
+        }
+
+        call.resolve(result)
+    }
+
+    public func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        guard let call = pendingCall else { return }
+        pendingCall = nil
+        activePresentationAnchor = nil
+
+        let nsError = error as NSError
+        if nsError.domain == ASAuthorizationError.errorDomain, nsError.code == ASAuthorizationError.canceled.rawValue {
+            call.reject("사용자가 Apple 로그인을 취소했습니다.")
+            return
+        }
+        var detailMessage = "Apple 로그인에 실패했습니다. [\(nsError.domain):\(nsError.code)] \(nsError.localizedDescription)"
+        if nsError.domain == ASAuthorizationError.errorDomain, nsError.code == ASAuthorizationError.unknown.rawValue {
+            detailMessage += " (시뮬레이터 설정에서 Apple ID/iCloud 로그인을 확인해주세요.)"
+        }
+        NSLog("[NativeAppleAuth] \(detailMessage)")
+        call.reject(detailMessage, nil, error)
     }
 }
