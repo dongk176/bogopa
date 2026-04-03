@@ -15,6 +15,15 @@ type PersonaCard = {
   updated_at?: string;
 };
 
+type LetterQuotaPayload = {
+  ok?: boolean;
+  quota?: {
+    canCreate?: boolean;
+    requiresPass?: boolean;
+    remaining?: number;
+  };
+};
+
 function UserIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -39,6 +48,15 @@ function PlusIcon() {
     <svg viewBox="0 0 24 24" className="h-11 w-11" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function LetterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9">
+      <rect x="3.5" y="6" width="17" height="12" rx="2.5" />
+      <path d="m4.8 7.5 7.2 6 7.2-6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -117,6 +135,10 @@ export default function HomeMemoryCarousel() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isLetterMemoryRequiredOpen, setIsLetterMemoryRequiredOpen] = useState(false);
+  const [isLetterPassRequiredOpen, setIsLetterPassRequiredOpen] = useState(false);
+  const [isLetterDailyLimitOpen, setIsLetterDailyLimitOpen] = useState(false);
+  const [isLetterQuotaChecking, setIsLetterQuotaChecking] = useState(false);
+  const [letterRemainingCount, setLetterRemainingCount] = useState<number | null>(null);
   const [loginNextPath, setLoginNextPath] = useState("/step-1/start");
   const { guardCreateStart, modalNode, isChecking } = useMemoryCreateGuard();
 
@@ -167,6 +189,56 @@ export default function HomeMemoryCarousel() {
     };
   }, [status, session]);
 
+  useEffect(() => {
+    if (!isHydrated || status === "loading") return;
+    if (!session) {
+      setLetterRemainingCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadLetterQuota = async () => {
+      try {
+        const response = await fetch("/api/letters?quota=1", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json().catch(() => ({}))) as LetterQuotaPayload;
+        if (!cancelled && typeof payload.quota?.remaining === "number") {
+          setLetterRemainingCount(Math.max(0, payload.quota.remaining));
+        }
+      } catch {
+        if (!cancelled) setLetterRemainingCount(null);
+      }
+    };
+
+    void loadLetterQuota();
+    return () => {
+      cancelled = true;
+    };
+  }, [isHydrated, session, status]);
+
+  useEffect(() => {
+    if (!isLetterPassRequiredOpen || typeof document === "undefined") return;
+
+    const body = document.body;
+    const html = document.documentElement;
+    const hadBodyClass = body.classList.contains("modal-open");
+    const hadHtmlClass = html.classList.contains("modal-open");
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlOverflow = html.style.overflow;
+
+    body.classList.add("modal-open");
+    html.classList.add("modal-open");
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
+
+    return () => {
+      if (!hadBodyClass) body.classList.remove("modal-open");
+      if (!hadHtmlClass) html.classList.remove("modal-open");
+      body.style.overflow = prevBodyOverflow;
+      html.style.overflow = prevHtmlOverflow;
+    };
+  }, [isLetterPassRequiredOpen]);
+
   const shouldShowLoading = (!isHydrated || status === "loading" || isLoading) && items.length === 0;
   const canOpenLetters = isHydrated && status !== "loading" && Boolean(session);
   const handleStartCreate = () => {
@@ -175,12 +247,42 @@ export default function HomeMemoryCarousel() {
       onAllowed: () => router.push("/step-1/start"),
     });
   };
-  const handleOpenLetters = () => {
+  const handleOpenLetters = async () => {
     if (canOpenLetters) {
       if (items.length === 0) {
         setIsLetterMemoryRequiredOpen(true);
         return;
       }
+      if (isLetterQuotaChecking) return;
+
+      setIsLetterQuotaChecking(true);
+      try {
+        const response = await fetch("/api/letters?quota=1", { cache: "no-store" });
+        if (response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as LetterQuotaPayload;
+          const canCreate = payload.quota?.canCreate;
+          const requiresPass = Boolean(payload.quota?.requiresPass);
+          if (canCreate === false) {
+            if (typeof payload.quota?.remaining === "number") {
+              setLetterRemainingCount(Math.max(0, payload.quota.remaining));
+            }
+            if (requiresPass) {
+              setIsLetterPassRequiredOpen(true);
+              return;
+            }
+            setIsLetterDailyLimitOpen(true);
+            return;
+          }
+          if (typeof payload.quota?.remaining === "number") {
+            setLetterRemainingCount(Math.max(0, payload.quota.remaining));
+          }
+        }
+      } catch {
+        // Fall through to letters screen on transient precheck failures.
+      } finally {
+        setIsLetterQuotaChecking(false);
+      }
+
       router.push("/letters");
       return;
     }
@@ -322,7 +424,7 @@ export default function HomeMemoryCarousel() {
       <div className="mt-6">
         <button
           type="button"
-          onClick={handleOpenLetters}
+          onClick={() => void handleOpenLetters()}
           className="group relative block min-h-[186px] w-full overflow-hidden rounded-2xl text-left"
         >
           <div className="absolute inset-0" style={{ backgroundColor: HOME_LETTER_BG }} />
@@ -330,6 +432,17 @@ export default function HomeMemoryCarousel() {
           <div className="absolute inset-0 bg-[radial-gradient(115%_105%_at_86%_6%,rgba(232,243,248,0.3)_0%,rgba(232,243,248,0.14)_26%,rgba(232,243,248,0)_56%)]" />
           <div className="absolute inset-0 bg-[radial-gradient(95%_82%_at_12%_88%,rgba(176,204,218,0.34)_0%,rgba(176,204,218,0.16)_36%,rgba(176,204,218,0)_70%)]" />
           <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(32,52,64,0.32)_0%,rgba(32,52,64,0.08)_38%,rgba(32,52,64,0)_66%)]" />
+          <div
+            className="pointer-events-none absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold"
+            style={{
+              color: "#f8fbff",
+              borderColor: "rgba(232, 240, 245, 0.45)",
+              backgroundColor: "rgba(62, 85, 96, 0.9)",
+            }}
+          >
+            <LetterIcon />
+            <span>{typeof letterRemainingCount === "number" ? `${letterRemainingCount}회` : "--"}</span>
+          </div>
 
           <div className="relative z-10 flex h-full min-h-[186px] flex-col justify-end p-5">
             <span
@@ -349,11 +462,80 @@ export default function HomeMemoryCarousel() {
               기억에게서, 매일 편지를 받아보세요.
             </p>
             <div className="mt-4 inline-flex w-fit items-center rounded-xl bg-white px-4 py-2.5 text-sm font-extrabold text-[#2c4450] transition-transform duration-200 group-active:scale-95">
-              지금 받아보기
+              {isLetterQuotaChecking ? "확인 중..." : "지금 받아보기"}
             </div>
           </div>
         </button>
       </div>
+
+      {isLetterPassRequiredOpen ? (
+        <div
+          className="fixed inset-0 z-[115] flex items-center justify-center px-5"
+          onClick={() => setIsLetterPassRequiredOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-sm rounded-[2rem] border border-white/10 bg-[#303733] p-7 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">
+              기억 패스가 필요합니다.
+            </h3>
+            <p className="mt-3 text-sm font-semibold leading-relaxed text-[#5d605a]">
+              오늘은 이미 편지를 1개 받았어요.
+              <br />
+              기억 패스 등록하고 하루에 10통의 편지를 받아보세요.
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setIsLetterPassRequiredOpen(false)}
+                className="rounded-xl border border-white/15 px-4 py-3 text-sm font-bold text-[#f0f5f2] hover:bg-white/5"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLetterPassRequiredOpen(false);
+                  router.push("/payment?returnTo=%2F");
+                }}
+                className="whitespace-nowrap rounded-xl bg-[#4a626d] px-4 py-3 text-[13px] font-extrabold text-[#f0f9ff] hover:bg-[#3e5661]"
+              >
+                기억 패스 등록하기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isLetterDailyLimitOpen ? (
+        <div
+          className="fixed inset-0 z-[115] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+          onClick={() => setIsLetterDailyLimitOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl border border-[#d6ddd8] bg-white p-5 shadow-[0_18px_42px_rgba(0,0,0,0.28)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="font-headline text-xl font-extrabold tracking-tight text-[#2f342e]">
+              오늘은 여기까지예요.
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-[#5d605a]">
+              오늘 받을 수 있는 편지 10개를 모두 받았어요. 내일 다시 받아보세요.
+            </p>
+            <div className="mt-5 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setIsLetterDailyLimitOpen(false)}
+                className="w-full max-w-[220px] rounded-xl bg-[#4a626d] px-4 py-3 text-sm font-extrabold text-[#f0f9ff]"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

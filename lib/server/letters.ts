@@ -26,6 +26,8 @@ export type LetterRow = {
   updated_at: string;
 };
 
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
 const LETTER_PURPOSES: LetterPurpose[] = [
   "다정한 안부형",
   "조용한 응원형",
@@ -124,6 +126,17 @@ function getKstDateParts(date = new Date()) {
     day: Number(day),
     weekdayKo,
   };
+}
+
+function getKstDayUtcRange(date = new Date()) {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MS);
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth();
+  const day = shifted.getUTCDate();
+
+  const startAt = new Date(Date.UTC(year, month, day, 0, 0, 0, 0) - KST_OFFSET_MS);
+  const endAt = new Date(startAt.getTime() + 24 * 60 * 60 * 1000);
+  return { startAt, endAt };
 }
 
 export function buildLetterTitle(kind: LetterKind, date = new Date()) {
@@ -266,6 +279,23 @@ export async function getLettersCountByPersona(userId: string, personaId: string
     WHERE user_id = $1 AND persona_id = $2
     `,
     [userId, personaId],
+  );
+  return Number(res.rows[0]?.count || 0);
+}
+
+export async function getDailyLettersCount(userId: string, date = new Date()) {
+  await ensureLettersTable();
+  const pool = getDbPool();
+  const { startAt, endAt } = getKstDayUtcRange(date);
+  const res = await pool.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM bogopa.letters
+    WHERE user_id = $1
+      AND created_at >= $2
+      AND created_at < $3
+    `,
+    [userId, startAt.toISOString(), endAt.toISOString()],
   );
   return Number(res.rows[0]?.count || 0);
 }

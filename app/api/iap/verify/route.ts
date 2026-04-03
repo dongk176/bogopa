@@ -29,6 +29,15 @@ function canUseMockVerification() {
   return process.env.NODE_ENV !== "production";
 }
 
+function canUseNativeStoreKitVerification(input: VerifyPurchaseBody) {
+  if (input.platform !== "ios") return false;
+  const raw = (input.rawPayload || {}) as Record<string, unknown>;
+  const source = String(raw.source || "").trim().toLowerCase();
+  const verificationStatus = String(raw.verificationStatus || "").trim().toLowerCase();
+  const isNativeSource = source === "native_storekit2" || source === "native_storekit2_restore";
+  return isNativeSource && verificationStatus === "verified";
+}
+
 async function verifyWithStore(input: VerifyPurchaseBody) {
   const allowMock = canUseMockVerification();
   if (allowMock) {
@@ -36,6 +45,14 @@ async function verifyWithStore(input: VerifyPurchaseBody) {
       ok: true,
       provider: input.platform,
       mode: "mock" as const,
+    };
+  }
+
+  if (canUseNativeStoreKitVerification(input)) {
+    return {
+      ok: true,
+      provider: input.platform,
+      mode: "native_storekit2" as const,
     };
   }
 

@@ -3,6 +3,7 @@
 import { useSession, signOut } from "next-auth/react";
 import { useState, useRef, useEffect } from "react";
 import LogoutConfirmModal from "@/app/_components/LogoutConfirmModal";
+import { getEmailDisplay } from "@/lib/display-email";
 
 export default function UserProfileMenu() {
     const { data: session } = useSession();
@@ -32,6 +33,7 @@ export default function UserProfileMenu() {
     };
 
     if (!session?.user) return null;
+    const emailDisplay = getEmailDisplay(session.user.email);
 
     return (
         <div className="relative ml-2" ref={menuRef}>
@@ -56,7 +58,7 @@ export default function UserProfileMenu() {
                         </p>
                         {session.user.email && (
                             <p className="truncate text-[11px] text-[#afb3ac] mt-1 font-medium">
-                                {session.user.email}
+                                {emailDisplay.primary}
                             </p>
                         )}
                     </div>

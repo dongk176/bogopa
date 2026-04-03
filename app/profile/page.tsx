@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import Navigation from "@/app/_components/Navigation";
 import LogoutConfirmModal from "@/app/_components/LogoutConfirmModal";
 import MemoryBalanceBadge from "@/app/_components/MemoryBalanceBadge";
+import { getEmailDisplay } from "@/lib/display-email";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -71,6 +72,7 @@ export default function ProfilePage() {
   }
 
   if (!session) return null;
+  const emailDisplay = getEmailDisplay(session.user?.email);
 
   return (
     <div className="min-h-screen bg-[#faf9f5]">
@@ -122,9 +124,10 @@ export default function ProfilePage() {
                     <h2 className="font-headline text-2xl font-extrabold text-[#2f342e]">
                       {session.user?.name || "사용자"}
                     </h2>
-                    <p className="mt-1 text-lg text-[#655d5a]">
-                      {session.user?.email || "이메일 정보가 없습니다."}
-                    </p>
+                    <p className="mt-1 text-lg text-[#655d5a]">{emailDisplay.primary}</p>
+                    {emailDisplay.secondary ? (
+                      <p className="mt-1 text-sm font-medium text-[#7b827d]">{emailDisplay.secondary}</p>
+                    ) : null}
                     <div className="mt-6 flex flex-wrap justify-center gap-3 md:justify-start">
                       <span className="inline-flex items-center rounded-full bg-[#f4f4ef] px-4 py-1.5 text-sm font-semibold text-[#4a626d]">
                          소셜 로그인 연결됨
@@ -161,8 +164,11 @@ export default function ProfilePage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold uppercase tracking-widest text-[#afb3ac]">이메일 주소</label>
-                    <div className="flex items-center gap-2 rounded-2xl bg-[#f4f4ef] px-4 py-3 text-[#2f342e]">
-                      <span className="font-medium">{session.user?.email}</span>
+                    <div className="rounded-2xl bg-[#f4f4ef] px-4 py-3 text-[#2f342e]">
+                      <p className="font-medium">{emailDisplay.primary}</p>
+                      {emailDisplay.secondary ? (
+                        <p className="mt-1 text-xs font-medium text-[#6f7772]">{emailDisplay.secondary}</p>
+                      ) : null}
                     </div>
                   </div>
                 </div>

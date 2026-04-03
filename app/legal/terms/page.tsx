@@ -14,7 +14,23 @@ type Chapter = {
     articles: Article[];
 };
 
-export default function TermsPage() {
+type TermsPageProps = {
+    searchParams?:
+        | Record<string, string | string[] | undefined>
+        | Promise<Record<string, string | string[] | undefined>>;
+};
+
+function resolveBackHref(backValue: string | string[] | undefined) {
+    const raw = Array.isArray(backValue) ? backValue[0] : backValue;
+    if (!raw || !raw.startsWith("/")) return "/profile/account-settings";
+    if (raw.startsWith("/api/")) return "/profile/account-settings";
+    if (raw.startsWith("/auth/")) return "/profile/account-settings";
+    return raw;
+}
+
+export default async function TermsPage({ searchParams }: TermsPageProps) {
+    const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : searchParams;
+    const backHref = resolveBackHref(resolvedSearchParams?.back);
     const chapters: Chapter[] = [
         {
             title: "제1장 총칙",
@@ -180,7 +196,7 @@ export default function TermsPage() {
     return (
         <div className="flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e]">
             <LegalExitScrollMarker />
-            <LegalMobileHeader title="서비스 이용약관" backHref="/profile/account-settings" />
+            <LegalMobileHeader title="서비스 이용약관" backHref={backHref} />
 
             <header className="fixed top-0 z-50 hidden w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:block">
                 <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-6">

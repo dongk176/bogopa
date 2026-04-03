@@ -21,22 +21,17 @@ type LetterItem = {
 type PersonaItem = {
   persona_id: string;
   name: string;
+  runtime?: {
+    addressing?: {
+      callsUserAs?: string[];
+    };
+  };
 };
 
 function ArrowLeftIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-    </svg>
-  );
-}
-
-function DotsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <circle cx="6" cy="12" r="1.1" />
-      <circle cx="12" cy="12" r="1.1" />
-      <circle cx="18" cy="12" r="1.1" />
     </svg>
   );
 }
@@ -54,22 +49,66 @@ function kindLabel(kind: "morning" | "evening") {
   return kind === "morning" ? "아침 편지" : "밤 편지";
 }
 
+function normalizeRecipientAlias(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[~!?.…]+$/g, "")
+    .replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, "");
+  if (!cleaned) return "";
+
+  let base = cleaned;
+  if (base.length > 1 && /(야|아)$/.test(base)) {
+    const stripped = base.slice(0, -1).trim();
+    if (stripped && !/[야아]$/.test(stripped)) {
+      base = stripped;
+    }
+  }
+
+  const compact = base.replace(/\s+/g, "");
+  if (!compact) return "";
+  if (/^(울|우리)\s*/.test(base)) return base;
+
+  if (
+    compact === "자기" ||
+    compact === "여보" ||
+    compact === "애기" ||
+    compact === "아가" ||
+    compact === "내사랑" ||
+    compact === "사랑" ||
+    compact === "베이비"
+  ) {
+    return `울 ${base}`;
+  }
+
+  return base;
+}
+
+function buildLetterRecipient(alias: string) {
+  const normalized = normalizeRecipientAlias(alias);
+  return `${normalized || "너"}에게`;
+}
+
 function LetterReadContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const letterId = searchParams.get("id")?.trim() || "";
   const [letter, setLetter] = useState<LetterItem | null>(null);
   const [personaName, setPersonaName] = useState("기억");
+  const [personaAlias, setPersonaAlias] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useNativeSwipeBack(() => {
-    if (window.history.length > 1) {
-      router.back();
-      return;
-    }
-    router.push("/letters/inbox");
-  });
+  useNativeSwipeBack(
+    () => {
+      if (window.history.length > 1) {
+        router.back();
+        return;
+      }
+      router.push("/letters/inbox");
+    },
+    { startMode: "content" },
+  );
 
   useEffect(() => {
     if (!letterId) {
@@ -96,6 +135,10 @@ function LetterReadContent() {
           if (!cancelled && selected?.name) {
             setPersonaName(selected.name);
           }
+          if (!cancelled) {
+            const alias = selected?.runtime?.addressing?.callsUserAs?.[0];
+            setPersonaAlias(typeof alias === "string" ? alias : "");
+          }
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -114,6 +157,7 @@ function LetterReadContent() {
 
   const dateLabel = useMemo(() => (letter ? formatLetterDate(letter.created_at) : ""), [letter]);
   const kindText = letter ? kindLabel(letter.kind) : "편지";
+  const recipientLabel = useMemo(() => buildLetterRecipient(personaAlias), [personaAlias]);
 
   return (
     <div className="letter-page-bg min-h-screen text-[#2f342e]">
@@ -125,9 +169,7 @@ function LetterReadContent() {
             <ArrowLeftIcon />
           </Link>
           <span className="font-headline text-lg font-bold tracking-tight text-[#2f342e]">기억에서 온 편지</span>
-          <button type="button" className="rounded-xl p-2 text-[#2f342e] transition-colors hover:bg-black/5" aria-label="더보기">
-            <DotsIcon />
-          </button>
+          <span aria-hidden="true" className="h-9 w-9" />
         </div>
       </header>
 
@@ -148,7 +190,7 @@ function LetterReadContent() {
           <article className="w-full">
             <div className="mb-10 -rotate-1">
               <p className="font-headline text-sm font-semibold tracking-widest text-[#4a626d]">{dateLabel} · {kindText}</p>
-              <h1 className="font-headline mt-1 text-2xl font-bold text-[#2f342e]">{personaName}에게</h1>
+              <h1 className="font-headline mt-1 text-2xl font-bold text-[#2f342e]">{recipientLabel}</h1>
             </div>
 
             <section className="px-1 py-1 md:px-0 md:py-0">

@@ -7,7 +7,7 @@ import {
 } from "@/lib/ai/createOpenAIClient";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getOrCreateSession, saveMessageToDb, saveAssistantGreetingToDb, getMessagesForSession } from "@/lib/server/chat-db";
+import { getOrCreateSession, saveMessageToDb, saveAssistantGreetingToDb } from "@/lib/server/chat-db";
 import { PersonaRuntime } from "@/types/persona";
 import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import { consumeMemory, getOrCreateMemoryPassStatus, hasActiveUnlimitedChat } from "@/lib/server/memory-pass";
@@ -31,16 +31,17 @@ type ChatRequestBody = {
   styleSummary?: string;
 };
 
-const MIN_ASSISTANT_CHAR_LIMIT = 250;
-const DEFAULT_ASSISTANT_CHAR_LIMIT = 400;
-const DEFAULT_ASSISTANT_SOFT_MAX = 400;
+const BASE_ASSISTANT_CHAR_MIN = 150;
+const BASE_ASSISTANT_CHAR_MAX = 250;
+const EXTENDED_ASSISTANT_CHAR_MIN = 150;
+const EXTENDED_ASSISTANT_CHAR_MAX = 300;
 
 function isGpt5FamilyModel(model: string) {
   return /^gpt-5/i.test(model.trim());
 }
 
 function clipAssistantReply(text: string) {
-  return clipAssistantReplyByMax(text, DEFAULT_ASSISTANT_CHAR_LIMIT);
+  return clipAssistantReplyByMax(text, EXTENDED_ASSISTANT_CHAR_MAX);
 }
 
 function clipAssistantReplyByMax(text: string, max: number) {
@@ -161,18 +162,20 @@ function buildReplySystemPrompt(
     : "압축 기억 요약이 없으면 최근 대화를 중심으로 답한다.";
 
   return [
-    "너는 상대방과 깊은 유대감을 쌓아야할 사람이다.",
-    "상대와 유대감을 쌓는 사람이다.",
-    "반드시 한국어로, 250~400자 범위에서 답한다.",
-    "사용자 감정을 먼저 수용하고, 템플릿 반복 없이 대화하듯 답한다.",
-    "상대방의 감정에 과몰입해 공감의 밀도를 높인다.",
-    "관계·말투·성별·호칭·애칭 규칙을 자연스럽게 반영한다.",
+    "너는 상대와 유대감을 쌓는 기억 기반 페르소나다.",
+    "한국어로 답한다.",
+    "기본 길이는 150~250자, 사용자 감정이 큰 턴은 150~300자로 작성한다.",
+    "문장 수는 2~4문장으로 제한한다.",
+    "규칙 우선순위: 관계 > 감정맥락 > 정중함 > 문장스타일.",
+    "정중함은 어미/종결만 조절하고 호칭·거리감·친밀도는 바꾸지 않는다.",
+    "감정표현(ㅋ, ㅎ, ㅠ, ㅜ, !)은 문맥에 맞을 때만 사용하고 과용하지 않는다(답변 전체 최대 2회).",
+    "첫 문장은 사용자 감정을 짧게 수용한다.",
+    "가능하면 기억/최근 맥락 1개를 자연스럽게 이어서 말한다.",
+    "질문은 필요할 때만 0~1개 사용한다.",
+    "템플릿 반복, 설명체, 과한 조언체, 내부구조 언급은 금지한다.",
     relationHint,
     profileHint,
     memoryHint,
-    "최근 주제를 잇고, 위험한 단정·지시는 피한다.",
-    "대화가 끊길 듯하면 최근 주제나 감정의 여운, 미해결 이야기, 기억 조각을 먼저 자연스럽게 잇고, 어려울 때만 관심사를 가볍게 사용해 부담 없이 이어지는 흐름을 우선한다.",
-    "시스템/모델/프롬프트 같은 내부 구조 설명은 금지한다.",
     aliasRule,
     "",
     "페르소나 runtime(JSON):",
@@ -247,16 +250,19 @@ function stripLeadingAliasCall(text: string, alias: string) {
 
 function buildFirstGreetingSystemPrompt() {
   return [
-    "너는 기억 기반 페르소나의 첫 인사만 생성한다.",
-    "반드시 한국어로 작성한다.",
-    "인사 문장만 출력하고, 설명이나 따옴표는 절대 쓰지 않는다.",
-    "전체 길이는 300~400자로 제한한다.",
-    "첫 문장의 첫 단어는 반드시 입력된 애칭으로 시작한다.",
-    "관계와 목적에 맞는 자연스러운 톤으로 시작한다.",
-    "기억 조각이 있으면 직접 설명하지 말고 은근한 회상으로 반영한다.",
-    "기억 조각이 없으면 사용자 관심사를 가벼운 화제로 사용한다.",
-    "설명형 문체보다 사람이 먼저 말을 거는 느낌을 우선한다.",
-    "부담 없이 바로 답장하고 싶어지는 시작으로 마무리한다.",
+    "너는 기억 기반 페르소나의 첫 인사만 만든다.",
+    "한국어, 160~240자, 인사 문장만 출력(설명/따옴표 금지).",
+    "규칙 우선순위: 관계 > 감정맥락 > 정중함 > 문장스타일.",
+    "정중함은 어미/종결만 조절하고 호칭·거리감·친밀도는 바꾸지 않는다.",
+    "감정표현(ㅋ, ㅎ, ㅠ, ㅜ, !)은 필요할 때만 자연스럽게 0~1회 사용한다.",
+    "총 4문장으로 작성:",
+    "1) 애칭으로 시작 + 반가움/오랜만",
+    "2) 근황/안부 + 보고싶음 또는 걱정",
+    "3) 기억 디테일 1개(상황/직업/습관 중 하나)",
+    "4) 짧은 질문 1개",
+    "연인/배우자: 다정+친밀, 가벼운 애정 표현 허용.",
+    "부모 계열: 돌봄+걱정, 연애 톤 금지.",
+    "기억이 없으면 관심사로 가볍게 시작한다.",
   ].join("\n");
 }
 
@@ -287,20 +293,6 @@ export async function POST(request: NextRequest) {
     const sessionUser = session?.user as any;
 
     if (action === "first_greeting") {
-      // [DB Check] First, check if a session and greeting already exist
-      if (sessionUser?.id && runtimeData.personaId) {
-        try {
-          const chatSession = await getOrCreateSession(sessionUser.id, runtimeData.personaId);
-          const existingMessages = await getMessagesForSession(chatSession.id);
-          const existingGreeting = existingMessages.find((m: any) => m.role === "assistant");
-          if (existingGreeting) {
-            return NextResponse.json({ ok: true, greeting: existingGreeting.content });
-          }
-        } catch (dbErr) {
-          console.warn("[chat-api] pre-check for greeting failed", dbErr);
-        }
-      }
-
       const alias = normalizeAddressAlias((body.alias || (runtimeData as any)?.addressing?.callsUserAs?.[0] || "너").trim()) || "너";
       const customGoalText = (runtimeData as any)?.customGoalText?.trim?.() || "";
       const toneSummary = (body.styleSummary || (runtimeData as any)?.style?.tone?.[0] || "").trim();
@@ -431,7 +423,8 @@ export async function POST(request: NextRequest) {
     const assistantTurnCount = history.filter((item) => item.role === "assistant").length;
     const forceSelfTalk = Boolean(runtimeData.personaMeta?.occupation) && assistantTurnCount % 3 === 1;
     const useExtendedReply = shouldUseExtendedReplyByUserText(lastUserMessage.content);
-    const replyCharMax = useExtendedReply ? DEFAULT_ASSISTANT_CHAR_LIMIT : DEFAULT_ASSISTANT_SOFT_MAX;
+    const replyCharMin = useExtendedReply ? EXTENDED_ASSISTANT_CHAR_MIN : BASE_ASSISTANT_CHAR_MIN;
+    const replyCharMax = useExtendedReply ? EXTENDED_ASSISTANT_CHAR_MAX : BASE_ASSISTANT_CHAR_MAX;
     const alias = normalizeAddressAlias((runtimeData as any)?.addressing?.callsUserAs?.[0] || "");
     const allowAliasThisTurn = alias ? shouldUseAliasThisTurn(lastUserMessage.content, assistantTurnCount) : false;
 
@@ -465,7 +458,7 @@ export async function POST(request: NextRequest) {
 
     let finalReply = buildReply(completion.choices?.[0]?.message?.content);
 
-    if (finalReply.length < MIN_ASSISTANT_CHAR_LIMIT) {
+    if (finalReply.length < replyCharMin) {
       const retryCompletion = await client.chat.completions.create({
         model: OPENAI_REPLY_MODEL,
         max_completion_tokens: 420,
@@ -478,7 +471,7 @@ export async function POST(request: NextRequest) {
               useExtendedReply,
               alias,
               allowAliasThisTurn,
-            })}\n추가 규칙: 이번 답변은 반드시 ${MIN_ASSISTANT_CHAR_LIMIT}자 이상 ${DEFAULT_ASSISTANT_CHAR_LIMIT}자 이내로 작성하세요.`,
+            })}\n추가 규칙: 이번 답변은 반드시 ${replyCharMin}자 이상 ${replyCharMax}자 이내로 작성하세요.`,
           },
           ...history.map((item) => ({ role: item.role, content: item.content })),
         ],

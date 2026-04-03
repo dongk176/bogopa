@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import AuthenticationServices
+import StoreKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,6 +9,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     private var didRegisterNativeChatPlugin = false
     private var didRegisterNativeAppleAuthPlugin = false
+    private var didRegisterNativeIapPlugin = false
 
     private var bogopaBackgroundColor: UIColor {
         UIColor.white
@@ -53,7 +55,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func registerNativeChatPluginIfNeeded(attempt: Int = 0) {
-        if didRegisterNativeChatPlugin && didRegisterNativeAppleAuthPlugin { return }
+        if didRegisterNativeChatPlugin && didRegisterNativeAppleAuthPlugin && didRegisterNativeIapPlugin { return }
         guard let window else { return }
         guard let bridgeViewController = findBridgeViewController(from: window.rootViewController),
               let bridge = bridgeViewController.bridge else {
@@ -72,6 +74,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if !didRegisterNativeAppleAuthPlugin {
             bridge.registerPluginInstance(NativeAppleAuthPlugin())
             didRegisterNativeAppleAuthPlugin = true
+        }
+        if !didRegisterNativeIapPlugin {
+            bridge.registerPluginInstance(NativeIapPlugin())
+            didRegisterNativeIapPlugin = true
         }
     }
 
@@ -1504,6 +1510,39 @@ public final class NativeAppleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthori
 
     private var pendingCall: CAPPluginCall?
     private var activePresentationAnchor: ASPresentationAnchor?
+    private var activeController: ASAuthorizationController?
+    private var pendingStartedAt: Date?
+    private var completionTimeoutWorkItem: DispatchWorkItem?
+
+    private func clearTimeout() {
+        completionTimeoutWorkItem?.cancel()
+        completionTimeoutWorkItem = nil
+    }
+
+    private func clearPendingState() {
+        clearTimeout()
+        pendingCall = nil
+        activePresentationAnchor = nil
+        activeController = nil
+        pendingStartedAt = nil
+    }
+
+    private func takePendingCall() -> CAPPluginCall? {
+        let call = pendingCall
+        clearPendingState()
+        return call
+    }
+
+    private func scheduleCompletionTimeout() {
+        clearTimeout()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard let call = self.takePendingCall() else { return }
+            call.reject("Apple 로그인 응답이 지연되고 있습니다. 다시 시도해주세요.")
+        }
+        completionTimeoutWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: workItem)
+    }
 
     private func resolvePresentationAnchor() -> ASPresentationAnchor? {
         if let window = bridge?.viewController?.view.window {
@@ -1529,6 +1568,10 @@ public final class NativeAppleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthori
                     call.reject("Plugin is unavailable.")
                     return
                 }
+                if let startedAt = self.pendingStartedAt,
+                   Date().timeIntervalSince(startedAt) > 45 {
+                    self.clearPendingState()
+                }
                 guard self.pendingCall == nil else {
                     call.reject("Apple 로그인 진행 중입니다.")
                     return
@@ -1550,6 +1593,9 @@ public final class NativeAppleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthori
 
                 self.pendingCall = call
                 self.activePresentationAnchor = anchor
+                self.activeController = controller
+                self.pendingStartedAt = Date()
+                self.scheduleCompletionTimeout()
                 controller.performRequests()
             }
             return
@@ -1572,9 +1618,7 @@ public final class NativeAppleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthori
         controller: ASAuthorizationController,
         didCompleteWithAuthorization authorization: ASAuthorization
     ) {
-        guard let call = pendingCall else { return }
-        pendingCall = nil
-        activePresentationAnchor = nil
+        guard let call = takePendingCall() else { return }
 
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
             call.reject("Apple 인증 결과를 읽지 못했습니다.")
@@ -1615,20 +1659,196 @@ public final class NativeAppleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthori
     }
 
     public func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-        guard let call = pendingCall else { return }
-        pendingCall = nil
-        activePresentationAnchor = nil
+        guard let call = takePendingCall() else { return }
 
         let nsError = error as NSError
         if nsError.domain == ASAuthorizationError.errorDomain, nsError.code == ASAuthorizationError.canceled.rawValue {
             call.reject("사용자가 Apple 로그인을 취소했습니다.")
             return
         }
-        var detailMessage = "Apple 로그인에 실패했습니다. [\(nsError.domain):\(nsError.code)] \(nsError.localizedDescription)"
+        let failureReason = nsError.localizedFailureReason ?? "none"
+        let recoverySuggestion = nsError.localizedRecoverySuggestion ?? "none"
+        let userInfo = nsError.userInfo
+            .map { "\($0.key)=\($0.value)" }
+            .sorted()
+            .joined(separator: ", ")
+        var detailMessage = "Apple 로그인에 실패했습니다. [\(nsError.domain):\(nsError.code)] \(nsError.localizedDescription) reason=\(failureReason) suggestion=\(recoverySuggestion)"
         if nsError.domain == ASAuthorizationError.errorDomain, nsError.code == ASAuthorizationError.unknown.rawValue {
             detailMessage += " (시뮬레이터 설정에서 Apple ID/iCloud 로그인을 확인해주세요.)"
         }
-        NSLog("[NativeAppleAuth] \(detailMessage)")
+        NSLog("[NativeAppleAuth] \(detailMessage) userInfo={\(userInfo)}")
         call.reject(detailMessage, nil, error)
+    }
+}
+
+@objc(NativeIapPlugin)
+public final class NativeIapPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "NativeIapPlugin"
+    public let jsName = "NativeIap"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "purchase", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "restore", returnType: CAPPluginReturnPromise)
+    ]
+
+    private let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private func resolveOnMain(_ call: CAPPluginCall, data: [String: Any]) {
+        DispatchQueue.main.async {
+            call.resolve(data)
+        }
+    }
+
+    private func rejectOnMain(_ call: CAPPluginCall, message: String, error: Error? = nil) {
+        DispatchQueue.main.async {
+            call.reject(message, nil, error)
+        }
+    }
+
+    @objc public func purchase(_ call: CAPPluginCall) {
+        guard #available(iOS 15.0, *) else {
+            call.reject("iOS 15 이상에서만 인앱결제를 지원합니다.")
+            return
+        }
+
+        let productId = (call.getString("productId") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !productId.isEmpty else {
+            call.reject("상품 ID가 필요합니다.")
+            return
+        }
+
+        Task {
+            do {
+                let products = try await Product.products(for: [productId])
+                guard let product = products.first else {
+                    rejectOnMain(call, message: "스토어에서 상품을 찾을 수 없습니다. productId=\(productId)")
+                    return
+                }
+
+                let result = try await product.purchase()
+                switch result {
+                case .success(let verification):
+                    switch verification {
+                    case .verified(let transaction):
+                        let payload = makePurchasePayload(
+                            transaction: transaction,
+                            productId: productId,
+                            verificationStatus: "verified"
+                        )
+                        await transaction.finish()
+                        resolveOnMain(call, data: payload)
+                    case .unverified(let transaction, let verificationError):
+                        var payload = makePurchasePayload(
+                            transaction: transaction,
+                            productId: productId,
+                            verificationStatus: "unverified"
+                        )
+                        payload["verificationError"] = verificationError.localizedDescription
+                        rejectOnMain(
+                            call,
+                            message: "결제 검증에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.",
+                            error: verificationError
+                        )
+                    }
+                case .pending:
+                    rejectOnMain(call, message: "결제가 보류 상태입니다. 결제 승인이 완료되면 다시 시도해주세요.")
+                case .userCancelled:
+                    rejectOnMain(call, message: "사용자가 결제를 취소했습니다.")
+                @unknown default:
+                    rejectOnMain(call, message: "알 수 없는 결제 상태입니다.")
+                }
+            } catch {
+                rejectOnMain(call, message: "결제를 진행하지 못했습니다. \(error.localizedDescription)", error: error)
+            }
+        }
+    }
+
+    @objc public func restore(_ call: CAPPluginCall) {
+        guard #available(iOS 15.0, *) else {
+            call.reject("iOS 15 이상에서만 구매 복원을 지원합니다.")
+            return
+        }
+
+        Task {
+            do {
+                try await AppStore.sync()
+
+                var restoredItems: [[String: Any]] = []
+                for await entitlement in Transaction.currentEntitlements {
+                    switch entitlement {
+                    case .verified(let transaction):
+                        if transaction.revocationDate != nil {
+                            continue
+                        }
+                        if let expirationDate = transaction.expirationDate, expirationDate < Date() {
+                            continue
+                        }
+                        let payload = makePurchasePayload(
+                            transaction: transaction,
+                            productId: transaction.productID,
+                            verificationStatus: "verified",
+                            source: "native_storekit2_restore"
+                        )
+                        restoredItems.append(payload)
+                    case .unverified:
+                        continue
+                    }
+                }
+
+                resolveOnMain(
+                    call,
+                    data: [
+                        "ok": true,
+                        "count": restoredItems.count,
+                        "restored": restoredItems
+                    ]
+                )
+            } catch {
+                rejectOnMain(call, message: "구매 복원에 실패했습니다. \(error.localizedDescription)", error: error)
+            }
+        }
+    }
+
+    @available(iOS 15.0, *)
+    private func makePurchasePayload(
+        transaction: StoreKit.Transaction,
+        productId: String,
+        verificationStatus: String,
+        source: String = "native_storekit2"
+    ) -> [String: Any] {
+        var rawPayload: [String: Any] = [
+            "source": source,
+            "verificationStatus": verificationStatus,
+            "transactionId": String(transaction.id),
+            "originalTransactionId": String(transaction.originalID),
+            "productId": transaction.productID,
+            "productIdRequested": productId,
+            "purchaseDate": isoFormatter.string(from: transaction.purchaseDate),
+            "environment": String(describing: transaction.environment),
+            "productType": String(describing: transaction.productType),
+            "ownershipType": String(describing: transaction.ownershipType)
+        ]
+
+        if let expirationDate = transaction.expirationDate {
+            rawPayload["expirationDate"] = isoFormatter.string(from: expirationDate)
+        }
+        if let revocationDate = transaction.revocationDate {
+            rawPayload["revocationDate"] = isoFormatter.string(from: revocationDate)
+        }
+        if let appAccountToken = transaction.appAccountToken {
+            rawPayload["appAccountToken"] = appAccountToken.uuidString
+        }
+
+        return [
+            "productId": transaction.productID,
+            "transactionId": String(transaction.id),
+            "orderId": String(transaction.id),
+            "originalTransactionId": String(transaction.originalID),
+            "purchasedAt": isoFormatter.string(from: transaction.purchaseDate),
+            "rawPayload": rawPayload
+        ]
     }
 }

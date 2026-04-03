@@ -168,7 +168,7 @@ export default function LettersInboxPage() {
               </Link>
             ))}
           </section>
-        ) : (
+        ) : personas.length > 0 ? (
           <section className="rounded-3xl border border-white/10 bg-[#38403b] p-6 text-center">
             <p className="text-sm text-[#b9cad1]">아직 도착한 편지가 없어요. 먼저 편지를 만들어주세요.</p>
             <Link
@@ -176,6 +176,20 @@ export default function LettersInboxPage() {
               className="mt-4 inline-flex rounded-2xl bg-[#4a626d] px-4 py-2.5 text-sm font-extrabold text-[#f0f9ff] hover:bg-[#3e5661]"
             >
               편지 만들기
+            </Link>
+          </section>
+        ) : (
+          <section className="rounded-3xl border border-white/10 bg-[#38403b] p-6 text-center">
+            <p className="text-sm text-[#b9cad1]">
+              아직 대화할 기억이 없어요.
+              <br />
+              먼저 내 기억을 만들어주세요.
+            </p>
+            <Link
+              href="/step-1"
+              className="mt-4 inline-flex rounded-2xl bg-[#4a626d] px-4 py-2.5 text-sm font-extrabold text-[#f0f9ff] hover:bg-[#3e5661]"
+            >
+              기억 만들기
             </Link>
           </section>
         )}

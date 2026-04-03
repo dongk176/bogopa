@@ -1,10 +1,10 @@
 "use client";
 
-import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NativeAppleAuth } from "@/lib/native-apple-auth";
 
 export default function NativeAppLoginScreen() {
@@ -12,14 +12,45 @@ export default function NativeAppLoginScreen() {
   const callbackUrl = "/auth/entry?next=%2F";
   const [isAppleSigningIn, setIsAppleSigningIn] = useState(false);
 
+  useEffect(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyTouchAction = body.style.touchAction;
+    const prevHtmlTouchAction = html.style.touchAction;
+    const lockClassName = "native-lock-scroll";
+
+    body.classList.add(lockClassName);
+    html.classList.add(lockClassName);
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
+    body.style.touchAction = "manipulation";
+    html.style.touchAction = "manipulation";
+
+    return () => {
+      body.classList.remove(lockClassName);
+      html.classList.remove(lockClassName);
+      body.style.overflow = prevBodyOverflow;
+      html.style.overflow = prevHtmlOverflow;
+      body.style.touchAction = prevBodyTouchAction;
+      html.style.touchAction = prevHtmlTouchAction;
+    };
+  }, []);
+
   const openNativeLogin = async (provider: "kakao" | "google" | "apple") => {
     if (!Capacitor.isNativePlatform()) return;
 
     const startUrl = `${window.location.origin}/auth/mobile/start?provider=${provider}&next=%2F`;
-    await Browser.open({
-      url: startUrl,
-      windowName: "_self",
-    });
+    try {
+      await Browser.open({
+        url: startUrl,
+        presentationStyle: "fullscreen",
+      });
+    } catch (error) {
+      console.error("[native-login] failed to open provider start page", error);
+      window.alert("로그인 화면을 여는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
+    }
   };
 
   const signInWithNativeApple = async () => {
@@ -85,6 +116,7 @@ export default function NativeAppLoginScreen() {
         return;
       }
       if (errorMessage.includes("진행 중")) {
+        window.alert("Apple 로그인 요청이 아직 처리 중입니다. 잠시 후 다시 시도해주세요.");
         return;
       }
       console.error("[native-apple-login] failed", error);
@@ -95,8 +127,8 @@ export default function NativeAppLoginScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-white px-6 pb-[calc(2rem+var(--native-safe-bottom))] pt-[calc(2rem+var(--native-safe-top))] text-[#2f342e]">
-      <div className="mx-auto flex min-h-[calc(100vh-6rem)] max-w-sm flex-col items-center justify-center">
+    <div className="fixed inset-0 h-dvh overflow-hidden bg-white px-6 pb-[calc(2rem+var(--native-safe-bottom))] pt-[calc(2rem+var(--native-safe-top))] text-[#2f342e]">
+      <div className="mx-auto flex h-full max-w-sm flex-col items-center justify-center">
         <img src="/logo/bogopa%20logo.png" alt="Bogopa 로고" className="mb-6 h-32 w-32 object-contain" />
 
         <h1 className="text-center font-headline text-[2rem] font-extrabold leading-[1.2] tracking-tight">
@@ -106,14 +138,15 @@ export default function NativeAppLoginScreen() {
         </h1>
 
         <div className="mt-10 flex w-full flex-col gap-3">
-          <button
-            type="button"
+          <a
+            href="/auth/mobile/start?provider=kakao&next=%2F"
             onClick={(event) => {
-              event.preventDefault();
               if (Capacitor.isNativePlatform()) {
+                event.preventDefault();
                 void openNativeLogin("kakao");
                 return;
               }
+              event.preventDefault();
               void signIn("kakao", { callbackUrl });
             }}
             className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#FEE500] px-6 py-4 text-[15px] font-bold text-[#191919]"
@@ -122,16 +155,17 @@ export default function NativeAppLoginScreen() {
               <path d="M12 4C6.47 4 2 7.57 2 11.97c0 2.85 1.83 5.35 4.6 6.74-.2.72-1.2 4.41-1.2 4.41s-.04.28.14.38c.18.09.4.03.4.03s4.62-3 5.34-3.5c.23.03.48.06.72.06 5.53 0 10-3.57 10-7.97S17.53 4 12 4z" />
             </svg>
             카카오톡으로 로그인
-          </button>
+          </a>
 
-          <button
-            type="button"
+          <a
+            href="/auth/mobile/start?provider=google&next=%2F"
             onClick={(event) => {
-              event.preventDefault();
               if (Capacitor.isNativePlatform()) {
+                event.preventDefault();
                 void openNativeLogin("google");
                 return;
               }
+              event.preventDefault();
               void signIn("google", { callbackUrl });
             }}
             className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#d7ddda] bg-[#f6f8f7] px-6 py-4 text-[15px] font-bold text-[#2f342e]"
@@ -143,16 +177,20 @@ export default function NativeAppLoginScreen() {
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
             </svg>
             Google로 로그인
-          </button>
+          </a>
 
-          <button
-            type="button"
+          <a
+            href="/auth/mobile/start?provider=apple&next=%2F"
             onClick={(event) => {
+              if (isAppleSigningIn) {
+                event.preventDefault();
+                return;
+              }
               event.preventDefault();
               void signInWithNativeApple();
             }}
-            disabled={isAppleSigningIn}
-            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#111111] px-6 py-4 text-[15px] font-bold text-[#ffffff] disabled:opacity-60"
+            aria-disabled={isAppleSigningIn}
+            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#111111] px-6 py-4 text-[15px] font-bold text-[#ffffff] aria-disabled:opacity-60"
           >
             <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center">
               <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor" aria-hidden="true">
@@ -162,16 +200,15 @@ export default function NativeAppLoginScreen() {
             <span className="leading-none text-[#ffffff]">
               {isAppleSigningIn ? "Apple 로그인 중..." : "Apple로 로그인"}
             </span>
-          </button>
+          </a>
         </div>
 
-        <button
-          type="button"
-          onClick={() => router.push("/login")}
+        <a
+          href="/login"
           className="mt-5 text-sm font-semibold text-[#4a626d] underline underline-offset-4"
         >
           아이디 비밀번호로 로그인
-        </button>
+        </a>
       </div>
     </div>
   );

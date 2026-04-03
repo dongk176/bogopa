@@ -25,16 +25,16 @@ const DEFAULT_PRODUCT_IDS: Record<IapProductKey, { ios: string; android: string 
     android: "co.kr.bogopa.pass.monthly",
   },
   memory_pack_200: {
-    ios: "co.kr.bogopa.memory.200",
-    android: "co.kr.bogopa.memory.200",
+    ios: "co.kr.bogopa.app.memory.200",
+    android: "co.kr.bogopa.app.memory.200",
   },
   memory_pack_1000: {
-    ios: "co.kr.bogopa.memory.1000",
-    android: "co.kr.bogopa.memory.1000",
+    ios: "co.kr.bogopa.app.memory.1000",
+    android: "co.kr.bogopa.app.memory.1000",
   },
   memory_pack_20000: {
-    ios: "co.kr.bogopa.memory.20000",
-    android: "co.kr.bogopa.memory.20000",
+    ios: "co.kr.bogopa.app.memory.20000",
+    android: "co.kr.bogopa.app.memory.20000",
   },
   unlimited_chat_24h: {
     ios: "co.kr.bogopa.unlimited.24h",
@@ -110,4 +110,3 @@ export function findIapProductByStoreId(input: { platform: IapPlatform; productI
     ) || null
   );
 }
-

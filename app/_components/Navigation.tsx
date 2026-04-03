@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { Suspense, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import LoginModal from "./LoginModal";
 import LogoutConfirmModal from "@/app/_components/LogoutConfirmModal";
 
@@ -75,8 +75,6 @@ function MoreVerticalIcon({ className }: { className?: string }) {
 
 function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNav?: boolean }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const activeChatId = searchParams.get("id");
   const isPaymentPage = pathname?.startsWith("/payment");
   const isProfileContext = pathname?.startsWith("/profile") || pathname?.startsWith("/payment");
   const isMessagesContext = pathname?.startsWith("/chat");
@@ -263,10 +261,7 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
                 <div key={chat.personaId} className="relative group">
                   <Link
                     href={`/chat?id=${chat.personaId}`}
-                    className={`flex items-center gap-3 rounded-2xl p-3 pr-10 transition-all ${activeChatId === chat.personaId
-                      ? "bg-white/10 ring-1 ring-white/10"
-                      : "hover:bg-white/5"
-                      }`}
+                    className="flex items-center gap-3 rounded-2xl p-3 pr-10 transition-all hover:bg-white/5"
                   >
                     <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-white/10">
                       {chat.avatarUrl ? (
@@ -465,19 +460,5 @@ function NavigationFallback({ hideMobileBottomNav = false }: { hideMobileBottomN
 }
 
 export default function Navigation({ hideMobileBottomNav = false }: { hideMobileBottomNav?: boolean }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return <NavigationFallback hideMobileBottomNav={hideMobileBottomNav} />;
-  }
-
-  return (
-    <Suspense fallback={<NavigationFallback hideMobileBottomNav={hideMobileBottomNav} />}>
-      <NavigationContent hideMobileBottomNav={hideMobileBottomNav} />
-    </Suspense>
-  );
+  return <NavigationContent hideMobileBottomNav={hideMobileBottomNav} />;
 }

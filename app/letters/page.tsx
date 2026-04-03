@@ -48,22 +48,18 @@ function UserIcon() {
   );
 }
 
-function kindMeta(kind: LetterKind): { title: string; body: string; icon: ReactNode; fixedTime: string; timeLabel: string } {
+function kindMeta(kind: LetterKind): { title: string; body: string; icon: ReactNode } {
   if (kind === "morning") {
     return {
       title: "하루 시작 편지",
-      body: "매일 오전 8시에 편지가 도착해요.",
+      body: "하루를 시작할 용기와 다정함을 담은 편지를 받아요.",
       icon: <SunriseIcon />,
-      fixedTime: "08:00",
-      timeLabel: "오전 8:00",
     };
   }
   return {
     title: "하루 마무리 편지",
-    body: "매일 오후 10시에 편지가 도착해요.",
+    body: "오늘을 정리하고 마음을 다독이는 편지를 받아요.",
     icon: <MoonIcon />,
-    fixedTime: "22:00",
-    timeLabel: "오후 10:00",
   };
 }
 
@@ -280,11 +276,7 @@ export default function LettersMainPage() {
                 <p className="mt-2 text-sm leading-relaxed text-[#6b7f89]">
                   선택한 기억의 분위기로 편지가 도착해요.
                 </p>
-                {selectedKindMeta ? (
-                  <p className="mt-2 text-xs font-semibold text-[#4a626d]">
-                    {selectedKindMeta.title} · {selectedKindMeta.timeLabel}
-                  </p>
-                ) : null}
+                {selectedKindMeta ? <p className="mt-2 text-xs font-semibold text-[#4a626d]">{selectedKindMeta.title}</p> : null}
               </section>
 
               {isPersonaLoading ? (
@@ -295,7 +287,11 @@ export default function LettersMainPage() {
                 </section>
               ) : personas.length === 0 ? (
                 <section className="rounded-3xl border border-[#d6ddd8] bg-[#ffffff] p-5 text-center">
-                  <p className="text-sm text-[#4a626d]">아직 만든 기억이 없어요. 먼저 내 기억을 만들어주세요.</p>
+                  <p className="text-sm text-[#4a626d]">
+                    아직 만든 기억이 없어요.
+                    <br />
+                    먼저 내 기억을 만들어주세요.
+                  </p>
                   <Link
                     href="/step-1/start"
                     className="mt-3 inline-flex rounded-2xl bg-[#4a626d] px-4 py-2.5 text-sm font-extrabold text-[#f0f9ff] hover:bg-[#3e5661]"
@@ -417,24 +413,20 @@ export default function LettersMainPage() {
             </h3>
 
             <div className="mt-6">
-              <div className="envelope-shell relative overflow-hidden rounded-2xl border border-[#d6ddd8] bg-white p-4">
-                <div className="letter-paper rounded-xl border border-[#d6ddd8] bg-white p-4">
-                  <p className="text-xs font-semibold text-[#4a626d]">기억에서 온 편지</p>
-                  <p className="mt-1 text-sm font-bold text-[#2f342e]">{selectedPersona?.name || "선택된 기억"}</p>
-                  <p className="mt-2 text-xs text-[#6b7f89]">
-                    {selectedKindMeta ? `${selectedKindMeta.title} · ${selectedKindMeta.timeLabel}` : "편지 설정"}
-                  </p>
+              <div className="writing-loader relative overflow-hidden rounded-2xl bg-[#f2f6f4] p-4">
+                <div className="writing-paper rounded-xl border border-[#d6ddd8] bg-white p-4">
+                  <p className="text-[11px] font-semibold text-[#4a626d]">기억에서 온 편지</p>
+                  <p className="mt-1 text-sm font-bold text-[#2f342e]">To. {selectedPersona?.name || "선택된 기억"}</p>
+                  <div className="mt-3 space-y-2">
+                    <div className="writing-line writing-line-1" />
+                    <div className="writing-line writing-line-2" />
+                    <div className="writing-line writing-line-3" />
+                  </div>
                 </div>
-
-                <div className="letter-chip chip-a">
-                  {selectedKindMeta ? selectedKindMeta.title : "편지 종류"}
-                </div>
-                <div className="letter-chip chip-b">
-                  {selectedKindMeta ? selectedKindMeta.timeLabel : "--:--"}
-                </div>
-                <div className="letter-chip chip-c">
-                  {selectedPersona?.name || "선택된 기억"}
-                </div>
+                <div className="writing-pen" aria-hidden="true" />
+                <p className="mt-3 text-center text-xs font-semibold text-[#5f737c]">
+                  {selectedKindMeta ? `${selectedKindMeta.title}을 담아` : "마음을 담아"} 한 줄씩 적고 있어요…
+                </p>
               </div>
             </div>
           </div>
@@ -445,35 +437,42 @@ export default function LettersMainPage() {
         .letter-overlay-card {
           animation: letterOverlayFadeIn 0.28s ease-out both;
         }
-        .letter-paper {
-          animation: letterPaperLift 1.05s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
+        .writing-loader {
+          animation: writingLoaderEnter 0.32s ease-out both;
         }
-        .letter-chip {
-          position: absolute;
-          left: 16px;
-          display: inline-flex;
-          align-items: center;
-          height: 24px;
-          padding: 0 10px;
+        .writing-paper {
+          animation: writingPaperFloat 1.8s ease-in-out infinite alternate;
+        }
+        .writing-line {
+          height: 7px;
           border-radius: 999px;
-          background: #d7e9f2;
-          border: 1px solid #9ab3bf;
-          color: #3e5661;
-          font-size: 11px;
-          font-weight: 700;
-          opacity: 0;
+          background: linear-gradient(90deg, #8ea6b3 0%, #6f8d9b 68%, #8ea6b3 100%);
+          transform-origin: left center;
+          animation: writingLineGrow 1.55s ease-in-out infinite;
         }
-        .chip-a {
-          top: 76px;
-          animation: chipIntoLetter 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.35s forwards;
+        .writing-line-1 {
+          width: 86%;
+          animation-delay: 0s;
         }
-        .chip-b {
-          top: 106px;
-          animation: chipIntoLetter 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.52s forwards;
+        .writing-line-2 {
+          width: 78%;
+          animation-delay: 0.22s;
         }
-        .chip-c {
-          top: 136px;
-          animation: chipIntoLetter 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.69s forwards;
+        .writing-line-3 {
+          width: 68%;
+          animation-delay: 0.44s;
+        }
+        .writing-pen {
+          position: absolute;
+          right: 22px;
+          top: 58px;
+          width: 62px;
+          height: 10px;
+          border-radius: 999px;
+          background: linear-gradient(90deg, #4a626d 0%, #6c8793 100%);
+          transform-origin: 8px 50%;
+          animation: writingPenMove 1.55s ease-in-out infinite;
+          box-shadow: 0 4px 10px rgba(47, 52, 46, 0.2);
         }
         @keyframes letterOverlayFadeIn {
           from {
@@ -485,27 +484,47 @@ export default function LettersMainPage() {
             transform: translateY(0) scale(1);
           }
         }
-        @keyframes letterPaperLift {
+        @keyframes writingLoaderEnter {
           0% {
             opacity: 0;
-            transform: translateY(20px) scale(0.98);
+            transform: translateY(8px) scale(0.99);
           }
           100% {
             opacity: 1;
             transform: translateY(0) scale(1);
           }
         }
-        @keyframes chipIntoLetter {
+        @keyframes writingPaperFloat {
           0% {
-            opacity: 0;
-            transform: translateX(14px);
-          }
-          30% {
-            opacity: 1;
+            transform: translateY(0);
           }
           100% {
-            opacity: 0;
-            transform: translateX(112px) translateY(-44px) scale(0.82);
+            transform: translateY(-2px);
+          }
+        }
+        @keyframes writingLineGrow {
+          0% {
+            opacity: 0.45;
+            transform: scaleX(0.38);
+          }
+          45% {
+            opacity: 1;
+            transform: scaleX(1);
+          }
+          100% {
+            opacity: 0.55;
+            transform: scaleX(0.55);
+          }
+        }
+        @keyframes writingPenMove {
+          0% {
+            transform: translate(0, 0) rotate(-11deg);
+          }
+          50% {
+            transform: translate(-16px, 6px) rotate(-7deg);
+          }
+          100% {
+            transform: translate(2px, -2px) rotate(-11deg);
           }
         }
       `}</style>

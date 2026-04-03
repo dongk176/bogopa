@@ -1,7 +1,7 @@
 "use client";
 
-import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 import { NativeAppleAuth } from "@/lib/native-apple-auth";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
@@ -54,10 +54,15 @@ export default function LoginModal({ isOpen, onClose, nextPath }: LoginModalProp
 
         const startUrl = `${window.location.origin}/auth/mobile/start?provider=${provider}&next=${encodeURIComponent(safeNextPath)}`;
         onClose();
-        await Browser.open({
-            url: startUrl,
-            windowName: "_self",
-        });
+        try {
+            await Browser.open({
+                url: startUrl,
+                presentationStyle: "fullscreen",
+            });
+        } catch (error) {
+            console.error("[native-login-modal] failed to open provider start page", error);
+            window.alert("로그인 화면을 여는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        }
     };
 
     const signInWithNativeApple = async () => {
@@ -77,6 +82,7 @@ export default function LoginModal({ isOpen, onClose, nextPath }: LoginModalProp
 
         try {
             setIsAppleSigningIn(true);
+            onClose();
             const credential = await NativeAppleAuth.signIn({ state: "bogopa-native-apple" });
             const response = await fetch("/api/auth/native-apple", {
                 method: "POST",
@@ -125,6 +131,7 @@ export default function LoginModal({ isOpen, onClose, nextPath }: LoginModalProp
                 return;
             }
             if (errorMessage.includes("진행 중")) {
+                window.alert("Apple 로그인 요청이 아직 처리 중입니다. 잠시 후 다시 시도해주세요.");
                 return;
             }
             console.error("[native-apple-login] failed", error);

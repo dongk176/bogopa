@@ -177,7 +177,7 @@ export default function StepOnePage() {
 
   return (
     <div className="relative flex h-[100dvh] overflow-hidden flex-col bg-[#faf9f5] text-[#2f342e]">
-      <header className="fixed inset-x-0 top-0 z-50 w-full bg-[#faf9f5] pt-[var(--native-safe-top)] [transform:translateZ(0)]">
+      <header className="fixed inset-x-0 top-0 z-50 w-full bg-[#faf9f5] pt-[var(--native-safe-top)]">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-center px-6 md:px-12">
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 1/4</span>

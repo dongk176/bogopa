@@ -4,8 +4,8 @@ import { Capacitor } from "@capacitor/core";
 import { useState, useEffect } from "react";
 
 export default function TypewriterHeadline({ disableAnimation = false }: { disableAnimation?: boolean }) {
-    const line1 = "기억이 있다면,";
-    const line2 = "다시 만날 수 있습니다";
+    const line1 = "내 기억으로";
+    const line2 = "시작되는 대화";
 
     const [runtimeDisable, setRuntimeDisable] = useState(disableAnimation);
     const [text1, setText1] = useState(disableAnimation ? line1 : "");

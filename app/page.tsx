@@ -447,9 +447,9 @@ export default async function Home() {
         <section className="mx-auto w-full max-w-md px-3 text-center lg:max-w-6xl lg:px-6">
           <HomeAppOnly initialIsNativeApp={initialIsNativeApp}>
             <h1 className="font-headline mb-4 text-3xl font-extrabold leading-[1.1] tracking-tight text-[#2f342e] md:text-5xl">
-              기억이 있다면,
+              내 기억으로
               <br />
-              <span className="text-[#4a626d]">다시 만날 수 있습니다</span>
+              <span className="text-[#4a626d]">시작되는 대화</span>
             </h1>
             <div className="flex flex-col items-center gap-3">
               <HomeMemoryCarouselClientOnly />

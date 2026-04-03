@@ -195,6 +195,14 @@ html.native-app [data-route-shell].route-phase-in main {
   color: #2f342e !important;
 }
 
+/* Preserve white typography on dedicated premium cards */
+.payment-memory-pass-card .text-white,
+.payment-memory-pass-card.text-white,
+.payment-memory-pass-card .text-white\/90,
+.payment-memory-pass-card.text-white\/90 {
+  color: #f8fbff !important;
+}
+
 .border-white\/5,
 .border-white\/10,
 .border-white\/15 {
@@ -383,6 +391,18 @@ html.modal-open,
 body.modal-open {
   overflow: hidden !important;
   overscroll-behavior: none !important;
+}
+
+html.native-lock-scroll,
+body.native-lock-scroll {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+body.native-lock-scroll {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
 }
 
 /* Global page transition (fade-in only, 500ms) */

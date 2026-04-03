@@ -1,5 +1,5 @@
-export const MEMORY_PASS_PRICE_KRW = 9900;
-export const MEMORY_PASS_MONTHLY_GRANT = 1500;
+export const MEMORY_PASS_PRICE_KRW = 6600;
+export const MEMORY_PASS_MONTHLY_GRANT = 1000;
 
 export const MEMORY_COSTS = {
   chat: 5,

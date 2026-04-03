@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Navigation from "@/app/_components/Navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
+import { getEmailDisplay } from "@/lib/display-email";
 
 type ProfilePayload = {
   ok?: boolean;
@@ -176,6 +177,7 @@ export default function AccountSettingsPage() {
   }
 
   if (!session) return null;
+  const emailDisplay = getEmailDisplay(session.user?.email);
 
   return (
     <div className="min-h-screen bg-[#242926] text-[#f0f5f2]">
@@ -201,7 +203,10 @@ export default function AccountSettingsPage() {
           <section className="rounded-2xl border border-white/10 bg-[#303733] px-5 py-5">
             <p className="text-xs font-extrabold uppercase tracking-wider text-[#3e5560]">로그인 정보</p>
             <p className="mt-2 text-sm font-bold text-[#f0f5f2]">{providerLabel(provider)}</p>
-            <p className="mt-1 text-xs text-[#b9cad1]">{session.user?.email || "이메일 정보 없음"}</p>
+            <p className="mt-1 text-xs text-[#c7d6dd]">{emailDisplay.primary}</p>
+            {emailDisplay.secondary ? (
+              <p className="mt-1 text-[11px] text-[#9fb2bc]">{emailDisplay.secondary}</p>
+            ) : null}
           </section>
 
           <section className="mt-4 space-y-3">

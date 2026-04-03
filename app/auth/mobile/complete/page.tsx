@@ -49,7 +49,26 @@ export default async function MobileAuthCompletePage({ searchParams }: MobileAut
     <main className="flex min-h-dvh items-center justify-center bg-[#faf9f5] px-6 text-center text-[#2f342e]">
       <script
         dangerouslySetInnerHTML={{
-          __html: `window.location.replace(${JSON.stringify(deepLink)});`,
+          __html: `
+            (function () {
+              var deepLink = ${JSON.stringify(deepLink)};
+              var tried = false;
+              var openApp = function () {
+                if (tried) return;
+                tried = true;
+                window.location.href = deepLink;
+              };
+              openApp();
+              window.setTimeout(function () {
+                tried = false;
+                openApp();
+              }, 450);
+              window.setTimeout(function () {
+                tried = false;
+                openApp();
+              }, 1200);
+            })();
+          `,
         }}
       />
       <div className="max-w-md space-y-3">

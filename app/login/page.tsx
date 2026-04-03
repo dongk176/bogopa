@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
@@ -12,6 +12,26 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   useNativeSwipeBack(() => router.back(), { startMode: "content" });
+
+  useEffect(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    const lockClassName = "native-lock-scroll";
+    const prevBodyTouchAction = body.style.touchAction;
+    const prevHtmlTouchAction = html.style.touchAction;
+
+    body.classList.add(lockClassName);
+    html.classList.add(lockClassName);
+    body.style.touchAction = "manipulation";
+    html.style.touchAction = "manipulation";
+
+    return () => {
+      body.classList.remove(lockClassName);
+      html.classList.remove(lockClassName);
+      body.style.touchAction = prevBodyTouchAction;
+      html.style.touchAction = prevHtmlTouchAction;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,7 +63,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white px-6 pb-10 pt-[calc(2rem+var(--native-safe-top))] text-[#2f342e]">
+    <main className="fixed inset-0 overflow-hidden bg-white px-6 pb-10 pt-[calc(2rem+var(--native-safe-top))] text-[#2f342e]">
       <section className="mx-auto flex w-full max-w-sm flex-col">
         <button
           type="button"

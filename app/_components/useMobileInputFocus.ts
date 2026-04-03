@@ -69,11 +69,16 @@ export default function useMobileInputFocus() {
     const isMobile = () => window.matchMedia("(max-width: 1023px)").matches;
     const activeTimers: number[] = [];
     let rafId = 0;
+    let viewportRafId = 0;
 
     const clearScheduledReveal = () => {
       if (rafId) {
         window.cancelAnimationFrame(rafId);
         rafId = 0;
+      }
+      if (viewportRafId) {
+        window.cancelAnimationFrame(viewportRafId);
+        viewportRafId = 0;
       }
       while (activeTimers.length > 0) {
         const timer = activeTimers.pop();
@@ -154,7 +159,7 @@ export default function useMobileInputFocus() {
 
       // Keyboard open/layout shift phases differ per device/browser.
       // Run a few delayed passes to stabilize final position.
-      [60, 140, 260, 420, 620].forEach((delay) => {
+      [70, 190, 340].forEach((delay) => {
         const id = window.setTimeout(run, delay);
         activeTimers.push(id);
       });
@@ -181,7 +186,13 @@ export default function useMobileInputFocus() {
     const handleViewportChanged = () => {
       if (!isMobile()) return;
       if (!isFocusableField(document.activeElement)) return;
-      ensureFieldVisible(document.activeElement);
+      if (viewportRafId) {
+        window.cancelAnimationFrame(viewportRafId);
+      }
+      viewportRafId = window.requestAnimationFrame(() => {
+        viewportRafId = 0;
+        ensureFieldVisible(document.activeElement);
+      });
     };
 
     const handleKeyboardInsetChanged = () => {
@@ -195,7 +206,6 @@ export default function useMobileInputFocus() {
     document.addEventListener("focusout", handleFocusOut);
     window.addEventListener("resize", handleViewportChanged);
     window.visualViewport?.addEventListener("resize", handleViewportChanged);
-    window.visualViewport?.addEventListener("scroll", handleViewportChanged);
     window.addEventListener("bogopa-keyboard-inset-change", handleKeyboardInsetChanged as EventListener);
 
     return () => {
@@ -204,7 +214,6 @@ export default function useMobileInputFocus() {
       document.removeEventListener("focusout", handleFocusOut);
       window.removeEventListener("resize", handleViewportChanged);
       window.visualViewport?.removeEventListener("resize", handleViewportChanged);
-      window.visualViewport?.removeEventListener("scroll", handleViewportChanged);
       window.removeEventListener("bogopa-keyboard-inset-change", handleKeyboardInsetChanged as EventListener);
     };
   }, []);

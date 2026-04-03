@@ -466,8 +466,8 @@ function SignupContent() {
 
   return (
     <div
-      className={`flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e] transition-[opacity,transform] duration-300 ${
-        isRouteTransitioning ? "pointer-events-none scale-[0.995] opacity-0" : "scale-100 opacity-100"
+      className={`flex min-h-screen flex-col bg-[#faf9f5] text-[#2f342e] transition-opacity duration-300 ${
+        isRouteTransitioning ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
     >
       <header className="fixed top-0 z-50 w-full border-b border-[#afb3ac]/25 bg-[#faf9f5]/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
@@ -485,12 +485,12 @@ function SignupContent() {
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-4 pb-28 pt-[calc(5rem+env(safe-area-inset-top))] md:px-6 md:pb-12 md:pt-24">
+      <main className="flex flex-1 items-center justify-center px-4 pb-[calc(9.5rem+env(safe-area-inset-bottom))] pt-[calc(5rem+env(safe-area-inset-top))] md:px-6 md:pb-[calc(8rem+env(safe-area-inset-bottom))] md:pt-24">
         <div className="relative w-full max-w-2xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
           <div className="relative z-10">
             <div className="mb-8 text-center md:text-left">
               <h1 className="font-headline text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
-                {step === 1 ? "먼저 기본 정보를 입력해주세요." : "나에 대해서 알려주세요"}
+                {step === 1 ? "기본 정보를 알려주세요." : "나에 대해서 알려주세요"}
               </h1>
             </div>
 
@@ -580,7 +580,7 @@ function SignupContent() {
                     </div>
                   </div>
 
-                  <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] space-y-2 md:static md:left-auto md:right-auto md:z-auto md:space-y-0">
+                  <div className="fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-[60] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 space-y-2">
                     <button
                       type="button"
                       onClick={goNext}
@@ -593,11 +593,11 @@ function SignupContent() {
                     </button>
                     <p className="text-center text-[11px] leading-relaxed text-[#5d605a] md:hidden">
                       보고파의{" "}
-                      <Link href="/legal/terms" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                      <Link href="/legal/terms?back=%2Fsignup" className="font-semibold text-[#4a626d] underline underline-offset-2">
                         서비스 이용약관
                       </Link>
                       {" "}및{" "}
-                      <Link href="/legal/privacy" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                      <Link href="/legal/privacy?back=%2Fsignup" className="font-semibold text-[#4a626d] underline underline-offset-2">
                         개인정보 처리방침
                       </Link>
                       에 동의하시면 계속 진행해주세요.
@@ -663,7 +663,7 @@ function SignupContent() {
                     </div>
                   </div>
 
-                  <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 right-4 z-[60] space-y-2 md:static md:left-auto md:right-auto md:z-auto md:mt-4 md:space-y-0">
+                  <div className="fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-[60] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -690,11 +690,11 @@ function SignupContent() {
                     </div>
                     <p className="text-center text-[11px] leading-relaxed text-[#5d605a] md:hidden">
                       보고파의{" "}
-                      <Link href="/legal/terms" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                      <Link href="/legal/terms?back=%2Fsignup" className="font-semibold text-[#4a626d] underline underline-offset-2">
                         서비스 이용약관
                       </Link>
                       {" "}및{" "}
-                      <Link href="/legal/privacy" className="font-semibold text-[#4a626d] underline underline-offset-2">
+                      <Link href="/legal/privacy?back=%2Fsignup" className="font-semibold text-[#4a626d] underline underline-offset-2">
                         개인정보 처리방침
                       </Link>
                       에 동의하시면 계속 진행해주세요.

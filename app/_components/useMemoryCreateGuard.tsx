@@ -149,12 +149,12 @@ export default function useMemoryCreateGuard() {
             onClick={closeModal}
             className="rounded-xl border border-white/15 px-4 py-3 text-sm font-bold text-[#f0f5f2] hover:bg-white/5"
           >
-            취소
+            닫기
           </button>
           <button
             type="button"
             onClick={openPayment}
-            className="rounded-xl bg-[#4a626d] px-4 py-3 text-sm font-extrabold text-[#f0f9ff] hover:bg-[#3e5661]"
+            className="whitespace-nowrap rounded-xl bg-[#4a626d] px-4 py-3 text-[13px] font-extrabold text-[#f0f9ff] hover:bg-[#3e5661]"
           >
             {modal.ctaLabel || "결제 페이지로 이동"}
           </button>

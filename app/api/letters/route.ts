@@ -10,6 +10,7 @@ import {
   buildLetterRuntimeContext,
   buildLetterTitle,
   createLetter,
+  getDailyLettersCount,
   getLetterById,
   getLettersCountByPersona,
   getRecentChatContext,
@@ -17,8 +18,12 @@ import {
   markLetterAsRead,
   pickRandomLetterPurpose,
 } from "@/lib/server/letters";
+import { getOrCreateMemoryPassStatus } from "@/lib/server/memory-pass";
 
 export const runtime = "nodejs";
+
+const DAILY_LETTER_LIMIT_FREE = 1;
+const DAILY_LETTER_LIMIT_PASS = 10;
 
 type CreateLetterBody = {
   personaId?: string;
@@ -52,6 +57,7 @@ function normalizePurpose(raw: unknown): LetterPurpose {
 function buildLetterSystemPrompt() {
   return [
     "너는 '보고파'의 감성 편지 작성 도우미다.",
+    "규칙 우선순위: 관계 > 감정맥락 > 정중함 > 문장스타일. 정중함은 어미/종결 표현만 조절하며 호칭·거리감·친밀도(관계 톤)는 절대 바꾸지 않는다.",
     "실제 인물이라고 주장하지 말고, 기억 기반 말투로만 편지를 작성한다.",
     "한국어로 작성한다.",
     "형식:",
@@ -95,6 +101,10 @@ function cleanupLetterBody(raw: string) {
     .slice(0, 1800);
 }
 
+function resolveDailyLetterLimit(isSubscribed: boolean) {
+  return isSubscribed ? DAILY_LETTER_LIMIT_PASS : DAILY_LETTER_LIMIT_FREE;
+}
+
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   const sessionUser = session?.user as { id?: string } | undefined;
@@ -106,8 +116,30 @@ export async function GET(request: NextRequest) {
   const id = searchParams.get("id")?.trim();
   const personaId = searchParams.get("personaId")?.trim();
   const markRead = searchParams.get("markRead") === "1";
+  const quotaOnly = searchParams.get("quota") === "1";
 
   try {
+    if (quotaOnly) {
+      const [memoryPassStatus, usedToday] = await Promise.all([
+        getOrCreateMemoryPassStatus(sessionUser.id),
+        getDailyLettersCount(sessionUser.id),
+      ]);
+      const limit = resolveDailyLetterLimit(memoryPassStatus.isSubscribed);
+      const remaining = Math.max(0, limit - usedToday);
+
+      return NextResponse.json({
+        ok: true,
+        quota: {
+          isSubscribed: memoryPassStatus.isSubscribed,
+          usedToday,
+          limit,
+          remaining,
+          canCreate: remaining > 0,
+          requiresPass: remaining <= 0 && !memoryPassStatus.isSubscribed,
+        },
+      });
+    }
+
     if (id) {
       const letter = await getLetterById(sessionUser.id, id);
       if (!letter) {
@@ -148,6 +180,31 @@ export async function POST(request: NextRequest) {
   const purpose = normalizePurpose(body.purpose);
 
   try {
+    const [memoryPassStatus, usedToday] = await Promise.all([
+      getOrCreateMemoryPassStatus(sessionUser.id),
+      getDailyLettersCount(sessionUser.id),
+    ]);
+    const limit = resolveDailyLetterLimit(memoryPassStatus.isSubscribed);
+
+    if (usedToday >= limit) {
+      const freePlanMessage =
+        "오늘은 이미 편지 1개를 받았어요. 기억 패스를 등록하면 오늘 추가로 9개까지 더 받을 수 있어요.";
+      const passPlanMessage = "오늘 받을 수 있는 편지 10개를 모두 받았어요. 내일 다시 받아보세요.";
+      const remaining = Math.max(0, limit - usedToday);
+      return NextResponse.json(
+        {
+          error: memoryPassStatus.isSubscribed ? passPlanMessage : freePlanMessage,
+          code: "LETTER_DAILY_LIMIT_REACHED",
+          requiresPass: !memoryPassStatus.isSubscribed,
+          isSubscribed: memoryPassStatus.isSubscribed,
+          usedToday,
+          limit,
+          remaining,
+        },
+        { status: 429 },
+      );
+    }
+
     const persona = await getPersonaById(personaId, sessionUser.id);
     if (!persona) {
       return NextResponse.json({ error: "기억 정보를 찾을 수 없습니다." }, { status: 404 });
@@ -208,4 +265,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "편지 생성에 실패했습니다." }, { status: 500 });
   }
 }
-

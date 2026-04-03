@@ -12,6 +12,7 @@ import { PersonaAnalyzeInput } from "@/types/persona";
 import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMobileInputFocus from "@/app/_components/useMobileInputFocus";
+import { purchaseIapProduct } from "@/lib/iap/client";
 
 const STORAGE_KEY = "bogopa_profile_step4";
 const STEP3_KEY = "bogopa_profile_step3";
@@ -490,6 +491,9 @@ export default function StepThreePage() {
     interests: [],
   });
   const [upgradeCta, setUpgradeCta] = useState<UpgradeCtaState | null>(null);
+  const [isPassSheetOpen, setIsPassSheetOpen] = useState(false);
+  const [isPassPurchasing, setIsPassPurchasing] = useState(false);
+  const [passSheetNotice, setPassSheetNotice] = useState<string | null>(null);
   const [loadingProgressIndex, setLoadingProgressIndex] = useState(0);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [isStepReady, setIsStepReady] = useState(false);
@@ -666,6 +670,18 @@ export default function StepThreePage() {
   }, [isAnyDropdownOpen]);
 
   useEffect(() => {
+    if (!isPassSheetOpen) return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [isPassSheetOpen]);
+
+  useEffect(() => {
     const hasDraftContent =
       overrides.frequentPhrases.some((item) => item.trim().length > 0) ||
       overrides.memories.some((item) => item.trim().length > 0) ||
@@ -832,7 +848,49 @@ export default function StepThreePage() {
 
   function goToPayment() {
     saveStep3DraftForReturn();
+    setIsPassSheetOpen(false);
+    setPassSheetNotice(null);
+    setUpgradeCta(null);
     router.push(`/payment?returnTo=${encodeURIComponent("/step-3")}`);
+  }
+
+  function openPassSheet() {
+    setUpgradeCta(null);
+    setPassSheetNotice(null);
+    setIsPassSheetOpen(true);
+  }
+
+  async function subscribeMemoryPassNow() {
+    if (isPassPurchasing) return;
+
+    setPassSheetNotice(null);
+    setIsPassPurchasing(true);
+
+    try {
+      const applied = await purchaseIapProduct("memory_pass_monthly");
+
+      if (typeof applied.memoryBalance !== "number") {
+        const memoryPassResponse = await fetch("/api/memory-pass", { cache: "no-store" });
+        if (!memoryPassResponse.ok) {
+          throw new Error("구독 반영 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+        }
+      }
+
+      const memoryPassResponse = await fetch("/api/memory-pass", { cache: "no-store" });
+      if (memoryPassResponse.ok) {
+        const payload = (await memoryPassResponse.json()) as { isSubscribed?: boolean; limits?: PlanLimits };
+        if (payload?.limits) setPlanLimits(payload.limits);
+        setIsSubscribed(Boolean(payload?.isSubscribed));
+      }
+
+      setUpgradeCta(null);
+      setIsPassSheetOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "구독을 진행하지 못했습니다.";
+      setPassSheetNotice(message);
+    } finally {
+      setIsPassPurchasing(false);
+    }
   }
 
   function openFrequentPhraseLimitCta() {
@@ -896,7 +954,7 @@ export default function StepThreePage() {
 
   return (
     <div className="relative flex h-[100dvh] overflow-hidden flex-col bg-[#faf9f5] text-[#2f342e]">
-      <header className="fixed inset-x-0 top-0 z-50 w-full bg-[#faf9f5] pt-[var(--native-safe-top)] [transform:translateZ(0)]">
+      <header className="fixed inset-x-0 top-0 z-50 w-full bg-[#faf9f5] pt-[var(--native-safe-top)]">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-center px-6 md:px-12">
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-[#655d5a]">Step 4/4</span>
@@ -999,7 +1057,7 @@ export default function StepThreePage() {
               {!isSubscribed ? (
                 <button
                   type="button"
-                  onClick={goToPayment}
+                  onClick={openPassSheet}
                   className="w-full rounded-2xl border border-[#4a626d]/35 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#4a626d] hover:bg-[#eceee8]"
                 >
                   기억 패스 등록하고 제한 해제하기
@@ -1009,7 +1067,7 @@ export default function StepThreePage() {
               <div className="pt-0 md:pt-2">
                 <div className="hidden md:grid md:grid-cols-2 md:gap-4">
                   <Link
-                    href="/step-2"
+                    href="/step-2?entry=step4"
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98] md:rounded-2xl md:text-lg md:font-bold md:shadow-none"
                   >
                     <ArrowLeftIcon />
@@ -1041,7 +1099,7 @@ export default function StepThreePage() {
       >
         <div className="grid grid-cols-2 gap-2">
           <Link
-            href="/step-2"
+            href="/step-2?entry=step4"
             className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f4f4ef] px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#eceee8] active:scale-[0.98]"
           >
             <ArrowLeftIcon />
@@ -1079,10 +1137,77 @@ export default function StepThreePage() {
               </button>
               <button
                 type="button"
-                onClick={goToPayment}
-                className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661]"
+                onClick={() => {
+                  if (upgradeCta.ctaLabel.includes("기억 패스")) {
+                    openPassSheet();
+                    return;
+                  }
+                  goToPayment();
+                }}
+                className="whitespace-nowrap rounded-2xl bg-[#4a626d] px-4 py-3 text-[13px] font-bold text-[#f0f9ff] hover:bg-[#3e5661]"
               >
                 {upgradeCta.ctaLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isPassSheetOpen ? (
+        <div className="fixed inset-0 z-[180] flex items-end bg-black/45 backdrop-blur-[1px]">
+          <button
+            type="button"
+            aria-label="기억 패스 안내 닫기"
+            className="absolute inset-0"
+            onClick={() => {
+              setPassSheetNotice(null);
+              setIsPassSheetOpen(false);
+            }}
+          />
+          <div className="relative w-full rounded-t-[1.8rem] bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5 shadow-[0_-16px_40px_rgba(0,0,0,0.22)]">
+            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[#d6ddd8]" />
+            <h3 className="text-center font-headline text-2xl font-bold tracking-tight text-[#2f342e]">기억 패스</h3>
+            <p className="mt-2 text-center text-sm font-medium text-[#5d605a]">제한을 해제하고 더 깊은 대화를 시작해보세요.</p>
+
+            <ul className="mt-5 space-y-2 rounded-2xl border border-[#d7e3ea] bg-[#f5f9fc] px-4 py-4 text-sm text-[#3e5560]">
+              <li>• 생성 가능한 기억 최대 15개</li>
+              <li>• 매달 1,000 기억 자동 지급</li>
+              <li>• 하루 최대 10개의 편지 무료 받기</li>
+              <li>• 기억 조각 입력 한도 10배 확장</li>
+              <li>• 입버릇 입력 한도 10배 확장</li>
+              <li>• 대화 핵심 성향(서술형) 작성 가능</li>
+            </ul>
+
+            <div className="mt-5 rounded-2xl bg-[#304b5a] px-4 py-3 text-center text-[#f8fbff]">
+              <p className="text-xs font-semibold text-[#f8fbff]/90">첫 달 특가</p>
+              <div className="mt-1 flex items-end justify-center gap-2">
+                <span className="text-sm font-semibold text-[#f8fbff]/65 line-through">6,600원</span>
+                <span className="font-headline text-3xl font-extrabold text-[#f8fbff]">3,300원</span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-[#f8fbff]/85">첫 달 이후 정상가 적용</p>
+            </div>
+
+            {passSheetNotice ? (
+              <p className="mt-3 rounded-xl bg-[#f3f6f8] px-3 py-2 text-center text-xs font-semibold text-[#3e5560]">{passSheetNotice}</p>
+            ) : null}
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPassSheetNotice(null);
+                  setIsPassSheetOpen(false);
+                }}
+                className="rounded-2xl border border-[#afb3ac]/35 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#4a626d] hover:bg-[#eceee8]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void subscribeMemoryPassNow()}
+                disabled={isPassPurchasing}
+                className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isPassPurchasing ? "구매 처리중..." : "구독하기"}
               </button>
             </div>
           </div>
