@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import Navigation from "@/app/_components/Navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 
@@ -34,6 +35,176 @@ function ArrowLeftIcon() {
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
     </svg>
   );
+}
+
+function ShareIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.9">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 12v5a2 2 0 002 2h6a2 2 0 002-2v-5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v11m0-11l-4 4m4-4l4 4" />
+    </svg>
+  );
+}
+
+function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width * 0.5, height * 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function wrapTextByChar(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number,
+) {
+  const normalized = text.replace(/\r\n/g, "\n");
+  const blocks = normalized.split("\n");
+  const lines: string[] = [];
+
+  for (const block of blocks) {
+    let current = "";
+    for (const ch of block) {
+      const next = `${current}${ch}`;
+      if (ctx.measureText(next).width <= maxWidth) {
+        current = next;
+        continue;
+      }
+      if (current) {
+        lines.push(current.trimEnd());
+      }
+      current = ch;
+      if (lines.length >= maxLines) break;
+    }
+    if (lines.length >= maxLines) break;
+    if (current) lines.push(current.trimEnd());
+    if (lines.length >= maxLines) break;
+  }
+
+  if (lines.length > maxLines) {
+    return lines.slice(0, maxLines);
+  }
+  return lines;
+}
+
+async function renderLetterShareCard(input: {
+  recipientLabel: string;
+  dateLabel: string;
+  kindText: string;
+  content: string;
+  personaName: string;
+}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("공유 이미지를 생성하지 못했습니다.");
+  }
+
+  // Background
+  const bgGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  bgGradient.addColorStop(0, "#f8fbff");
+  bgGradient.addColorStop(1, "#eef4f7");
+  ctx.fillStyle = bgGradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Main card
+  drawRoundedRect(ctx, 70, 90, 940, 1160, 48);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(62,85,96,0.14)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Header
+  ctx.fillStyle = "#4a626d";
+  ctx.font = "700 34px 'Plus Jakarta Sans', 'Apple SD Gothic Neo', sans-serif";
+  ctx.fillText("기억에서 온 편지", 130, 190);
+
+  ctx.fillStyle = "rgba(74,98,109,0.86)";
+  ctx.font = "600 24px 'Plus Jakarta Sans', 'Apple SD Gothic Neo', sans-serif";
+  ctx.fillText(`${input.dateLabel} · ${input.kindText}`, 130, 238);
+
+  ctx.fillStyle = "#2f342e";
+  ctx.font = "700 48px 'Apple SD Gothic Neo', 'Noto Serif KR', serif";
+  ctx.fillText(input.recipientLabel, 130, 320);
+
+  // Body text
+  const bodyStartY = 400;
+  const bodyWidth = 820;
+  ctx.fillStyle = "#2f342e";
+  ctx.font = "500 34px 'Apple SD Gothic Neo', 'Noto Serif KR', serif";
+  const contentLines = wrapTextByChar(ctx, input.content, bodyWidth, 16);
+  const lineHeight = 55;
+  contentLines.forEach((line, index) => {
+    ctx.fillText(line, 130, bodyStartY + lineHeight * index);
+  });
+
+  // Footer
+  const footerY = 1140;
+  ctx.fillStyle = "#4a626d";
+  ctx.font = "600 28px 'Apple SD Gothic Neo', 'Noto Serif KR', serif";
+  ctx.fillText(`진심을 담아, ${input.personaName}`, 130, footerY);
+
+  ctx.fillStyle = "rgba(62,85,96,0.9)";
+  ctx.font = "800 30px 'Plus Jakarta Sans', 'Apple SD Gothic Neo', sans-serif";
+  ctx.fillText("Bogopa", 130, 1210);
+
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("공유 이미지를 생성하지 못했습니다."));
+        return;
+      }
+      resolve(blob);
+    }, "image/png");
+  });
+}
+
+async function blobToBase64(blob: Blob) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("이미지 인코딩에 실패했습니다."));
+    reader.readAsDataURL(blob);
+  });
+  return dataUrl.replace(/^data:.*;base64,/, "");
+}
+
+async function fallbackWebShare(file: File, text: string, blob: Blob) {
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    const canShareFiles =
+      typeof navigator.canShare === "function" ? navigator.canShare({ files: [file] }) : false;
+    if (canShareFiles) {
+      await navigator.share({
+        title: "기억에서 온 편지",
+        text,
+        files: [file],
+      });
+      return;
+    }
+    await navigator.share({
+      title: "기억에서 온 편지",
+      text,
+      url: window.location.href,
+    });
+    return;
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = file.name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 function formatLetterDate(createdAt: string) {
@@ -98,6 +269,8 @@ function LetterReadContent() {
   const [personaAlias, setPersonaAlias] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareError, setShareError] = useState("");
 
   useNativeSwipeBack(
     () => {
@@ -159,6 +332,53 @@ function LetterReadContent() {
   const kindText = letter ? kindLabel(letter.kind) : "편지";
   const recipientLabel = useMemo(() => buildLetterRecipient(personaAlias), [personaAlias]);
 
+  const handleShare = async () => {
+    if (!letter || isSharing) return;
+    setIsSharing(true);
+    setShareError("");
+    try {
+      const blob = await renderLetterShareCard({
+        recipientLabel,
+        dateLabel,
+        kindText,
+        content: letter.content,
+        personaName,
+      });
+      const fileName = `bogopa-letter-${letter.id.slice(0, 8)}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+      const shareText = `${recipientLabel}\n${dateLabel} · ${kindText}`;
+
+      if (Capacitor.isNativePlatform()) {
+        const [{ Share }, { Filesystem, Directory }] = await Promise.all([
+          import("@capacitor/share"),
+          import("@capacitor/filesystem"),
+        ]);
+        const base64 = await blobToBase64(blob);
+        const path = `bogopa-share/${fileName}`;
+        await Filesystem.writeFile({
+          path,
+          data: base64,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        const uri = await Filesystem.getUri({ path, directory: Directory.Cache });
+        await Share.share({
+          title: "기억에서 온 편지",
+          text: shareText,
+          url: uri.uri,
+          dialogTitle: "편지 공유하기",
+        });
+      } else {
+        await fallbackWebShare(file, shareText, blob);
+      }
+    } catch (shareLoadError) {
+      const message = shareLoadError instanceof Error ? shareLoadError.message : "공유에 실패했습니다.";
+      setShareError(message);
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   return (
     <div className="letter-page-bg min-h-screen text-[#2f342e]">
       <Navigation hideMobileBottomNav />
@@ -211,7 +431,20 @@ function LetterReadContent() {
             </div>
           </article>
         ) : null}
+        {shareError ? <p className="mt-4 text-sm text-[#b42318]">{shareError}</p> : null}
       </main>
+
+      {!isLoading && !error && letter ? (
+        <button
+          type="button"
+          onClick={handleShare}
+          disabled={isSharing}
+          className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] right-5 z-[70] inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#4a626d] text-white shadow-lg transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label="편지 공유하기"
+        >
+          <ShareIcon />
+        </button>
+      ) : null}
 
       <style jsx>{`
         .serif-kr {
