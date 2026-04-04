@@ -25,6 +25,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             bridgeVC.view.backgroundColor = bogopaBackgroundColor
             bridgeVC.webView?.isOpaque = false
             bridgeVC.webView?.backgroundColor = bogopaBackgroundColor
+            bridgeVC.webView?.allowsLinkPreview = false
             bridgeVC.webView?.scrollView.backgroundColor = bogopaBackgroundColor
             bridgeVC.webView?.scrollView.showsVerticalScrollIndicator = false
             bridgeVC.webView?.scrollView.showsHorizontalScrollIndicator = false

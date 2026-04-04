@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect } from "react";
 import LoginModal from "./LoginModal";
@@ -74,6 +75,7 @@ function MoreVerticalIcon({ className }: { className?: string }) {
 }
 
 function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNav?: boolean }) {
+  const router = useRouter();
   const pathname = usePathname();
   const isPaymentPage = pathname?.startsWith("/payment");
   const isProfileContext = pathname?.startsWith("/profile") || pathname?.startsWith("/payment");
@@ -353,17 +355,17 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
             const isActive = item.id === "messages" ? Boolean(isMessagesContext) : pathname === item.href;
             const isProtected = item.id !== "home";
 
-            const handleClick = (e: React.MouseEvent) => {
+            const handleClick = () => {
               if (isProtected && !session) {
-                e.preventDefault();
                 openLoginModal(item.href);
+                return;
               }
+              router.push(item.href);
             };
 
             return (
-              <Link
+              <button
                 key={item.id}
-                href={item.href}
                 onClick={handleClick}
                 className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isActive ? "text-[#3e5560]" : "text-[#111111]"
                   }`}
@@ -375,7 +377,7 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
                     {item.label}
                   </span>
                 </div>
-              </Link>
+              </button>
             );
           })}
 
@@ -394,8 +396,8 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
               </div>
             </button>
           ) : (
-            <Link
-              href="/profile"
+            <button
+              onClick={() => router.push("/profile")}
               className={`flex flex-col items-center justify-center transition-all active:scale-95 ${isProfileContext ? "text-[#3e5560]" : "text-[#111111]"
                 }`}
             >
@@ -406,7 +408,7 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
                   프로필
                 </span>
               </div>
-            </Link>
+            </button>
           )}
         </nav>
       ) : null}

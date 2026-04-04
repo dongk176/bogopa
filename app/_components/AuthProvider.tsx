@@ -141,12 +141,21 @@ function MobileAuthBridge() {
         document.addEventListener("gesturechange", preventGesture, { passive: false });
         document.addEventListener("gestureend", preventGesture, { passive: false });
         document.addEventListener("touchmove", preventPinch, { passive: false });
+        const preventContextMenu = (event: Event) => {
+            const target = event.target as Element | null;
+            if (!target) return;
+            if (target.closest("a,button,[role='button']")) {
+                event.preventDefault();
+            }
+        };
+        document.addEventListener("contextmenu", preventContextMenu, true);
 
         return () => {
             document.removeEventListener("gesturestart", preventGesture);
             document.removeEventListener("gesturechange", preventGesture);
             document.removeEventListener("gestureend", preventGesture);
             document.removeEventListener("touchmove", preventPinch);
+            document.removeEventListener("contextmenu", preventContextMenu, true);
         };
     }, []);
 

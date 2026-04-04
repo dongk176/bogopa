@@ -40,6 +40,16 @@ html.native-app body {
   touch-action: pan-x pan-y;
 }
 
+/* Native app: prevent iOS long-press callout/link share sheet on tappable UI */
+html.native-app a,
+html.native-app button,
+html.native-app [role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
 html.native-app input,
 html.native-app textarea,
 html.native-app select {
