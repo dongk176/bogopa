@@ -20,6 +20,7 @@ import PersonaMemorySheet from "@/app/_components/PersonaMemorySheet";
 import MemoryBalanceBadge from "@/app/_components/MemoryBalanceBadge";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
+import { getConversationTensionGuide } from "@/lib/persona/conversationTension";
 
 type ChatMessage = {
   id: string;
@@ -237,8 +238,8 @@ function ChatLoadingScaffold() {
 
 async function fetchFirstGreeting(runtime: PersonaRuntime, alias: string) {
   const styleSummary =
+    getConversationTensionGuide((runtime as any)?.style?.politeness || "") ||
     (runtime as any)?.style?.tone?.[0] ||
-    (runtime as any)?.style?.politeness ||
     (runtime as any)?.style?.replyTempo ||
     "";
   const response = await fetch("/api/chat", {
@@ -336,6 +337,8 @@ function ChatContainer() {
   const chatListSwipeStartYRef = useRef<number | null>(null);
   const chatListSwipeLastYRef = useRef<number | null>(null);
   const keepNativeChatOnNextCleanupRef = useRef(false);
+  const sessionStateSyncTimeoutRef = useRef<number | null>(null);
+  const lastSyncedSessionStateRef = useRef<string>("");
 
   function triggerMemorySpendAnimation() {
     setIsMemoryBadgeAnimating(true);
@@ -389,6 +392,15 @@ function ChatContainer() {
           cancelText: "취소",
         });
         if (result?.confirmed) {
+          try {
+            await Keyboard.hide();
+          } catch {}
+          try {
+            await Keyboard.setResizeMode({ mode: KeyboardResize.None });
+          } catch {}
+          if (typeof document !== "undefined") {
+            document.documentElement.style.setProperty("--bogopa-keyboard-height", "0px");
+          }
           router.push(`/payment?returnTo=${encodeURIComponent(returnTo)}`);
         }
         return;
@@ -752,6 +764,68 @@ function ChatContainer() {
     };
     window.localStorage.setItem(stateKey, JSON.stringify(payload));
   }, [runtime, messages, memorySummary, unsummarizedTurns, userTurnCount]);
+
+  useEffect(() => {
+    lastSyncedSessionStateRef.current = "";
+    if (sessionStateSyncTimeoutRef.current) {
+      window.clearTimeout(sessionStateSyncTimeoutRef.current);
+      sessionStateSyncTimeoutRef.current = null;
+    }
+  }, [runtime?.personaId]);
+
+  useEffect(() => {
+    if (!runtime || !isLoaded) return;
+
+    const body = JSON.stringify({
+      personaId: runtime.personaId,
+      memorySummary,
+      unsummarizedTurns,
+      userTurnCount,
+    });
+
+    if (body === lastSyncedSessionStateRef.current) return;
+
+    if (sessionStateSyncTimeoutRef.current) {
+      window.clearTimeout(sessionStateSyncTimeoutRef.current);
+      sessionStateSyncTimeoutRef.current = null;
+    }
+
+    sessionStateSyncTimeoutRef.current = window.setTimeout(() => {
+      const payload = body;
+      sessionStateSyncTimeoutRef.current = null;
+
+      void (async () => {
+        try {
+          const response = await fetch("/api/chat/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          });
+          if (!response.ok) {
+            throw new Error(`status=${response.status}`);
+          }
+          lastSyncedSessionStateRef.current = payload;
+        } catch (error) {
+          console.warn("[chat] failed to sync session state", error);
+        }
+      })();
+    }, 300);
+
+    return () => {
+      if (sessionStateSyncTimeoutRef.current) {
+        window.clearTimeout(sessionStateSyncTimeoutRef.current);
+        sessionStateSyncTimeoutRef.current = null;
+      }
+    };
+  }, [runtime, isLoaded, memorySummary, unsummarizedTurns, userTurnCount]);
+
+  useEffect(() => {
+    return () => {
+      if (sessionStateSyncTimeoutRef.current) {
+        window.clearTimeout(sessionStateSyncTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const placeholder = useMemo(() => {
     if (!runtime) return "분석 결과를 먼저 생성해주세요.";

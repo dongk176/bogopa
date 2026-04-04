@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
 import type { IapProductKey } from "@/lib/iap/catalog";
 import Navigation from "@/app/_components/Navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
@@ -65,6 +67,16 @@ function PaymentContent() {
     }
     router.push(returnTo);
   });
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    void Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => {});
+    void Keyboard.hide().catch(() => {});
+    if (typeof document !== "undefined") {
+      document.documentElement.style.setProperty("--bogopa-keyboard-height", "0px");
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

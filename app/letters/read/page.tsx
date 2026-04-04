@@ -260,6 +260,14 @@ function buildLetterRecipient(alias: string) {
   return `${normalized || "너"}에게`;
 }
 
+function parseLetterParagraphs(content: string) {
+  return content
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+}
+
 function LetterReadContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -331,6 +339,7 @@ function LetterReadContent() {
   const dateLabel = useMemo(() => (letter ? formatLetterDate(letter.created_at) : ""), [letter]);
   const kindText = letter ? kindLabel(letter.kind) : "편지";
   const recipientLabel = useMemo(() => buildLetterRecipient(personaAlias), [personaAlias]);
+  const letterParagraphs = useMemo(() => (letter ? parseLetterParagraphs(letter.content) : []), [letter]);
 
   const handleShare = async () => {
     if (!letter || isSharing) return;
@@ -408,16 +417,29 @@ function LetterReadContent() {
           </article>
         ) : letter ? (
           <article className="w-full">
-            <div className="mb-10 -rotate-1">
+            <div className="mb-5 -rotate-1">
               <p className="font-headline text-sm font-semibold tracking-widest text-[#4a626d]">{dateLabel} · {kindText}</p>
               <h1 className="font-headline mt-1 text-2xl font-bold text-[#2f342e]">{recipientLabel}</h1>
             </div>
 
             <section className="px-1 py-1 md:px-0 md:py-0">
-              <div className="letter-writing serif-kr whitespace-pre-wrap tracking-[0.01em] text-[#2f342e]">
-                {letter.content}
+              <div className="letter-writing serif-kr tracking-[0.01em] text-[#2f342e]">
+                {letterParagraphs.length > 0 ? (
+                  letterParagraphs.map((paragraph, paragraphIndex) => (
+                    <p key={`paragraph-${paragraphIndex}`} className={paragraphIndex === 0 ? "" : "mt-3"}>
+                      {paragraph.split("\n").map((line, lineIndex) => (
+                        <span key={`line-${paragraphIndex}-${lineIndex}`}>
+                          {line}
+                          {lineIndex < paragraph.split("\n").length - 1 ? <br /> : null}
+                        </span>
+                      ))}
+                    </p>
+                  ))
+                ) : (
+                  <p>{letter.content}</p>
+                )}
               </div>
-              <p className="serif-kr mt-10 text-right text-[0.98rem] text-[#4a626d]">진심을 담아, {personaName}</p>
+              <p className="serif-kr mt-6 text-right text-[0.98rem] text-[#4a626d]">진심을 담아, {personaName}</p>
             </section>
 
             <div className="mt-12 flex justify-center opacity-80">
@@ -460,14 +482,14 @@ function LetterReadContent() {
         }
         .letter-writing {
           --font-size: 17px;
-          --line-step: 34px;
+          --line-step: 31px;
           font-size: var(--font-size);
           line-height: var(--line-step);
         }
         @media (min-width: 768px) {
           .letter-writing {
             --font-size: 18px;
-            --line-step: 36px;
+            --line-step: 33px;
           }
         }
       `}</style>
