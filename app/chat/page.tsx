@@ -1003,6 +1003,19 @@ function ChatContainer() {
       showTypingBlockedNotice();
       return;
     }
+    if (memoryBalanceRef.current === null) {
+      try {
+        const balanceResponse = await fetch("/api/memory-pass", { cache: "no-store" });
+        if (balanceResponse.ok) {
+          const balancePayload = await balanceResponse.json().catch(() => ({} as any));
+          const latestBalance = Number(balancePayload?.memoryBalance ?? 0);
+          memoryBalanceRef.current = latestBalance;
+          setMemoryBalance(latestBalance);
+        }
+      } catch {
+        // Ignore preflight errors and keep server-side guard as source of truth.
+      }
+    }
     if (
       typeof memoryBalanceRef.current === "number" &&
       memoryBalanceRef.current < MEMORY_COSTS.chat
@@ -1011,6 +1024,8 @@ function ChatContainer() {
       return;
     }
 
+    const previousMessages = messages;
+    const previousBalance = memoryBalanceRef.current;
     const userAt = nowIso();
     const userMessage: ChatMessage = { id: toId(), role: "user", content: trimmed, createdAt: userAt };
     const nextMessages = [...messages, userMessage];
@@ -1082,6 +1097,14 @@ function ChatContainer() {
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { code?: string };
         if (response.status === 402 || body.code === "MEMORY_INSUFFICIENT") {
+          setMessages(previousMessages);
+          if (!shouldUseNativeChatScreen) {
+            setInput(trimmed);
+          }
+          if (typeof previousBalance === "number") {
+            memoryBalanceRef.current = previousBalance;
+            setMemoryBalance(previousBalance);
+          }
           await promptMoveToMemoryStore(runtime.personaId);
           return;
         }
