@@ -282,14 +282,32 @@ function LetterReadContent() {
 
   useNativeSwipeBack(
     () => {
-      if (window.history.length > 1) {
-        router.back();
-        return;
-      }
-      router.push("/letters/inbox");
+      router.replace("/letters/inbox");
     },
     { startMode: "content" },
   );
+
+  useEffect(() => {
+    const markerKey = "__letters_read_back_guard__";
+    const currentState = window.history.state;
+    const baseState =
+      currentState && typeof currentState === "object" && !Array.isArray(currentState)
+        ? (currentState as Record<string, unknown>)
+        : {};
+
+    if (!baseState[markerKey]) {
+      window.history.pushState({ ...baseState, [markerKey]: true }, "", window.location.href);
+    }
+
+    const onPopState = () => {
+      router.replace("/letters/inbox");
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [router]);
 
   useEffect(() => {
     if (!letterId) {
