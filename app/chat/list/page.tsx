@@ -13,19 +13,11 @@ type ChatMessage = {
     createdAt: string;
 };
 
-type ChatTurn = {
-    role: "user" | "assistant";
-    content: string;
-};
-
 type StoredChatState = {
     personaId: string;
     personaName?: string;
     avatarUrl?: string;
     messages: ChatMessage[];
-    memorySummary: string;
-    unsummarizedTurns: ChatTurn[];
-    userTurnCount: number;
     updatedAt: string;
 };
 
@@ -78,9 +70,6 @@ export default function ChatListPage() {
                             messages: p.last_message_content
                                 ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }]
                                 : [],
-                            memorySummary: p.memory_summary || "",
-                            unsummarizedTurns: [],
-                            userTurnCount: p.user_turn_count || 0,
                             updatedAt: p.session_updated_at || p.updated_at,
                         }));
 

@@ -13,6 +13,7 @@ import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMobileInputFocus from "@/app/_components/useMobileInputFocus";
 import { purchaseIapProduct } from "@/lib/iap/client";
+import { CONVERSATION_TENSION_OPTIONS, normalizeConversationTension } from "@/lib/persona/conversationTension";
 
 const STORAGE_KEY = "bogopa_profile_step4";
 const STEP3_KEY = "bogopa_profile_step3";
@@ -62,7 +63,7 @@ const MEMORY_PLACEHOLDER_EXAMPLES = [
 ];
 
 const DROPDOWN_OPTIONS = {
-  politeness: ["편안한 반말", "정중한 존댓말", "반말+존댓말 혼용", "다정하지만 깍듯함"],
+  politeness: [...CONVERSATION_TENSION_OPTIONS],
   replyTempo: ["급한 성격", "적당히 차분한 성격", "신중하고 느린 편"],
   empathyStyle: ["감성 공감 우선", "차분한 이성적 위로", "해결책 중심의 조언"],
 };
@@ -590,7 +591,9 @@ export default function StepThreePage() {
 
     setOverrides({
       frequentPhrases,
-      politeness: (fromOverrides.politeness || "").trim(),
+      politeness: (fromOverrides.politeness || "").trim()
+        ? normalizeConversationTension(fromOverrides.politeness || "")
+        : "",
       replyTempo: (fromOverrides.replyTempo || "").trim(),
       empathyStyle: (fromOverrides.empathyStyle || "").trim(),
       memories: fromOverrides.memories || [],
@@ -700,7 +703,7 @@ export default function StepThreePage() {
     if (isSubmitting) return;
 
     if (!areStyleFieldsSelected) {
-      setError("정중함 정도, 성격, 공감 방식을 선택해주세요.");
+      setError("대화 텐션, 성격, 공감 방식을 선택해주세요.");
       return;
     }
 
@@ -995,7 +998,7 @@ export default function StepThreePage() {
                     id="politeness"
                     activeDropdown={activeDropdown}
                     onToggle={setActiveDropdown}
-                    label="정중함 정도"
+                    label="대화 텐션"
                     options={DROPDOWN_OPTIONS.politeness}
                     value={overrides.politeness}
                     onChange={(value) => {

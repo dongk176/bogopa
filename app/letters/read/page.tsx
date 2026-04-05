@@ -150,7 +150,7 @@ async function renderLetterShareCard(input: {
   const footerY = 1140;
   ctx.fillStyle = "#4a626d";
   ctx.font = "600 28px 'Apple SD Gothic Neo', 'Noto Serif KR', serif";
-  ctx.fillText(`진심을 담아, ${input.personaName}`, 130, footerY);
+  ctx.fillText("진심을 담아, 나의 소중한 기억이", 130, footerY);
 
   ctx.fillStyle = "rgba(62,85,96,0.9)";
   ctx.font = "800 30px 'Plus Jakarta Sans', 'Apple SD Gothic Neo', sans-serif";
@@ -439,7 +439,7 @@ function LetterReadContent() {
                   <p>{letter.content}</p>
                 )}
               </div>
-              <p className="serif-kr mt-6 text-right text-[0.98rem] text-[#4a626d]">진심을 담아, {personaName}</p>
+              <p className="serif-kr mt-6 text-right text-[0.98rem] text-[#4a626d]">진심을 담아, 나의 소중한 기억이</p>
             </section>
 
             <div className="mt-12 flex justify-center opacity-80">

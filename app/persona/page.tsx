@@ -7,6 +7,10 @@ import { useSession } from "next-auth/react";
 import { PersonaAnalysis, PersonaRuntime, PrimaryGoal } from "@/types/persona";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
+import {
+    CONVERSATION_TENSION_OPTIONS,
+    normalizeConversationTension,
+} from "@/lib/persona/conversationTension";
 
 type Persona = {
     persona_id: string;
@@ -20,7 +24,7 @@ type Persona = {
 };
 
 const DROPDOWN_OPTIONS = {
-    politeness: ["편안한 반말", "정중한 존댓말", "반말+존댓말 혼용", "다정하지만 깍듯함"],
+    politeness: [...CONVERSATION_TENSION_OPTIONS],
     sentenceLength: ["짧고 간결한 단답", "적당한 길이", "아주 길고 자세하게"],
     replyTempo: ["성격 급한 즉답형", "적당한 템포", "신중하고 느린 편"],
     empathyStyle: ["감성 공감 우선", "차분한 이성적 위로", "해결책 중심의 조언"],
@@ -376,7 +380,7 @@ export default function PersonaPage() {
             frequentPhrases: rt?.expressions?.frequentPhrases || al?.textHabits?.frequentPhrases || [],
             tone: (rt?.style?.tone || al?.speechStyle?.baseTone || []).join(", "),
 
-            politeness: rt?.style?.politeness || al?.speechStyle?.politeness || "편안한 반말",
+            politeness: normalizeConversationTension(rt?.style?.politeness || al?.speechStyle?.politeness || ""),
             sentenceLength: rt?.style?.sentenceLength || al?.speechStyle?.sentenceLength || "적당한 길이",
             replyTempo: rt?.style?.replyTempo || al?.speechStyle?.responseTempo || "적당한 템포",
             empathyStyle: rt?.behavior?.empathyFirst === false ? "차분한 이성적 위로" : "감성 공감 우선",
@@ -414,7 +418,7 @@ export default function PersonaPage() {
                 style: {
                     ...(selectedPersona.runtime?.style || { tone: [], politeness: "", sentenceLength: "", replyTempo: "", humorStyle: "" }),
                     tone: editForm.tone.split(",").map((t: string) => t.trim()).filter(Boolean),
-                    politeness: editForm.politeness,
+                    politeness: normalizeConversationTension(editForm.politeness),
                     sentenceLength: editForm.sentenceLength,
                     replyTempo: editForm.replyTempo,
                 },
@@ -815,7 +819,7 @@ export default function PersonaPage() {
                                                             />
                                                         </div>
                                                     ) : null}
-                                                    <CustomDropdown label="정중함 정도" options={DROPDOWN_OPTIONS.politeness} value={editForm.politeness} onChange={(v) => setEditForm({ ...editForm, politeness: v })} />
+                                                    <CustomDropdown label="대화 텐션" options={DROPDOWN_OPTIONS.politeness} value={editForm.politeness} onChange={(v) => setEditForm({ ...editForm, politeness: v })} />
                                                     <CustomDropdown label="공감 방식" options={DROPDOWN_OPTIONS.empathyStyle} value={editForm.empathyStyle} onChange={(v) => setEditForm({ ...editForm, empathyStyle: v })} />
                                                 </div>
                                             ) : (
@@ -828,7 +832,7 @@ export default function PersonaPage() {
                                                                     ? (selectedPersona.runtime?.customGoalText || "직접 입력")
                                                                     : toGoalLabel(selectedPersona.runtime?.goal),
                                                         },
-                                                        { label: '정중함', val: selectedPersona.runtime?.style?.politeness },
+                                                        { label: '대화 텐션', val: normalizeConversationTension(selectedPersona.runtime?.style?.politeness || "") },
                                                         { label: '공감 방식', val: selectedPersona.runtime?.behavior?.empathyFirst ? "감성 공감 우선" : "차분한 이성적 위로" }
                                                     ].map(item => (
                                                         <div key={item.label} className="space-y-1">

@@ -41,10 +41,70 @@ type StoredChatState = {
   runtime?: PersonaRuntime | null;
   messages: ChatMessage[];
   lastMessage?: string;
-  memorySummary: string;
-  unsummarizedTurns: ChatTurn[];
-  userTurnCount: number;
   updatedAt: string;
+};
+
+type ChatDebugCandidate = {
+  id: string;
+  similarity: number;
+  recency: number;
+  topicMatch: number;
+  emotionMatch: number;
+  entityOverlap: number;
+  score: number;
+  createdAt: string;
+  userEmotion: string | null;
+  userIntent: string | null;
+  topicCategory: string | null;
+  entities: string[];
+  aiAction: string | null;
+  pairText: string;
+};
+
+type ChatDebugPayload = {
+  retrieval: {
+    queryText: string;
+    queryMeta: {
+      userEmotion: string;
+      topicCategory: string;
+      entities: string[];
+    };
+    isReferentialMessage: boolean;
+    topSimilarity: number;
+    thresholdSimilarity: number;
+    thresholdConfidence: number;
+    candidates: ChatDebugCandidate[];
+    selected: ChatDebugCandidate[];
+    error?: string;
+  };
+  prompt: {
+    model: string;
+    maxCompletionTokens: number;
+    systemPrompt: string;
+    history: ChatTurn[];
+    retryTriggered: boolean;
+    retrySystemPrompt?: string;
+  };
+  savedMemory: {
+    attempted: boolean;
+    inserted: boolean;
+    skippedReason?: string;
+    pairText?: string;
+    responseMode?: string[];
+    questionUsed?: boolean;
+    tone?: string[];
+    importance?: number;
+    isUnresolved?: boolean;
+    userEmotion?: string | null;
+    userIntent?: string | null;
+    topicCategory?: string | null;
+    entities?: string[];
+    aiAction?: string | null;
+    hasPromise?: boolean;
+    embeddingDimension?: number;
+    embeddingPreview?: number[];
+    error?: string;
+  };
 };
 
 type Step3AvatarRaw = {
@@ -60,9 +120,6 @@ type MemoryStorePrompt = {
 const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
 const USER_INPUT_CHAR_LIMIT = 100;
 const RECENT_CONTEXT_MESSAGES = 8; // 4 turns
-const COMPRESSION_MIN_USER_TURNS = 10;
-const COMPRESSION_TRIGGER_TOKENS = 2600;
-const TOKEN_ESTIMATE_CHAR_RATIO = 0.7;
 const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
 const ONBOARDING_STORAGE_KEYS = [
   "bogopa_profile_step1",
@@ -119,15 +176,6 @@ function nowIso() {
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-}
-
-function estimateTokenCountFromText(text: string) {
-  if (!text) return 0;
-  return Math.ceil(text.length * TOKEN_ESTIMATE_CHAR_RATIO);
-}
-
-function estimateTokenCountFromTurns(turns: ChatTurn[]) {
-  return turns.reduce((sum, turn) => sum + estimateTokenCountFromText(turn.content) + 8, 0);
 }
 
 function formatTime(iso: string) {
@@ -214,8 +262,8 @@ function DotTyping() {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setDotCount((prev) => (prev + 1) % 4);
-    }, 260);
+      setDotCount((prev) => (prev + 1) % 3);
+    }, 240);
 
     return () => {
       window.clearInterval(intervalId);
@@ -223,7 +271,21 @@ function DotTyping() {
   }, []);
 
   return (
-    <span className="text-[13px] font-semibold text-[#655d5a]">{`입력 중${".".repeat(dotCount)}`}</span>
+    <div className="flex h-4 items-center justify-center gap-1.5" aria-label="typing-indicator">
+      {[0, 1, 2].map((index) => {
+        const active = index === dotCount;
+        return (
+          <span
+            key={index}
+            className="h-2 w-2 rounded-full bg-[#6a7480] transition-all duration-200 ease-in-out"
+            style={{
+              opacity: active ? 1 : 0.35,
+              transform: active ? "translateY(-2.5px) scale(1.15)" : "translateY(0) scale(1)",
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -233,6 +295,17 @@ function ChatLoadingScaffold() {
       <Navigation hideMobileBottomNav />
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:pl-64" />
     </div>
+  );
+}
+
+function DebugSection({ title, body }: { title: string; body: string }) {
+  return (
+    <section className="rounded-2xl border border-[#d9e2e8] bg-white p-4 shadow-sm">
+      <h3 className="mb-2 text-xs font-bold tracking-wide text-[#3e5560]">{title}</h3>
+      <pre className="max-h-[22rem] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[#f7fbfd] p-3 text-[11px] leading-relaxed text-[#2f342e]">
+        {body}
+      </pre>
+    </section>
   );
 }
 
@@ -282,9 +355,6 @@ function ChatContainer() {
   const { data: session } = useSession();
   const [runtime, setRuntime] = useState<PersonaRuntime | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [memorySummary, setMemorySummary] = useState("");
-  const [unsummarizedTurns, setUnsummarizedTurns] = useState<ChatTurn[]>([]);
-  const [userTurnCount, setUserTurnCount] = useState(0);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -311,6 +381,7 @@ function ChatContainer() {
   const [nativePersonaOverrides, setNativePersonaOverrides] = useState<NativeChatPersona[] | null>(null);
   const [typingBlockedNotice, setTypingBlockedNotice] = useState("");
   const [memoryStorePrompt, setMemoryStorePrompt] = useState<MemoryStorePrompt | null>(null);
+  const [chatDebug, setChatDebug] = useState<ChatDebugPayload | null>(null);
   const { guardCreateStart, modalNode, isChecking } = useMemoryCreateGuard();
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -337,8 +408,6 @@ function ChatContainer() {
   const chatListSwipeStartYRef = useRef<number | null>(null);
   const chatListSwipeLastYRef = useRef<number | null>(null);
   const keepNativeChatOnNextCleanupRef = useRef(false);
-  const sessionStateSyncTimeoutRef = useRef<number | null>(null);
-  const lastSyncedSessionStateRef = useRef<string>("");
 
   function triggerMemorySpendAnimation() {
     setIsMemoryBadgeAnimating(true);
@@ -450,7 +519,6 @@ function ChatContainer() {
     if (requestId !== initialMessageRequestIdRef.current) return;
     const firstAt = nowIso();
     setMessages([{ id: toId(), role: "assistant", content: first, createdAt: firstAt }]);
-    setUnsummarizedTurns([{ role: "assistant", content: first }]);
     setDateLabel(formatDateLabel(firstAt));
     setIsTyping(false);
   }
@@ -459,9 +527,6 @@ function ChatContainer() {
     if (!runtime) return;
     setMenuOpen(false);
     setInput("");
-    setMemorySummary("");
-    setUnsummarizedTurns([]);
-    setUserTurnCount(0);
     setMessages([]);
     setDateLabel("");
     window.localStorage.removeItem(getChatStateKey(runtime.personaId));
@@ -562,9 +627,7 @@ function ChatContainer() {
     setMessages([]);
     setIsLoaded(false);
     setIsTyping(false);
-    setMemorySummary("");
-    setUnsummarizedTurns([]);
-    setUserTurnCount(0);
+    setChatDebug(null);
 
     const searchId = chatId || undefined;
     setStep3AvatarUrl(readStep3AvatarFromStorage());
@@ -591,9 +654,6 @@ function ChatContainer() {
               runtime: p.runtime || null,
               messages: p.last_message_content ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }] : [],
               lastMessage: p.last_message_content || "",
-              memorySummary: p.memory_summary || "",
-              unsummarizedTurns: [],
-              userTurnCount: p.user_turn_count || 0,
               updatedAt: lastActivity,
             };
           });
@@ -657,18 +717,12 @@ function ChatContainer() {
           hasDbMessages = true;
           setMessages(data.messages);
           setDateLabel(formatDateLabel(data.messages[0].createdAt));
-          setMemorySummary(data.memorySummary || "");
-          setUnsummarizedTurns(data.unsummarizedTurns || []);
-          setUserTurnCount(data.userTurnCount || 0);
         }
       } catch (err) {
         console.error("[chat] failed to load from db", err);
       }
 
       if (!hasDbMessages) {
-        setMemorySummary("");
-        setUnsummarizedTurns([]);
-        setUserTurnCount(0);
         void queueInitialAssistantMessage(resolvedRuntime);
       }
 
@@ -757,75 +811,10 @@ function ChatContainer() {
       personaName: runtime.displayName || "알 수 없음",
       avatarUrl: (runtime as any)?.avatarUrl || step3AvatarUrl || "",
       messages,
-      memorySummary,
-      unsummarizedTurns,
-      userTurnCount,
       updatedAt: nowIso(),
     };
     window.localStorage.setItem(stateKey, JSON.stringify(payload));
-  }, [runtime, messages, memorySummary, unsummarizedTurns, userTurnCount]);
-
-  useEffect(() => {
-    lastSyncedSessionStateRef.current = "";
-    if (sessionStateSyncTimeoutRef.current) {
-      window.clearTimeout(sessionStateSyncTimeoutRef.current);
-      sessionStateSyncTimeoutRef.current = null;
-    }
-  }, [runtime?.personaId]);
-
-  useEffect(() => {
-    if (!runtime || !isLoaded) return;
-
-    const body = JSON.stringify({
-      personaId: runtime.personaId,
-      memorySummary,
-      unsummarizedTurns,
-      userTurnCount,
-    });
-
-    if (body === lastSyncedSessionStateRef.current) return;
-
-    if (sessionStateSyncTimeoutRef.current) {
-      window.clearTimeout(sessionStateSyncTimeoutRef.current);
-      sessionStateSyncTimeoutRef.current = null;
-    }
-
-    sessionStateSyncTimeoutRef.current = window.setTimeout(() => {
-      const payload = body;
-      sessionStateSyncTimeoutRef.current = null;
-
-      void (async () => {
-        try {
-          const response = await fetch("/api/chat/session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: payload,
-          });
-          if (!response.ok) {
-            throw new Error(`status=${response.status}`);
-          }
-          lastSyncedSessionStateRef.current = payload;
-        } catch (error) {
-          console.warn("[chat] failed to sync session state", error);
-        }
-      })();
-    }, 300);
-
-    return () => {
-      if (sessionStateSyncTimeoutRef.current) {
-        window.clearTimeout(sessionStateSyncTimeoutRef.current);
-        sessionStateSyncTimeoutRef.current = null;
-      }
-    };
-  }, [runtime, isLoaded, memorySummary, unsummarizedTurns, userTurnCount]);
-
-  useEffect(() => {
-    return () => {
-      if (sessionStateSyncTimeoutRef.current) {
-        window.clearTimeout(sessionStateSyncTimeoutRef.current);
-      }
-    };
-  }, []);
+  }, [runtime, messages, step3AvatarUrl]);
 
   const placeholder = useMemo(() => {
     if (!runtime) return "분석 결과를 먼저 생성해주세요.";
@@ -838,6 +827,21 @@ function ChatContainer() {
     const phraseCount = ((runtime as any)?.expressions?.frequentPhrases || []).length;
     return anchorCount * 10 + phraseCount;
   }, [runtime]);
+
+  const retrievalDebugText = useMemo(() => {
+    if (!chatDebug) return "아직 디버그 데이터가 없습니다.";
+    return JSON.stringify(chatDebug.retrieval, null, 2);
+  }, [chatDebug]);
+
+  const promptDebugText = useMemo(() => {
+    if (!chatDebug) return "아직 디버그 데이터가 없습니다.";
+    return JSON.stringify(chatDebug.prompt, null, 2);
+  }, [chatDebug]);
+
+  const savedMemoryDebugText = useMemo(() => {
+    if (!chatDebug) return "아직 디버그 데이터가 없습니다.";
+    return JSON.stringify(chatDebug.savedMemory, null, 2);
+  }, [chatDebug]);
 
   const nativeAvatarUrl = useMemo(() => {
     if (!runtime) return undefined;
@@ -1042,44 +1046,11 @@ function ChatContainer() {
       usedOptimisticSpend = true;
     }
 
-    const nextUserTurn = userTurnCount + 1;
-    let nextSummary = memorySummary;
-    let turnBuffer = [...unsummarizedTurns];
-    const runtimeTokenEstimate = estimateTokenCountFromText(JSON.stringify(runtime));
-    const summaryTokenEstimate = estimateTokenCountFromText(nextSummary);
-    const bufferedTokenEstimate = estimateTokenCountFromTurns(turnBuffer);
-    const shouldCompress =
-      nextUserTurn >= COMPRESSION_MIN_USER_TURNS &&
-      bufferedTokenEstimate + runtimeTokenEstimate + summaryTokenEstimate >= COMPRESSION_TRIGGER_TOKENS;
-
     try {
-      if (shouldCompress) {
-        try {
-          const compressionResponse = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "compress",
-              runtime,
-              previousSummary: nextSummary,
-              messages: turnBuffer,
-            }),
-          });
-
-          if (compressionResponse.ok) {
-            const compressionPayload = (await compressionResponse.json()) as { summary?: string };
-            const compressed = compressionPayload.summary?.trim();
-            if (compressed) {
-              nextSummary = compressed;
-              turnBuffer = [];
-            }
-          }
-        } catch (error) {
-          console.error("[chat] compression failed, continue without compression", error);
-        }
-      }
-
-      const historyForReply: ChatTurn[] = [...turnBuffer.slice(-RECENT_CONTEXT_MESSAGES), { role: "user", content: trimmed }];
+      const historyForReply: ChatTurn[] = nextMessages
+        .filter((message) => message.role === "user" || message.role === "assistant")
+        .map((message) => ({ role: message.role, content: message.content }))
+        .slice(-RECENT_CONTEXT_MESSAGES);
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -1087,7 +1058,6 @@ function ChatContainer() {
         body: JSON.stringify({
           action: "reply",
           runtime,
-          memorySummary: nextSummary,
           messages: historyForReply,
         }),
       });
@@ -1109,11 +1079,16 @@ function ChatContainer() {
           return;
         }
       } else {
-        const payload = (await response.json()) as { reply?: string; memoryBalance?: number };
+        const payload = (await response.json()) as {
+          reply?: string;
+          memoryBalance?: number;
+          debug?: ChatDebugPayload;
+        };
         replyText = (payload.reply || "").trim();
         if (typeof payload.memoryBalance === "number") {
           nextBalanceFromServer = payload.memoryBalance;
         }
+        setChatDebug(payload.debug || null);
       }
 
       if (!replyText) {
@@ -1127,8 +1102,6 @@ function ChatContainer() {
 
       const aiAt = nowIso();
       const aiMessage: ChatMessage = { id: toId(), role: "assistant", content: replyText, createdAt: aiAt };
-      const turnUser: ChatTurn = { role: "user", content: trimmed };
-      const turnAssistant: ChatTurn = { role: "assistant", content: replyText };
       setMessages((prev) => [...prev, aiMessage]);
 
       if (typeof nextBalanceFromServer === "number") {
@@ -1138,10 +1111,6 @@ function ChatContainer() {
           triggerMemorySpendAnimation();
         }
       }
-
-      setMemorySummary(nextSummary);
-      setUnsummarizedTurns([...turnBuffer, turnUser, turnAssistant].slice(-60));
-      setUserTurnCount(nextUserTurn);
     } catch (error) {
       console.error("[chat] submission failed", error);
     } finally {
@@ -1385,7 +1354,7 @@ function ChatContainer() {
     <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
       <Navigation hideMobileBottomNav={shouldHideMobileBottomNav} />
       
-      <main className={`relative flex min-h-0 flex-1 flex-col min-w-0 overflow-hidden ${chatLayoutPaddingClass}`}>
+      <main className={`relative flex min-h-0 flex-1 flex-col min-w-0 overflow-hidden xl:pr-[27rem] ${chatLayoutPaddingClass}`}>
         {/* Mobile Chat Header (Specific to this chat) */}
         <header className="chat-header-divider fixed top-0 left-0 right-0 z-30 w-full bg-white pt-[var(--native-safe-top)] lg:hidden">
           <div className="flex h-16 items-center justify-between px-4">
@@ -1513,7 +1482,7 @@ function ChatContainer() {
                     </div>
                   )}
                 </div>
-                <div className="rounded-2xl rounded-tl-sm bg-white/50 px-5 py-3 shadow-sm">
+                <div className="inline-flex w-fit items-center justify-center rounded-3xl rounded-tl-sm bg-[#e3e8eb] px-4 py-3 shadow-sm">
                   <DotTyping />
                 </div>
               </div>
@@ -1559,6 +1528,15 @@ function ChatContainer() {
             </div>
           </footer>
         </div>
+
+        <aside className="hidden xl:flex xl:absolute xl:bottom-6 xl:right-6 xl:top-6 xl:z-10 xl:w-[25rem] xl:flex-col xl:gap-3 xl:overflow-hidden">
+          <div className="rounded-2xl border border-[#d5e0e6] bg-[#eef5f9] px-4 py-3 text-xs font-semibold text-[#34505d]">
+            디버그 패널 (데스크탑 전용)
+          </div>
+          <DebugSection title="벡터 검색 결과" body={retrievalDebugText} />
+          <DebugSection title="일반 대화 입력 프롬프트" body={promptDebugText} />
+          <DebugSection title="방금 저장된 벡터 메타" body={savedMemoryDebugText} />
+        </aside>
       </main>
 
       {typingBlockedNotice ? (

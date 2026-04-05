@@ -320,11 +320,11 @@ private final class NativeChatTransitioningDelegate: NSObject, UIViewControllerT
     }
 }
 
-private final class TypingTextView: UIView {
-    private let label = UILabel()
+private final class TypingDotsView: UIView {
+    private let stackView = UIStackView()
+    private var dotViews: [UIView] = []
     private var timer: Timer?
-    private var frameIndex = 0
-    private let frames = ["입력 중", "입력 중.", "입력 중..", "입력 중..."]
+    private var activeIndex = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -344,32 +344,71 @@ private final class TypingTextView: UIView {
 
     private func setup() {
         translatesAutoresizingMaskIntoConstraints = false
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = UIColor(red: 101 / 255, green: 93 / 255, blue: 90 / 255, alpha: 1)
-        label.text = frames.first
-        addSubview(label)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .horizontal
+        stackView.alignment = .center
+        stackView.spacing = 6
+        addSubview(stackView)
+
+        for _ in 0..<3 {
+            let dot = UIView()
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            dot.backgroundColor = UIColor(red: 106 / 255, green: 116 / 255, blue: 128 / 255, alpha: 1)
+            dot.layer.cornerRadius = 3
+            dot.alpha = 0.35
+            dot.transform = .identity
+            NSLayoutConstraint.activate([
+                dot.widthAnchor.constraint(equalToConstant: 6),
+                dot.heightAnchor.constraint(equalToConstant: 6),
+            ])
+            stackView.addArrangedSubview(dot)
+            dotViews.append(dot)
+        }
 
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor)
+            stackView.topAnchor.constraint(equalTo: topAnchor),
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+
+        updateDots(animated: false)
     }
 
     private func start() {
         timer?.invalidate()
-        frameIndex = 0
-        label.text = frames[frameIndex]
+        activeIndex = 0
+        updateDots(animated: false)
 
-        let timer = Timer(timeInterval: 0.28, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.24, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.frameIndex = (self.frameIndex + 1) % self.frames.count
-            self.label.text = self.frames[self.frameIndex]
+            self.activeIndex = (self.activeIndex + 1) % 3
+            self.updateDots(animated: true)
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    private func updateDots(animated: Bool) {
+        for (index, dot) in dotViews.enumerated() {
+            let isActive = index == activeIndex
+            let updates = {
+                dot.alpha = isActive ? 1.0 : 0.35
+                dot.transform = isActive ? CGAffineTransform(translationX: 0, y: -2.2).scaledBy(x: 1.18, y: 1.18) : .identity
+            }
+            if animated {
+                UIView.animate(
+                    withDuration: 0.22,
+                    delay: 0,
+                    usingSpringWithDamping: 0.72,
+                    initialSpringVelocity: 0.35,
+                    options: [.allowUserInteraction, .curveEaseInOut],
+                    animations: updates
+                )
+            } else {
+                updates()
+            }
+        }
     }
 }
 
@@ -1111,12 +1150,14 @@ private final class NativeChatViewController: UIViewController, UITextFieldDeleg
         if state.isTyping {
             let typingBubble = UIView()
             typingBubble.translatesAutoresizingMaskIntoConstraints = false
-            typingBubble.backgroundColor = UIColor(white: 1, alpha: 0.5)
+            typingBubble.backgroundColor = assistantBubbleColor
             typingBubble.layer.cornerRadius = 16
             typingBubble.layer.masksToBounds = true
+            typingBubble.setContentHuggingPriority(.required, for: .horizontal)
+            typingBubble.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-            let typingTextView = TypingTextView()
-            typingBubble.addSubview(typingTextView)
+            let typingDotsView = TypingDotsView()
+            typingBubble.addSubview(typingDotsView)
 
             let row = UIStackView()
             row.axis = .horizontal
@@ -1130,10 +1171,12 @@ private final class NativeChatViewController: UIViewController, UITextFieldDeleg
             stackView.addArrangedSubview(row)
 
             NSLayoutConstraint.activate([
-                typingTextView.topAnchor.constraint(equalTo: typingBubble.topAnchor, constant: 10),
-                typingTextView.leadingAnchor.constraint(equalTo: typingBubble.leadingAnchor, constant: 12),
-                typingTextView.trailingAnchor.constraint(equalTo: typingBubble.trailingAnchor, constant: -12),
-                typingTextView.bottomAnchor.constraint(equalTo: typingBubble.bottomAnchor, constant: -10)
+                typingBubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
+                typingBubble.widthAnchor.constraint(lessThanOrEqualToConstant: 72),
+                typingDotsView.topAnchor.constraint(equalTo: typingBubble.topAnchor, constant: 12),
+                typingDotsView.leadingAnchor.constraint(equalTo: typingBubble.leadingAnchor, constant: 12),
+                typingDotsView.trailingAnchor.constraint(equalTo: typingBubble.trailingAnchor, constant: -12),
+                typingDotsView.bottomAnchor.constraint(equalTo: typingBubble.bottomAnchor, constant: -12)
             ])
         }
 

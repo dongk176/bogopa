@@ -23,9 +23,6 @@ CREATE TABLE IF NOT EXISTS bogopa.chat_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id VARCHAR NOT NULL,
   persona_id VARCHAR REFERENCES bogopa.personas(persona_id) ON DELETE CASCADE,
-  memory_summary TEXT DEFAULT '',
-  unsummarized_turns JSONB NOT NULL DEFAULT '[]'::jsonb,
-  user_turn_count INT DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, persona_id)
@@ -40,7 +37,75 @@ CREATE TABLE IF NOT EXISTS bogopa.chat_messages (
 );
 `;
 
+type ChatMemoryVectorInsertParams = {
+  userId: string;
+  personaId: string;
+  sessionId: string;
+  userMessageId: string | null;
+  assistantMessageId: string | null;
+  pairText: string;
+  embedding: number[];
+  responseMode: string[];
+  questionUsed: boolean;
+  tone: string[];
+  importance: number;
+  isUnresolved: boolean;
+  userEmotion?: string | null;
+  userIntent?: string | null;
+  topicCategory?: string | null;
+  entities?: string[];
+  aiAction?: string | null;
+  hasPromise?: boolean;
+};
+
+type ChatMemoryVectorSearchParams = {
+  userId: string;
+  personaId: string;
+  embedding: number[];
+  limit?: number;
+};
+
+type ChatMemoryVectorRow = {
+  id: string;
+  pair_text: string;
+  response_mode: string[] | null;
+  question_used: boolean;
+  tone: string[] | null;
+  importance: number;
+  is_unresolved: boolean;
+  user_emotion: string | null;
+  user_intent: string | null;
+  topic_category: string | null;
+  entities: string[] | null;
+  ai_action: string | null;
+  has_promise: boolean;
+  created_at: string;
+  similarity: number;
+};
+
+export type ChatMemoryVectorResult = {
+  id: string;
+  pairText: string;
+  responseMode: string[];
+  questionUsed: boolean;
+  tone: string[];
+  importance: number;
+  isUnresolved: boolean;
+  userEmotion: string | null;
+  userIntent: string | null;
+  topicCategory: string | null;
+  entities: string[];
+  aiAction: string | null;
+  hasPromise: boolean;
+  createdAt: string;
+  similarity: number;
+};
+
 let ensurePromise: Promise<void> | null = null;
+
+function toVectorLiteral(values: number[]) {
+  return `[${values.map((value) => Number(value).toFixed(8)).join(",")}]`;
+}
 
 export async function ensureChatTables() {
   if (!ensurePromise) {
@@ -65,6 +130,60 @@ export async function ensureChatTables() {
           AND avatar_url IS NOT NULL
           AND avatar_url ~ 'bogopa/(persona|user-profile)/';
       `);
+
+      try {
+        await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS bogopa.chat_memory_vectors (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id VARCHAR NOT NULL,
+            persona_id VARCHAR NOT NULL,
+            session_id UUID NOT NULL REFERENCES bogopa.chat_sessions(id) ON DELETE CASCADE,
+            user_message_id UUID REFERENCES bogopa.chat_messages(id) ON DELETE SET NULL,
+            assistant_message_id UUID REFERENCES bogopa.chat_messages(id) ON DELETE SET NULL,
+            pair_text TEXT NOT NULL,
+            embedding VECTOR(1536) NOT NULL,
+            response_mode TEXT[] NOT NULL DEFAULT '{}'::text[],
+            question_used BOOLEAN NOT NULL DEFAULT FALSE,
+            tone TEXT[] NOT NULL DEFAULT '{}'::text[],
+            importance SMALLINT NOT NULL DEFAULT 0,
+            is_unresolved BOOLEAN NOT NULL DEFAULT FALSE,
+            user_emotion TEXT,
+            user_intent TEXT,
+            topic_category TEXT,
+            entities TEXT[] NOT NULL DEFAULT '{}'::text[],
+            ai_action TEXT,
+            has_promise BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+        `);
+        await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_memory_vectors ADD COLUMN IF NOT EXISTS user_emotion TEXT;`);
+        await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_memory_vectors ADD COLUMN IF NOT EXISTS user_intent TEXT;`);
+        await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_memory_vectors ADD COLUMN IF NOT EXISTS topic_category TEXT;`);
+        await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_memory_vectors ADD COLUMN IF NOT EXISTS entities TEXT[] NOT NULL DEFAULT '{}'::text[];`);
+        await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_memory_vectors ADD COLUMN IF NOT EXISTS ai_action TEXT;`);
+        await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_memory_vectors ADD COLUMN IF NOT EXISTS has_promise BOOLEAN NOT NULL DEFAULT FALSE;`);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_chat_memory_vectors_scope
+          ON bogopa.chat_memory_vectors(user_id, persona_id, created_at DESC);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_chat_memory_vectors_meta_lookup
+          ON bogopa.chat_memory_vectors(user_id, persona_id, topic_category, user_emotion, created_at DESC);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_chat_memory_vectors_entities_gin
+          ON bogopa.chat_memory_vectors
+          USING GIN (entities);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_chat_memory_vectors_embedding_hnsw
+          ON bogopa.chat_memory_vectors
+          USING hnsw (embedding vector_cosine_ops);
+        `);
+      } catch (error) {
+        console.warn("[chat-db] vector setup skipped", error);
+      }
     })().catch((err) => {
       ensurePromise = null;
       throw err;
@@ -127,13 +246,11 @@ export async function savePersonaToDb(
 export async function getPersonasForUser(userId: string) {
   await ensureChatTables();
   const pool = getDbPool();
-  // Join with sessions to get the last message and summary if available
+  // Join with sessions to get the last message and latest activity timestamp
   const res = await pool.query(
     `SELECT 
       p.*, 
       s.id as session_id,
-      s.memory_summary, 
-      s.user_turn_count,
       s.updated_at as session_updated_at,
       (SELECT m.content FROM bogopa.chat_messages m WHERE m.session_id = s.id ORDER BY m.created_at DESC LIMIT 1) as last_message_content
     FROM bogopa.personas p
@@ -251,22 +368,106 @@ export async function getMessagesForSession(sessionId: string) {
   }));
 }
 
-export async function updateSessionState(
-  sessionId: string,
-  memorySummary: string,
-  unsummarizedTurns: any[],
-  userTurnCount: number
-) {
+export async function insertChatMemoryVector(params: ChatMemoryVectorInsertParams) {
   await ensureChatTables();
   const pool = getDbPool();
-  await pool.query(
-    `
-    UPDATE bogopa.chat_sessions
-    SET memory_summary = $2, unsummarized_turns = $3::jsonb, user_turn_count = $4, updated_at = NOW()
-    WHERE id = $1
-    `,
-    [sessionId, memorySummary, JSON.stringify(unsummarizedTurns), userTurnCount]
-  );
+  const responseMode = params.responseMode.filter(Boolean).slice(0, 4);
+  const tone = params.tone.filter(Boolean).slice(0, 4);
+  const entities = (params.entities || []).map((item) => item.trim()).filter(Boolean).slice(0, 8);
+  const importance = Math.max(0, Math.min(10, Math.round(params.importance || 0)));
+  const vectorLiteral = toVectorLiteral(params.embedding);
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO bogopa.chat_memory_vectors (
+        user_id, persona_id, session_id, user_message_id, assistant_message_id,
+        pair_text, embedding, response_mode, question_used, tone, importance, is_unresolved,
+        user_emotion, user_intent, topic_category, entities, ai_action, has_promise
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8::text[], $9, $10::text[], $11::smallint, $12, $13, $14, $15, $16::text[], $17, $18)
+      `,
+      [
+        params.userId,
+        params.personaId,
+        params.sessionId,
+        params.userMessageId,
+        params.assistantMessageId,
+        params.pairText,
+        vectorLiteral,
+        responseMode,
+        params.questionUsed,
+        tone,
+        importance,
+        params.isUnresolved,
+        params.userEmotion || null,
+        params.userIntent || null,
+        params.topicCategory || null,
+        entities,
+        params.aiAction || null,
+        Boolean(params.hasPromise),
+      ],
+    );
+  } catch (error) {
+    console.warn("[chat-db] failed to insert memory vector", error);
+  }
+}
+
+export async function searchSimilarChatMemoryVectors(params: ChatMemoryVectorSearchParams): Promise<ChatMemoryVectorResult[]> {
+  await ensureChatTables();
+  const pool = getDbPool();
+  const vectorLiteral = toVectorLiteral(params.embedding);
+  const limit = Math.max(1, Math.min(20, params.limit ?? 8));
+
+  try {
+    const res = await pool.query<ChatMemoryVectorRow>(
+      `
+      SELECT
+        id,
+        pair_text,
+        response_mode,
+        question_used,
+        tone,
+        importance,
+        is_unresolved,
+        user_emotion,
+        user_intent,
+        topic_category,
+        entities,
+        ai_action,
+        has_promise,
+        created_at,
+        1 - (embedding <=> $3::vector) AS similarity
+      FROM bogopa.chat_memory_vectors
+      WHERE user_id = $1
+        AND persona_id = $2
+      ORDER BY embedding <=> $3::vector
+      LIMIT $4
+      `,
+      [params.userId, params.personaId, vectorLiteral, limit],
+    );
+
+    return res.rows.map((row) => ({
+      id: row.id,
+      pairText: row.pair_text,
+      responseMode: row.response_mode || [],
+      questionUsed: Boolean(row.question_used),
+      tone: row.tone || [],
+      importance: Number(row.importance || 0),
+      isUnresolved: Boolean(row.is_unresolved),
+      userEmotion: row.user_emotion || null,
+      userIntent: row.user_intent || null,
+      topicCategory: row.topic_category || null,
+      entities: row.entities || [],
+      aiAction: row.ai_action || null,
+      hasPromise: Boolean(row.has_promise),
+      createdAt: row.created_at,
+      similarity: Number(row.similarity || 0),
+    }));
+  } catch (error) {
+    console.warn("[chat-db] memory vector search skipped", error);
+    return [];
+  }
 }
 
 
@@ -278,7 +479,7 @@ export async function clearSessionMessages(sessionId: string) {
     [sessionId]
   );
   await pool.query(
-    "UPDATE bogopa.chat_sessions SET memory_summary = '', unsummarized_turns = '[]'::jsonb, user_turn_count = 0, updated_at = NOW() WHERE id = $1",
+    "UPDATE bogopa.chat_sessions SET updated_at = NOW() WHERE id = $1",
     [sessionId]
   );
 }

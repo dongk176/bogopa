@@ -1,8 +1,8 @@
 export const CONVERSATION_TENSION_OPTIONS = [
+  "토닥토닥 심야감성",
+  "소소한 일상",
   "도파민 풀충전",
   "티키타카 핑퐁",
-  "소소한 일상",
-  "토닥토닥 심야감성",
 ] as const;
 
 type ConversationTension = (typeof CONVERSATION_TENSION_OPTIONS)[number];
@@ -44,4 +44,3 @@ export function getConversationTensionGuide(value?: string) {
   const normalized = normalizeConversationTension(value);
   return `${normalized}: ${CONVERSATION_TENSION_DESCRIPTION[normalized]}`;
 }
-

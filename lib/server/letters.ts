@@ -1,5 +1,6 @@
 import { getDbPool } from "@/lib/server/db";
 import type { PersonaRuntime } from "@/types/persona";
+import { getConversationTensionGuide } from "@/lib/persona/conversationTension";
 
 export type LetterKind = "morning" | "evening";
 
@@ -235,16 +236,16 @@ export async function getRecentChatContext(userId: string, personaId: string) {
 
   const sessionRes = await pool.query(
     `
-    SELECT id, memory_summary
+    SELECT id
     FROM bogopa.chat_sessions
     WHERE user_id = $1 AND persona_id = $2
     LIMIT 1
     `,
     [userId, personaId],
   );
-  const session = sessionRes.rows[0] as { id: string; memory_summary: string | null } | undefined;
+  const session = sessionRes.rows[0] as { id: string } | undefined;
   if (!session?.id) {
-    return { memorySummary: "", turns: [] as Array<{ role: "user" | "assistant"; content: string }> };
+    return { turns: [] as Array<{ role: "user" | "assistant"; content: string }> };
   }
 
   const msgRes = await pool.query(
@@ -263,10 +264,7 @@ export async function getRecentChatContext(userId: string, personaId: string) {
     .map((item) => ({ role: item.role as "user" | "assistant", content: item.content.trim().slice(0, 300) }))
     .reverse();
 
-  return {
-    memorySummary: (session.memory_summary || "").trim().slice(0, 900),
-    turns,
-  };
+  return { turns };
 }
 
 export async function getLettersCountByPersona(userId: string, personaId: string) {
@@ -309,7 +307,7 @@ export function buildLetterRuntimeContext(runtimeData: PersonaRuntime, options: 
   const relation = safeString(runtimeData.relation, 40) || "소중한 사람";
   const alias = safeTrimList(runtimeData.addressing?.callsUserAs, 1, 30)[0] || "";
   const style = {
-    politeness: safeString(runtimeData.style?.politeness, 40),
+    conversationTension: getConversationTensionGuide(runtimeData.style?.politeness || ""),
     replyTempo: safeString(runtimeData.style?.replyTempo, 40),
   };
   const empathyFirst = Boolean(runtimeData.behavior?.empathyFirst);
