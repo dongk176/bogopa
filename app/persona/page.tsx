@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, type FocusEvent, type TouchEvent } from "react";
+import { useEffect, useState, useRef, type ChangeEvent, type FocusEvent, type TouchEvent } from "react";
 import { useRouter } from "next/navigation";
 import Navigation from "@/app/_components/Navigation";
 import { useSession } from "next-auth/react";
@@ -42,6 +42,11 @@ const GOAL_LABELS = Object.values(GOAL_VALUE_TO_LABEL);
 const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
 const MEMORY_ITEM_CHAR_LIMIT = 50;
 const BRAND_BORDER_COLOR = "#3e5560";
+
+function resolveAvatarPreviewUrl(avatarUrl: string | null | undefined) {
+    if (!avatarUrl) return "";
+    return avatarUrl.includes("amazonaws.com") ? `/api/image-proxy?url=${encodeURIComponent(avatarUrl)}` : avatarUrl;
+}
 
 function isEditableTarget(target: EventTarget | null): target is HTMLElement {
     if (!(target instanceof HTMLElement)) return false;
@@ -124,6 +129,10 @@ export default function PersonaPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [isEditInputFocused, setIsEditInputFocused] = useState(false);
     const [editForm, setEditForm] = useState<any>(null);
+    const [editAvatarUrl, setEditAvatarUrl] = useState<string | null>(null);
+    const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+    const [avatarUploadError, setAvatarUploadError] = useState("");
+    const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [limits, setLimits] = useState<PlanLimits>(FREE_PLAN_LIMITS);
     const [isSubscribed, setIsSubscribed] = useState(false);
@@ -369,6 +378,9 @@ export default function PersonaPage() {
         setSelectedPersona(persona);
         setIsEditing(false);
         setIsEditInputFocused(false);
+        setEditAvatarUrl(persona.avatar_url || null);
+        setAvatarUploadError("");
+        setIsAvatarUploading(false);
         const rt = persona.runtime;
         const al = persona.analysis;
         const relation = rt?.relation || al?.personaInput?.relation || "";
@@ -392,6 +404,43 @@ export default function PersonaPage() {
             memories: rt?.memories || al?.memoryAnchors?.map(m => m.summary) || [],
             avoidTopics: rt?.topics?.avoid || al?.topics?.avoidTopics || [],
         });
+    };
+
+    const handleAvatarFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+
+        setAvatarUploadError("");
+        setIsAvatarUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const response = await fetch("/api/upload/persona-image", {
+                method: "POST",
+                body: formData,
+            });
+            const payload = (await response.json().catch(() => ({}))) as {
+                ok?: boolean;
+                avatarUrl?: string;
+                url?: string;
+                error?: string;
+            };
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.error || "이미지 업로드에 실패했습니다.");
+            }
+
+            const uploadedUrl = (payload.avatarUrl || payload.url || "").trim();
+            if (!uploadedUrl) {
+                throw new Error("업로드된 이미지 URL을 확인할 수 없습니다.");
+            }
+            setEditAvatarUrl(uploadedUrl);
+        } catch (error) {
+            setAvatarUploadError(error instanceof Error ? error.message : "이미지 업로드 중 오류가 발생했습니다.");
+        } finally {
+            setIsAvatarUploading(false);
+        }
     };
 
     const handleSave = async () => {
@@ -439,7 +488,7 @@ export default function PersonaPage() {
                 body: JSON.stringify({
                     personaId: selectedPersona.persona_id,
                     name: editForm.name,
-                    avatarUrl: selectedPersona.avatar_url,
+                    avatarUrl: editAvatarUrl || null,
                     analysis: selectedPersona.analysis,
                     runtime: updatedRuntime,
                 }),
@@ -452,10 +501,10 @@ export default function PersonaPage() {
             if (data.ok) {
                 setPersonas(prev => prev.map(p =>
                     p.persona_id === selectedPersona.persona_id
-                        ? { ...p, name: editForm.name, runtime: updatedRuntime as any }
+                        ? { ...p, name: editForm.name, avatar_url: editAvatarUrl || null, runtime: updatedRuntime as any }
                         : p
                 ));
-                setSelectedPersona(prev => prev ? ({ ...prev, name: editForm.name, runtime: updatedRuntime as any }) : null);
+                setSelectedPersona(prev => prev ? ({ ...prev, name: editForm.name, avatar_url: editAvatarUrl || null, runtime: updatedRuntime as any }) : null);
                 setIsEditing(false);
             }
         } catch (err) {
@@ -469,6 +518,9 @@ export default function PersonaPage() {
         setSelectedPersona(null);
         setIsEditing(false);
         setIsEditInputFocused(false);
+        setEditAvatarUrl(null);
+        setAvatarUploadError("");
+        setIsAvatarUploading(false);
     };
 
     useEffect(() => {
@@ -523,6 +575,9 @@ export default function PersonaPage() {
     const goToPayment = () => {
         router.push(`/payment?returnTo=${encodeURIComponent("/persona")}`);
     };
+
+    const detailAvatarUrl = editAvatarUrl ?? selectedPersona?.avatar_url ?? null;
+    const detailAvatarSrc = resolveAvatarPreviewUrl(detailAvatarUrl);
 
     const renderListEditor = (
         label: string,
@@ -724,8 +779,8 @@ export default function PersonaPage() {
                         <header className="flex shrink-0 items-center justify-between border-b border-[#afb3ac]/10 bg-[#faf9f5] px-8 py-6 lg:px-12">
                             <div className="flex items-center gap-4">
                                 <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-[#4a626d]/10">
-                                    {selectedPersona.avatar_url ? (
-                                        <img src={selectedPersona.avatar_url.includes("amazonaws.com") ? `/api/image-proxy?url=${encodeURIComponent(selectedPersona.avatar_url)}` : selectedPersona.avatar_url} alt="" className="h-full w-full object-cover" />
+                                    {detailAvatarSrc ? (
+                                        <img src={detailAvatarSrc} alt="" className="h-full w-full object-cover" />
                                     ) : (
                                         <div className="flex h-full w-full items-center justify-center text-[#4a626d]">
                                             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -779,6 +834,46 @@ export default function PersonaPage() {
                                     <section>
                                         <h3 className="mb-4 text-sm font-extrabold uppercase tracking-[0.2em] text-[#4a626d]">기초 정체성</h3>
                                         <div className="grid grid-cols-1 gap-4 rounded-[2rem] bg-white p-6 md:p-8 shadow-sm border border-[#afb3ac]/10">
+                                            <div className="space-y-3">
+                                                <label className="text-sm font-extrabold text-[#655d5a] uppercase block">기억 사진</label>
+                                                <div className="mx-auto w-full max-w-[240px]">
+                                                    <div className="relative aspect-square overflow-hidden rounded-[1.6rem] border border-[#4a626d]/20 bg-[#f4f4ef]">
+                                                        {detailAvatarSrc ? (
+                                                            <img src={detailAvatarSrc} alt={`${selectedPersona.name} 사진`} className="h-full w-full object-cover" />
+                                                        ) : (
+                                                            <div className="flex h-full w-full items-center justify-center text-[#4a626d]">
+                                                                <svg className="h-14 w-14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                                </svg>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {isEditing ? (
+                                                        <div className="mt-3 space-y-2">
+                                                            <input
+                                                                ref={avatarFileInputRef}
+                                                                type="file"
+                                                                accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+                                                                className="hidden"
+                                                                onChange={handleAvatarFileChange}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => avatarFileInputRef.current?.click()}
+                                                                disabled={isAvatarUploading || isSaving}
+                                                                className="w-full rounded-2xl border border-[#4a626d]/35 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#4a626d] hover:bg-[#eceee8] disabled:cursor-not-allowed disabled:opacity-60"
+                                                            >
+                                                                {isAvatarUploading ? "사진 업로드 중..." : "사진 바꾸기"}
+                                                            </button>
+                                                            {avatarUploadError ? (
+                                                                <p className="text-xs font-medium text-[#9f403d]">{avatarUploadError}</p>
+                                                            ) : (
+                                                                <p className="text-xs text-[#7b827d]">정사각형 비율의 이미지를 권장해요.</p>
+                                                            )}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            </div>
                                             <div className="space-y-6">
                                                 <div className="grid grid-cols-2 gap-6">
                                                     <div className="space-y-1">
@@ -974,14 +1069,19 @@ export default function PersonaPage() {
                                 ) : (
                                     <div className="grid w-full grid-cols-2 gap-2 pb-safe md:gap-4">
                                         <button
-                                            onClick={() => setIsEditing(false)}
+                                            onClick={() => {
+                                                setIsEditing(false);
+                                                setEditAvatarUrl(selectedPersona.avatar_url || null);
+                                                setAvatarUploadError("");
+                                                setIsAvatarUploading(false);
+                                            }}
                                             className="w-full inline-flex items-center justify-center gap-2 rounded-full border border-[#4a626d] bg-white px-4 py-4 text-base font-semibold text-[#4a626d] shadow-[0_12px_30px_rgba(47,52,46,0.16)] transition-all duration-300 hover:bg-[#cde6f4]/25 active:scale-[0.98] md:rounded-2xl md:text-lg md:font-bold md:shadow-none"
                                         >
                                             취소
                                         </button>
                                         <button
                                             onClick={handleSave}
-                                            disabled={isSaving}
+                                            disabled={isSaving || isAvatarUploading}
                                             className="group w-full flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                                         >
                                             {isSaving ? (
