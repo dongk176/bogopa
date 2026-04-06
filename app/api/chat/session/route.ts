@@ -6,6 +6,7 @@ import {
     getOrCreateSession,
     getMessagesForSession,
 } from "@/lib/server/chat-db";
+import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 
 export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -17,6 +18,15 @@ export async function GET(request: NextRequest) {
 
     try {
         const chatSession = await getOrCreateSession(sessionUser.id, personaId);
+        await logAnalyticsEventSafe({
+            userId: sessionUser.id,
+            eventName: "session_start",
+            sessionId: chatSession.id,
+            personaId,
+            properties: {
+                source: "chat_session_get",
+            },
+        });
         const messages = await getMessagesForSession(chatSession.id);
 
         return NextResponse.json({

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
@@ -48,6 +48,7 @@ function PaymentContent() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isPurchasingKey, setIsPurchasingKey] = useState<IapProductKey | null>(null);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
+  const paywallViewLoggedRef = useRef(false);
   const memoryPassPromoPrice = 3300;
   const memoryPassMonthlyPrice = 6600;
 
@@ -78,6 +79,19 @@ function PaymentContent() {
       document.documentElement.style.setProperty("--bogopa-keyboard-height", "0px");
     }
   }, []);
+
+  const trackAnalyticsEvent = async (eventName: "paywall_view" | "paywall_cta_clicked", properties: Record<string, unknown>) => {
+    try {
+      await fetch("/api/analytics/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({ eventName, properties }),
+      });
+    } catch {
+      // no-op
+    }
+  };
 
   const refreshMemoryPassStatus = async () => {
     const response = await fetch("/api/memory-pass", { cache: "no-store" });
@@ -113,9 +127,23 @@ function PaymentContent() {
     };
   }, []);
 
+  useEffect(() => {
+    if (paywallViewLoggedRef.current) return;
+    paywallViewLoggedRef.current = true;
+    void trackAnalyticsEvent("paywall_view", {
+      source: "payment_page",
+      returnTo,
+    });
+  }, [returnTo]);
+
   const startPurchase = async (productKey: IapProductKey) => {
     if (isPurchasingKey) return;
     if (productKey === "memory_pass_monthly" && isSubscribed) return;
+    void trackAnalyticsEvent("paywall_cta_clicked", {
+      source: "payment_page",
+      productKey,
+      isSubscribed,
+    });
     setPendingNotice(null);
     setIsPurchasingKey(productKey);
 

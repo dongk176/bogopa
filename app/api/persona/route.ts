@@ -7,6 +7,7 @@ import { getDbPool } from "@/lib/server/db";
 import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import { consumeMemory, getOrCreateMemoryPassStatus } from "@/lib/server/memory-pass";
 import { inferAvatarStorage, resolveAvatarUrlFromStorage } from "@/lib/avatar-storage";
+import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 
 function trimList(values: string[] | undefined, maxCount: number, maxChars: number) {
     return (values || [])
@@ -63,6 +64,38 @@ function normalizePersonaAvatar(input: {
         avatarSource: inferred.avatarSource,
         avatarKey: inferred.avatarKey,
         avatarUrl: inferred.avatarUrl ? normalizeLegacyAvatarUrl(inferred.avatarUrl) : null,
+    };
+}
+
+function countNonEmptyStrings(values: unknown) {
+    if (!Array.isArray(values)) return 0;
+    return values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean).length;
+}
+
+function getProfileFieldCount(runtime: PersonaRuntime | null | undefined) {
+    const profile = runtime?.userProfile;
+    if (!profile) return 0;
+    const hasAge = typeof profile.age === "number" && Number.isFinite(profile.age);
+    const hasMbti = typeof profile.mbti === "string" && profile.mbti.trim().length > 0;
+    const hasInterests = Array.isArray(profile.interests) && profile.interests.some((item) => typeof item === "string" && item.trim().length > 0);
+    return [hasAge, hasMbti, hasInterests].filter(Boolean).length;
+}
+
+function buildPersonaAnalyticsProperties(runtime: PersonaRuntime, avatarSource: string | null, prevMemoryCount = 0) {
+    const memoryCount = countNonEmptyStrings(runtime.memories);
+    const frequentPhrasesCount = countNonEmptyStrings(runtime.expressions?.frequentPhrases);
+    const profileFieldCount = getProfileFieldCount(runtime);
+    return {
+        relation: runtime.relation || "",
+        goal: runtime.goal || "",
+        memoryCount,
+        prevMemoryCount: Math.max(0, prevMemoryCount),
+        addedMemoryCount: Math.max(0, memoryCount - Math.max(0, prevMemoryCount)),
+        frequentPhrasesCount,
+        profileFieldCount,
+        hasAvatar: Boolean(avatarSource && avatarSource !== "default"),
     };
 }
 
@@ -150,6 +183,31 @@ export async function POST(request: NextRequest) {
             {},
             runtimeWithAvatar,
         );
+
+        const previousRuntime = existing?.runtime as PersonaRuntime | undefined;
+        const previousMemoryCount = countNonEmptyStrings(previousRuntime?.memories);
+        const analyticsProperties = buildPersonaAnalyticsProperties(
+            runtimeWithAvatar,
+            resolvedAvatar.avatarSource,
+            previousMemoryCount,
+        );
+        await logAnalyticsEventSafe({
+            userId: sessionUser.id,
+            eventName: isCreate ? "persona_created" : "persona_edited",
+            personaId: runtimeWithAvatar.personaId,
+            properties: analyticsProperties,
+        });
+        if (analyticsProperties.memoryCount > previousMemoryCount) {
+            await logAnalyticsEventSafe({
+                userId: sessionUser.id,
+                eventName: "memory_added",
+                personaId: runtimeWithAvatar.personaId,
+                properties: {
+                    addedCount: analyticsProperties.addedMemoryCount,
+                    totalMemoryCount: analyticsProperties.memoryCount,
+                },
+            });
+        }
 
         const nextMemoryPass = await getOrCreateMemoryPassStatus(sessionUser.id);
         return NextResponse.json({ ok: true, memoryBalance: nextMemoryPass.memoryBalance });
@@ -294,6 +352,31 @@ export async function PATCH(request: NextRequest) {
             {},
             runtimeWithAvatar,
         );
+
+        const previousRuntime = existing.runtime as PersonaRuntime | undefined;
+        const previousMemoryCount = countNonEmptyStrings(previousRuntime?.memories);
+        const analyticsProperties = buildPersonaAnalyticsProperties(
+            runtimeWithAvatar,
+            resolvedAvatar.avatarSource,
+            previousMemoryCount,
+        );
+        await logAnalyticsEventSafe({
+            userId: sessionUser.id,
+            eventName: "persona_edited",
+            personaId,
+            properties: analyticsProperties,
+        });
+        if (analyticsProperties.memoryCount > previousMemoryCount) {
+            await logAnalyticsEventSafe({
+                userId: sessionUser.id,
+                eventName: "memory_added",
+                personaId,
+                properties: {
+                    addedCount: analyticsProperties.addedMemoryCount,
+                    totalMemoryCount: analyticsProperties.memoryCount,
+                },
+            });
+        }
         return NextResponse.json({ ok: true });
     } catch (error) {
         console.error("[api-persona] failed to update persona", error);

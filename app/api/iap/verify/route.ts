@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { IapPlatform } from "@/lib/iap/catalog";
 import { applyVerifiedIapPurchase } from "@/lib/server/iap";
+import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 
 type VerifyPurchaseBody = {
   platform?: IapPlatform;
@@ -106,6 +107,19 @@ export async function POST(request: Request) {
         ...(body.rawPayload || {}),
       },
     });
+
+    if (!applied.idempotent) {
+      await logAnalyticsEventSafe({
+        userId: sessionUser.id,
+        eventName: applied.productKey === "memory_pass_monthly" ? "subscription_started" : "token_purchased",
+        properties: {
+          platform,
+          productKey: applied.productKey,
+          productId,
+          transactionId,
+        },
+      });
+    }
 
     return NextResponse.json({
       verified: {

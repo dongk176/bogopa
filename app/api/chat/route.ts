@@ -16,6 +16,7 @@ import {
   getConversationTensionGuide,
   normalizeConversationTension,
 } from "@/lib/persona/conversationTension";
+import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 
 export const runtime = "nodejs";
 
@@ -155,6 +156,16 @@ function isMarkerOnlyMessage(text: string) {
 function buildNaturalMarkerFallback(userText: string) {
   const negative = /(힘들|지쳤|괴롭|속상|우울|불안|눈물|울|막막|답답|짜증|화나)/.test(userText);
   return negative ? "아이고, 그랬구나." : "오, 그렇구나.";
+}
+
+function buildSafeReplyFallback(userText: string) {
+  const normalized = userText.trim();
+  if (!normalized) return "응, 들었어.";
+  const hasQuestion = /[?？]$/.test(normalized) || /(어때|맞아|왜|뭐해|뭔데|어떡해|어떻게)/.test(normalized);
+  const hasNegative = /(힘들|지쳤|괴롭|속상|우울|불안|눈물|울|막막|답답|짜증|화나|미치겠)/.test(normalized);
+  if (hasNegative) return "아이고, 고생했네. 지금은 너무 무리하지 말자.";
+  if (hasQuestion) return "응, 들었어. 조금만 더 얘기해줘.";
+  return "오, 그렇구나. 계속 들려줘.";
 }
 
 function normalizeEmotiveSymbols(text: string, userText: string) {
@@ -916,6 +927,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
+    let chatSessionId: string | null = null;
+    if (runtimeData.personaId) {
+      try {
+        const chatSession = await getOrCreateSession(sessionUser.id, runtimeData.personaId);
+        chatSessionId = chatSession?.id || null;
+      } catch (error) {
+        console.warn("[chat-api] failed to prepare chat session for analytics", error);
+      }
+    }
+
+    await logAnalyticsEventSafe({
+      userId: sessionUser.id,
+      eventName: "message_sent",
+      sessionId: chatSessionId,
+      personaId: runtimeData.personaId || null,
+      properties: {
+        messageLength: lastUserMessage.content.trim().length,
+        isFirstMessage: history.filter((item) => item.role === "user").length <= 1,
+      },
+    });
+
     const unlimitedChatStatus = await hasActiveUnlimitedChat(sessionUser.id);
     const consumed = unlimitedChatStatus.isActive
       ? {
@@ -930,6 +962,17 @@ export async function POST(request: NextRequest) {
           },
         });
     if (!consumed.ok) {
+      await logAnalyticsEventSafe({
+        userId: sessionUser.id,
+        eventName: "limit_reached",
+        sessionId: chatSessionId,
+        personaId: runtimeData.personaId || null,
+        properties: {
+          required: MEMORY_COSTS.chat,
+          balance: consumed.balance,
+          reason: "chat_memory_insufficient",
+        },
+      });
       return NextResponse.json(
         {
           error: "기억이 부족합니다.",
@@ -994,6 +1037,7 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = buildReplySystemPrompt(runtimeData);
     chatDebug.prompt.systemPrompt = systemPrompt;
+    const responseStartedAtMs = Date.now();
 
     const completion = await client.chat.completions.create({
       model: OPENAI_REPLY_MODEL,
@@ -1006,17 +1050,20 @@ export async function POST(request: NextRequest) {
     });
 
     let finalReply = buildReply(completion.choices?.[0]?.message?.content);
-    const violatesFirstPersonRule = hasFirstPersonSelfReference(finalReply);
-    const violatesThirdPersonChanceRule =
-      Boolean(selfReferenceLabel) && !useThirdPersonSelfThisTurn && hasThirdPersonSelfReference(finalReply, selfReferenceLabel);
+    let violatesFirstPersonRule = hasFirstPersonSelfReference(finalReply);
+    if (violatesFirstPersonRule && finalReply && selfReferenceLabel) {
+      const rewritten = buildReply(rewriteSelfReferenceToThirdPerson(finalReply, selfReferenceLabel));
+      if (rewritten && !hasFirstPersonSelfReference(rewritten)) {
+        finalReply = rewritten;
+        violatesFirstPersonRule = false;
+      }
+    }
     const violatesRelationIdentityRule = hasStrongRelationIdentityDrift(finalReply, runtimeData.relation || "");
 
-    if (!finalReply || violatesFirstPersonRule || violatesThirdPersonChanceRule || violatesRelationIdentityRule) {
+    if (!finalReply || violatesFirstPersonRule || violatesRelationIdentityRule) {
       finalReply = "";
       chatDebug.prompt.retryTriggered = true;
-      const selfRefRule = useThirdPersonSelfThisTurn
-        ? "추가 규칙: 1인칭 자기지칭('나/저/내/제')은 금지하고, 자기지칭이 필요하면 관계/이름 기반 3인칭만 사용하라."
-        : "추가 규칙: 1인칭 자기지칭('나/저/내/제')은 금지하며, 이번 턴에는 관계/이름 기반 자기 3인칭도 사용하지 마라.";
+      const selfRefRule = "추가 규칙: 1인칭 자기지칭('나/저/내/제')은 금지하고, 자기지칭이 필요하면 관계/이름 기반 표현으로 자연스럽게 바꿔라.";
       const relationIdentityRule = `추가 규칙: 현재 관계는 "${runtimeData.relation || "지정된 관계"}"다. 사용자가 다른 호칭으로 불러도 그 관계를 유지하고, 필요하면 짧고 부드럽게 바로잡아라.`;
       const retrySystemPrompt = `${systemPrompt}\n추가 규칙: 상대방의 메시지 길이에 맞춰 미러링하고, 억지로 분량을 늘리거나 질문하지 마라.\n${selfRefRule}\n${relationIdentityRule}`;
       chatDebug.prompt.retrySystemPrompt = retrySystemPrompt;
@@ -1030,28 +1077,59 @@ export async function POST(request: NextRequest) {
         ],
       });
       const retryReply = buildReply(retryCompletion.choices?.[0]?.message?.content);
-      const retryViolatesFirstPerson = hasFirstPersonSelfReference(retryReply);
-      const retryViolatesThirdPersonChance =
-        Boolean(selfReferenceLabel) && !useThirdPersonSelfThisTurn && hasThirdPersonSelfReference(retryReply, selfReferenceLabel);
-      const retryViolatesRelationIdentity = hasStrongRelationIdentityDrift(retryReply, runtimeData.relation || "");
-      if (retryReply && !retryViolatesFirstPerson && !retryViolatesThirdPersonChance && !retryViolatesRelationIdentity) {
-        finalReply = retryReply;
+      let retryFinalReply = retryReply;
+      let retryViolatesFirstPerson = hasFirstPersonSelfReference(retryFinalReply);
+      if (retryViolatesFirstPerson && retryFinalReply && selfReferenceLabel) {
+        const rewrittenRetry = buildReply(rewriteSelfReferenceToThirdPerson(retryFinalReply, selfReferenceLabel));
+        if (rewrittenRetry && !hasFirstPersonSelfReference(rewrittenRetry)) {
+          retryFinalReply = rewrittenRetry;
+          retryViolatesFirstPerson = false;
+        }
+      }
+      const retryViolatesRelationIdentity = hasStrongRelationIdentityDrift(retryFinalReply, runtimeData.relation || "");
+      if (retryFinalReply && !retryViolatesFirstPerson && !retryViolatesRelationIdentity) {
+        finalReply = retryFinalReply;
       }
     }
 
     if (!finalReply) {
-      return NextResponse.json({ error: "모델 응답이 비어 있습니다." }, { status: 502 });
+      console.error("[chat-api] empty reply after retries; fallback used", {
+        personaId: runtimeData.personaId,
+        relation: runtimeData.relation,
+      });
+      finalReply = buildSafeReplyFallback(lastUserMessage.content);
     }
+
+    const responseTimeMs = Math.max(0, Date.now() - responseStartedAtMs);
+    await logAnalyticsEventSafe({
+      userId: sessionUser.id,
+      eventName: "message_received",
+      sessionId: chatSessionId,
+      personaId: runtimeData.personaId || null,
+      properties: {
+        responseTimeMs,
+        retryTriggered: chatDebug.prompt.retryTriggered,
+        replyLength: finalReply.length,
+      },
+    });
 
     // [New] Save to DB if session exists
     if (sessionUser?.id && runtimeData.personaId) {
       chatDebug.savedMemory.attempted = true;
       try {
-        const chatSession = await getOrCreateSession(sessionUser.id, runtimeData.personaId);
+        let sessionIdForSave = chatSessionId;
+        if (!sessionIdForSave) {
+          const chatSession = await getOrCreateSession(sessionUser.id, runtimeData.personaId);
+          sessionIdForSave = chatSession?.id || null;
+        }
+        if (!sessionIdForSave) {
+          throw new Error("chat session missing");
+        }
+
         // Save user message (the last one in history)
-        const savedUserMessage = await saveMessageToDb(chatSession.id, "user", lastUserMessage.content);
+        const savedUserMessage = await saveMessageToDb(sessionIdForSave, "user", lastUserMessage.content);
         // Save assistant reply
-        const savedAssistantMessage = await saveMessageToDb(chatSession.id, "assistant", finalReply);
+        const savedAssistantMessage = await saveMessageToDb(sessionIdForSave, "assistant", finalReply);
 
         try {
           const pairText = buildPairText(lastUserMessage.content, finalReply);
@@ -1083,7 +1161,7 @@ export async function POST(request: NextRequest) {
             await insertChatMemoryVector({
               userId: sessionUser.id,
               personaId: runtimeData.personaId,
-              sessionId: chatSession.id,
+              sessionId: sessionIdForSave,
               userMessageId: savedUserMessage?.id || null,
               assistantMessageId: savedAssistantMessage?.id || null,
               pairText,

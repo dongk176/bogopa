@@ -176,7 +176,7 @@ export default function ProfilePage() {
             </section>
 
             <section className="lg:col-span-12">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => router.push("/profile/memory-history")}
@@ -195,6 +195,17 @@ export default function ProfilePage() {
                   style={{ borderColor: BRAND_BORDER_COLOR }}
                 >
                   <span className="text-sm font-extrabold text-[#3e5560]">계정 정보 및 설정</span>
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 text-[#3e5560]" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push("/profile/kpi")}
+                  className="flex items-center justify-between rounded-2xl border bg-white px-5 py-4 text-left transition-colors hover:bg-[#f4f4ef]"
+                  style={{ borderColor: BRAND_BORDER_COLOR }}
+                >
+                  <span className="text-sm font-extrabold text-[#3e5560]">KPI 테이블</span>
                   <svg viewBox="0 0 24 24" className="h-4 w-4 text-[#3e5560]" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6" />
                   </svg>
