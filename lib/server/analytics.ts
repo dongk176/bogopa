@@ -60,6 +60,14 @@ function normalizeNonEmpty(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeUuid(value: unknown) {
+  const normalized = normalizeNonEmpty(value);
+  if (!normalized) return null;
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidPattern.test(normalized) ? normalized.toLowerCase() : null;
+}
+
 function cleanProperties(value: unknown): unknown {
   if (value === null || value === undefined) return undefined;
   if (typeof value === "string") {
@@ -115,6 +123,7 @@ export async function logAnalyticsEvent(
 
   const properties = (cleanProperties(input.properties || {}) || {}) as Record<string, unknown>;
   const eventTimeIso = normalizeEventTime(input.eventTime);
+  const normalizedSessionId = normalizeUuid(input.sessionId);
 
   await queryRunner.query(
     `
@@ -126,12 +135,12 @@ export async function logAnalyticsEvent(
       properties,
       event_time
     )
-    VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5::jsonb, COALESCE($6::timestamptz, NOW()))
+    VALUES ($1, $2, $3::uuid, NULLIF($4, ''), $5::jsonb, COALESCE($6::timestamptz, NOW()))
     `,
     [
       userId,
       input.eventName,
-      normalizeNonEmpty(input.sessionId),
+      normalizedSessionId,
       normalizeNonEmpty(input.personaId),
       JSON.stringify(properties),
       eventTimeIso,
