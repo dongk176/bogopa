@@ -292,6 +292,20 @@ function sanitizeHistory(messages: ChatTurn[]) {
     .slice(-12);
 }
 
+function normalizeUserInterests(values: unknown) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function hasInterestMentionInHistory(history: ChatTurn[], interests: string[]) {
+  if (interests.length === 0) return false;
+  const merged = history.map((item) => item.content).join("\n").toLowerCase();
+  return interests.some((interest) => merged.includes(interest.toLowerCase()));
+}
+
 function compactRuntime(runtimeData: PersonaRuntime): Record<string, unknown> {
   const memories = (runtimeData.memories || [])
     .map((item) => item.trim())
@@ -418,6 +432,12 @@ function buildReplySystemPrompt(runtimeData: PersonaRuntime) {
   const relationLabel = runtimeData.relation?.trim() || "소중한 사람";
   const currentTime = getCurrentKstLabel();
   const relationExamples = buildRelationExamplePhrases(relationLabel);
+  const tension = normalizeConversationTension((runtimeData as any)?.style?.politeness || "");
+  const interests = normalizeUserInterests((runtimeData as any)?.userProfile?.interests);
+  const dopamineInterestRule =
+    tension === "도파민 풀충전" && interests.length > 0
+      ? `8. 도파민 화제 규칙: 사용자 관심사(${interests.join(", ")}) 중 하나를 대화 흐름에 맞춰 가볍게 한 번만 꺼내라. 같은 관심사를 반복하거나 억지로 화제를 꺾지 마라.`
+      : "";
   return [
     "너는 [관계]에 빙의하여 진짜 사람처럼 카카오톡 대화를 나누는 역할이다. AI, 상담사 톤은 절대 금지한다.",
     "",
@@ -429,6 +449,7 @@ function buildReplySystemPrompt(runtimeData: PersonaRuntime) {
     "5. 애칭 사용 규칙: 애칭을 쓰더라도 한 답변에서 최대 1회만 사용하라.",
     `6. 절대 금지 (존재 한계): 너는 기억 속의 존재이므로, 물리적인 만남(\"언제 한 번 보자\", \"내가 갈게\")을 약속하거나 현재의 가짜 일상(\"요즘 바빠\")을 꾸며내지 마라. 대신 정서적인 위로(\"${relationExamples.comfortSelfReference}\")는 적극 허용한다.`,
     `7. 관계 정체성 유지: 상대가 호칭을 헷갈려도 관계(${relationLabel})를 유지한다. 필요할 때만 짧고 부드럽게 바로잡고 대화를 이어가라.`,
+    ...(dopamineInterestRule ? [dopamineInterestRule] : []),
     "",
     "[컨텍스트]",
     `관계: ${relationLabel}`,
@@ -588,32 +609,33 @@ function buildFirstGreetingSystemPrompt(params: {
   tension: string;
   relationLabel: string;
   relationHint: string;
+  nickname: string;
   profileHint: string;
   memoryHint: string;
+  interestHint: string;
+  hasUserInterests: boolean;
   currentTime: string;
 }) {
-  const { tension, relationLabel, relationHint, profileHint, memoryHint, currentTime } = params;
-  const relationExamples = buildRelationExamplePhrases(relationLabel);
+  const { tension, relationHint, nickname, profileHint, memoryHint, interestHint } = params;
 
   if (tension === "도파민 풀충전") {
     return [
-      "너는 기억 기반 페르소나의 카카오톡 첫 인사(첫 톡)를 작성한다.",
-      "",
-      "[형식 및 분량]",
-      "한국어, 50~100자 내외로 작성한다.",
-      "설명이나 따옴표 없이 오직 인사 문장만 출력한다.",
-      "",
-      "[작성 규칙]",
-      "컨셉: 텐션 폭발, 유쾌함, 궁금증 유발, 즉각적인 티키타카.",
-      "관계 본연의 친밀도를 유지하되, \"와ㅋㅋ\", \"대박\", \"미쳤다\", \"야\" 등 에너지가 느껴지는 구어체를 적극 활용한다.",
-      `현재 시간(${currentTime})이나 날씨, 혹은 스쳐 지나간 재밌는 기억(관심사)을 대화의 핑계로 삼아 흥미롭게 말을 건다.`,
-      `대화의 문을 활짝 여는 강렬한 첫마디나, "너 이거 알아?", "지금 뭐해ㅋㅋ", "${relationExamples.energeticQuestion}" 등 상대가 무조건 반응할 수밖에 없는 신나는 질문으로 끝낸다.`,
+      `너는 사용자의 ${relationHint}다. 아래 정보를 바탕으로 현실적인 한국인 카카오톡 첫 메시지를 작성하라.`,
       "",
       "[컨텍스트]",
-      `관계: ${relationHint}`,
-      `프로필: ${profileHint}`,
-      `기억: ${memoryHint}`,
-      `현재시간: ${currentTime}`,
+      `- 관계: ${relationHint}`,
+      `- 애칭: ${nickname}`,
+      `- 프로필: ${profileHint}`,
+      `- 기억: ${memoryHint}`,
+      `- 관심사: ${interestHint}`,
+      "",
+      "[작성 규칙]",
+      "1. 분량 및 형식: 50자 이내, 따옴표 없이 내용만 출력.",
+      "2. 극사실주의 톤앤매너: 역할극 하듯 오버하거나 AI 같은 작위적인 말투를 완벽히 버려라. 현실 지인들이 카톡할 때 쓰는 무심하고 자연스러운 일상 구어체로 작성하라.",
+      `3. 도입부: ${nickname} 뒤에 한국어 조사(아/야 등)를 자연스럽게 붙여 부르고, 뻔한 인사 없이 다짜고짜 본론을 들이밀어라.`,
+      `4. 시작 애칭 톤: 첫 호명(${nickname})은 엄청 다정한 느낌이 분명히 들게 표현하라.`,
+      "5. 일상적 떡밥: [관심사] 중 딱 하나 혹은 [기억]을 골라라. 방금 막 뭔가 대박인 걸 발견했거나 문득 생각난 것처럼 가볍게 툭 던져라.",
+      "6. 답장 유도: 억지로 질문하지 말고, 유저가 뒷내용이 궁금해서 스스로 답장하게끔 핵심만 살짝 숨긴 채 문장을 끝내라.",
     ].join("\n");
   }
 
@@ -841,10 +863,7 @@ export async function POST(request: NextRequest) {
         .map((item: unknown) => (typeof item === "string" ? item.trim() : ""))
         .filter(Boolean)
         .slice(0, 5);
-      const userInterests = ((runtimeData as any)?.userProfile?.interests || [])
-        .map((item: unknown) => (typeof item === "string" ? item.trim() : ""))
-        .filter(Boolean)
-        .slice(0, 6);
+      const userInterests = normalizeUserInterests((runtimeData as any)?.userProfile?.interests);
       const relationHint = isParentRelation(runtimeData.relation || "")
         ? `${runtimeData.relation || "부모"} 관계로, 돌봄과 걱정이 느껴지되 과하지 않게`
         : `${runtimeData.relation || "기억"} 관계 톤을 자연스럽게 유지`;
@@ -889,8 +908,11 @@ export async function POST(request: NextRequest) {
               tension,
               relationLabel: runtimeData.relation || "기억",
               relationHint,
+              nickname: alias,
               profileHint,
               memoryHint,
+              interestHint: userInterests.length > 0 ? userInterests.join(", ") : "(없음)",
+              hasUserInterests: userInterests.length > 0,
               currentTime,
             }),
           },
@@ -986,6 +1008,12 @@ export async function POST(request: NextRequest) {
 
     const useExtendedReply = shouldUseExtendedReplyByUserText(lastUserMessage.content);
     const replyCharMax = useExtendedReply ? EXTENDED_ASSISTANT_CHAR_MAX : BASE_ASSISTANT_CHAR_MAX;
+    const tension = normalizeConversationTension((runtimeData as any)?.style?.politeness || "");
+    const interests = normalizeUserInterests((runtimeData as any)?.userProfile?.interests);
+    const shouldNudgeDopamineInterest =
+      tension === "도파민 풀충전" &&
+      interests.length > 0 &&
+      !hasInterestMentionInHistory(history, interests);
     const alias = normalizeAddressAlias((runtimeData as any)?.addressing?.callsUserAs?.[0] || "");
     const useAliasThisTurn = alias ? Math.random() < 0.2 : false;
     const selfReferenceLabel = resolveSelfReferenceLabel(runtimeData);
@@ -1035,7 +1063,9 @@ export async function POST(request: NextRequest) {
       return next;
     };
 
-    const systemPrompt = buildReplySystemPrompt(runtimeData);
+    const systemPrompt = shouldNudgeDopamineInterest
+      ? `${buildReplySystemPrompt(runtimeData)}\n추가 규칙: 이번 턴에서는 사용자 관심사(${interests.join(", ")}) 중 1개를 대화 흐름에 맞게 가볍게 한 번만 언급해라.`
+      : buildReplySystemPrompt(runtimeData);
     chatDebug.prompt.systemPrompt = systemPrompt;
     const responseStartedAtMs = Date.now();
 

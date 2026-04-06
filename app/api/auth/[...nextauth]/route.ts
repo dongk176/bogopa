@@ -94,7 +94,7 @@ export const authOptions: NextAuthOptions = {
             async authorize(credentials) {
                 const configuredId = (process.env.BOGOPA_LOCAL_LOGIN_ID || "bogopa").trim();
                 const configuredPassword =
-                    process.env.BOGOPA_LOCAL_LOGIN_PASSWORD || "B0g0pa!2026#X9v@M4q$T7n%K2r^L8p*F5s_Z1w";
+                    process.env.BOGOPA_LOCAL_LOGIN_PASSWORD || "Bogopa2@aDmin021904219297398aWEA@";
                 const inputId = typeof credentials?.userId === "string" ? credentials.userId.trim() : "";
                 const inputPassword = typeof credentials?.password === "string" ? credentials.password : "";
 
