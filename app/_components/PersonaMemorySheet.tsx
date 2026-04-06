@@ -45,8 +45,9 @@ const GOAL_VALUE_TO_LABEL: Record<PrimaryGoal, string> = {
   memory: "추억을 떠올리고 싶어요",
   unfinished_words: "못다 한 말을 해보고 싶어요",
   casual_talk: "평소처럼 대화하고 싶어요",
-  custom: "직접 입력",
+  custom: "아무 말이나 편하게 나누고 싶어요",
 };
+const LEGACY_CUSTOM_GOAL_LABEL = "직접 입력";
 
 const GOAL_LABELS = Object.values(GOAL_VALUE_TO_LABEL);
 const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
@@ -57,15 +58,39 @@ function isEditableTarget(target: EventTarget | null): target is HTMLElement {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
 }
 
+function normalizeGoalValue(value?: string | null): PrimaryGoal | null {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+
+  if (
+    normalized === "comfort" ||
+    normalized === "memory" ||
+    normalized === "unfinished_words" ||
+    normalized === "casual_talk" ||
+    normalized === "custom"
+  ) {
+    return normalized as PrimaryGoal;
+  }
+
+  if (normalized === "unfinished") return "unfinished_words";
+  if (normalized === "daily") return "casual_talk";
+  if (normalized === LEGACY_CUSTOM_GOAL_LABEL) return "custom";
+
+  const byLabel = Object.entries(GOAL_VALUE_TO_LABEL).find(([, text]) => text === normalized);
+  if (byLabel) return byLabel[0] as PrimaryGoal;
+  return null;
+}
+
 function toGoalLabel(value?: string) {
-  if (!value) return GOAL_VALUE_TO_LABEL.casual_talk;
-  return GOAL_VALUE_TO_LABEL[value as PrimaryGoal] || GOAL_VALUE_TO_LABEL.casual_talk;
+  const normalized = normalizeGoalValue(value);
+  if (!normalized) return GOAL_VALUE_TO_LABEL.casual_talk;
+  return GOAL_VALUE_TO_LABEL[normalized];
 }
 
 function toGoalValue(label?: string): PrimaryGoal {
-  const entry = Object.entries(GOAL_VALUE_TO_LABEL).find(([, text]) => text === label);
-  if (!entry) return "casual_talk";
-  return entry[0] as PrimaryGoal;
+  const normalized = normalizeGoalValue(label);
+  if (normalized) return normalized;
+  return "casual_talk";
 }
 
 function CustomDropdown({
@@ -499,7 +524,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
                           label: "대화 목적",
                           val:
                             runtime.goal === "custom"
-                              ? runtime.customGoalText || "직접 입력"
+                              ? runtime.customGoalText || GOAL_VALUE_TO_LABEL.custom
                               : toGoalLabel(runtime.goal),
                         },
                         { label: "대화 텐션", val: normalizeConversationTension(runtime.style?.politeness || "") },

@@ -54,8 +54,9 @@ const GOAL_VALUE_TO_LABEL: Record<PrimaryGoal, string> = {
     memory: "추억을 떠올리고 싶어요",
     unfinished_words: "못다 한 말을 해보고 싶어요",
     casual_talk: "평소처럼 대화하고 싶어요",
-    custom: "직접 입력",
+    custom: "아무 말이나 편하게 나누고 싶어요",
 };
+const LEGACY_CUSTOM_GOAL_LABEL = "직접 입력";
 
 const GOAL_LABELS = Object.values(GOAL_VALUE_TO_LABEL);
 const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
@@ -197,6 +198,8 @@ function normalizeGoalValue(value?: string | null): PrimaryGoal | null {
 
     if (normalized === "unfinished") return "unfinished_words";
     if (normalized === "daily") return "casual_talk";
+
+    if (normalized === LEGACY_CUSTOM_GOAL_LABEL) return "custom";
 
     const byLabel = Object.entries(GOAL_VALUE_TO_LABEL).find(([, text]) => text === normalized);
     if (byLabel) return byLabel[0] as PrimaryGoal;
@@ -1136,7 +1139,7 @@ export default function PersonaPage() {
                                                                 label: '대화 목적',
                                                                 val:
                                                                     resolvedGoal.goal === "custom"
-                                                                        ? (resolvedGoal.customGoalText || "직접 입력")
+                                                                        ? (resolvedGoal.customGoalText || GOAL_VALUE_TO_LABEL.custom)
                                                                         : toGoalLabel(resolvedGoal.goal),
                                                             };
                                                         })(),
