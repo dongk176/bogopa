@@ -18,7 +18,6 @@ export type Step3Input = {
   personaGender: Gender;
   avatarUrl: string | null;
   userNickname: string;
-  personaOccupation: string;
 };
 
 export type Step4Input = {
@@ -57,7 +56,6 @@ export type PersonaAnalysis = {
     gender: Gender;
     avatarUrl: string | null;
     userNickname: string;
-    occupation: string;
   };
 
   personaWorkStyle: {
@@ -174,7 +172,6 @@ export type PersonaRuntime = {
   };
 
   personaMeta: {
-    occupation: string;
     workAttitudeSummary: string;
     workTendencyTags: string[];
     selfTalkStyle: string;

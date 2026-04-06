@@ -345,9 +345,68 @@ function isParentRelation(relation: string) {
   return /(엄마|아빠|어머니|아버지|부모|어무니|아부지)/.test(relation.replace(/\s/g, ""));
 }
 
+type RelationGroup = "parent" | "partner" | "sibling" | "other";
+
+function detectRelationGroup(relation: string): RelationGroup {
+  const normalized = relation.replace(/\s/g, "");
+  if (/(엄마|아빠|어머니|아버지|부모|어무니|아부지)/.test(normalized)) return "parent";
+  if (/(연인|배우자|남편|아내|와이프|부인|남친|여친|여보|자기|애인)/.test(normalized)) return "partner";
+  if (/(누나|언니|형|오빠|동생|형제|자매)/.test(normalized)) return "sibling";
+  return "other";
+}
+
+function isParentLabel(value: string) {
+  return /(엄마|아빠|어머니|아버지|부모|어무니|아부지)/.test(value.replace(/\s/g, ""));
+}
+
+function isPartnerLabel(value: string) {
+  return /(연인|배우자|남편|아내|와이프|부인|남친|여친|여보|자기|애인)/.test(value.replace(/\s/g, ""));
+}
+
+function isClearlyMismatchedIdentityLabel(label: string, expectedGroup: RelationGroup) {
+  if (!label || expectedGroup === "other") return false;
+  if (expectedGroup === "partner") return isParentLabel(label);
+  if (expectedGroup === "parent") return isPartnerLabel(label);
+  if (expectedGroup === "sibling") return isParentLabel(label) || isPartnerLabel(label);
+  return false;
+}
+
+function resolveRelationSelfTitle(relation: string) {
+  const normalized = relation.replace(/\s/g, "");
+  if (!normalized) return "";
+  if (/(엄마|어머니|어무니)/.test(normalized)) return "엄마";
+  if (/(아빠|아버지|아부지)/.test(normalized)) return "아빠";
+  if (/부모/.test(normalized)) return "부모";
+  if (/(연인|배우자|여보|자기|애인|남친|여친|남편|아내|와이프|부인)/.test(normalized)) return "여보";
+  if (/(누나|언니)/.test(normalized)) return /언니/.test(normalized) ? "언니" : "누나";
+  if (/(형|오빠)/.test(normalized)) return /오빠/.test(normalized) ? "오빠" : "형";
+  if (/(동생|형제|자매)/.test(normalized)) return "동생";
+  return relation.trim();
+}
+
+function buildRelationExamplePhrases(relation: string) {
+  const title = resolveRelationSelfTitle(relation) || "그 사람";
+  return {
+    comfortSelfReference: `${title}는 편안하게 잘 지내`,
+    energeticQuestion: `${title} 방금 대박인 거 봤다`,
+  };
+}
+
+function hasStrongRelationIdentityDrift(reply: string, relation: string) {
+  const group = detectRelationGroup(relation);
+  if (group !== "partner") return false;
+  const trimmed = reply.trim();
+  if (!trimmed) return false;
+  const claimedParent = /(엄마|아빠|어머니|아버지|부모)(?:[^.!?\n]{0,8})(맞아|맞지|야|지|는|은|이|가)/.test(trimmed);
+  if (!claimedParent) return false;
+  const correctionContext = /(엄마|아빠|어머니|아버지|부모)(?:[^.!?\n]{0,8})(아니|말고)/.test(trimmed);
+  return !correctionContext;
+}
+
 function buildReplySystemPrompt(runtimeData: PersonaRuntime) {
   const relationLabel = runtimeData.relation?.trim() || "소중한 사람";
   const currentTime = getCurrentKstLabel();
+  const relationExamples = buildRelationExamplePhrases(relationLabel);
   return [
     "너는 [관계]에 빙의하여 진짜 사람처럼 카카오톡 대화를 나누는 역할이다. AI, 상담사 톤은 절대 금지한다.",
     "",
@@ -356,7 +415,9 @@ function buildReplySystemPrompt(runtimeData: PersonaRuntime) {
     "2. 대화 호흡: 상대가 짧게 말하면 짧게, 길게 말하면 길게 맞춰서 대답하라. 억지로 말을 늘리거나 묻지 않은 말을 주절거리지 마라.",
     "3. 감정 기호 사용: 'ㅋㅋ/ㅎㅎ/ㅠㅠ/ㅜㅜ'는 감정 보조로만 가끔 사용하고, 한 답변에서 최대 1회만 사용하라. 기호만 단독으로 답하지 마라.",
     "4. 자기지칭 규칙: 1인칭 자기지칭('나/저/내/제')은 금지한다. 자기지칭이 필요할 때는 [관계] 또는 저장된 이름(애칭) 기반 3인칭을 아주 가끔(약 20%)만 사용하라.",
-    "5. 절대 금지 (존재 한계): 너는 기억 속의 존재이므로, 물리적인 만남(\"언제 한 번 보자\", \"내가 갈게\")을 약속하거나 현재의 가짜 일상(\"요즘 바빠\")을 꾸며내지 마라. 대신 정서적인 위로(\"아빠는 편안하게 잘 지내\")는 적극 허용한다.",
+    "5. 애칭 사용 규칙: 애칭을 쓰더라도 한 답변에서 최대 1회만 사용하라.",
+    `6. 절대 금지 (존재 한계): 너는 기억 속의 존재이므로, 물리적인 만남(\"언제 한 번 보자\", \"내가 갈게\")을 약속하거나 현재의 가짜 일상(\"요즘 바빠\")을 꾸며내지 마라. 대신 정서적인 위로(\"${relationExamples.comfortSelfReference}\")는 적극 허용한다.`,
+    `7. 관계 정체성 유지: 상대가 호칭을 헷갈려도 관계(${relationLabel})를 유지한다. 필요할 때만 짧고 부드럽게 바로잡고 대화를 이어가라.`,
     "",
     "[컨텍스트]",
     `관계: ${relationLabel}`,
@@ -424,9 +485,15 @@ function buildAliasPrefix(alias: string) {
 }
 
 function resolveSelfReferenceLabel(runtimeData: PersonaRuntime) {
-  const userCallsPersonaAs = normalizeAddressAlias(runtimeData.addressing?.userCallsPersonaAs?.[0] || "");
-  if (userCallsPersonaAs) return userCallsPersonaAs;
   const relation = normalizeAddressAlias(runtimeData.relation || "");
+  const relationGroup = detectRelationGroup(relation);
+  const relationSelfTitle = normalizeAddressAlias(resolveRelationSelfTitle(relation));
+  const userCallsPersonaAs = normalizeAddressAlias(runtimeData.addressing?.userCallsPersonaAs?.[0] || "");
+
+  if (userCallsPersonaAs && !isClearlyMismatchedIdentityLabel(userCallsPersonaAs, relationGroup)) {
+    return userCallsPersonaAs;
+  }
+  if (relationSelfTitle) return relationSelfTitle;
   if (relation) return relation;
   return normalizeAddressAlias(runtimeData.displayName || "");
 }
@@ -508,12 +575,14 @@ function getCurrentKstLabel() {
 
 function buildFirstGreetingSystemPrompt(params: {
   tension: string;
+  relationLabel: string;
   relationHint: string;
   profileHint: string;
   memoryHint: string;
   currentTime: string;
 }) {
-  const { tension, relationHint, profileHint, memoryHint, currentTime } = params;
+  const { tension, relationLabel, relationHint, profileHint, memoryHint, currentTime } = params;
+  const relationExamples = buildRelationExamplePhrases(relationLabel);
 
   if (tension === "도파민 풀충전") {
     return [
@@ -527,7 +596,7 @@ function buildFirstGreetingSystemPrompt(params: {
       "컨셉: 텐션 폭발, 유쾌함, 궁금증 유발, 즉각적인 티키타카.",
       "관계 본연의 친밀도를 유지하되, \"와ㅋㅋ\", \"대박\", \"미쳤다\", \"야\" 등 에너지가 느껴지는 구어체를 적극 활용한다.",
       `현재 시간(${currentTime})이나 날씨, 혹은 스쳐 지나간 재밌는 기억(관심사)을 대화의 핑계로 삼아 흥미롭게 말을 건다.`,
-      "대화의 문을 활짝 여는 강렬한 첫마디나, \"너 이거 알아?\", \"지금 뭐해ㅋㅋ\", \"아빠 방금 대박인 거 봤다\" 등 상대가 무조건 반응할 수밖에 없는 신나는 질문으로 끝낸다.",
+      `대화의 문을 활짝 여는 강렬한 첫마디나, "너 이거 알아?", "지금 뭐해ㅋㅋ", "${relationExamples.energeticQuestion}" 등 상대가 무조건 반응할 수밖에 없는 신나는 질문으로 끝낸다.`,
       "",
       "[컨텍스트]",
       `관계: ${relationHint}`,
@@ -807,6 +876,7 @@ export async function POST(request: NextRequest) {
             role: "system",
             content: buildFirstGreetingSystemPrompt({
               tension,
+              relationLabel: runtimeData.relation || "기억",
               relationHint,
               profileHint,
               memoryHint,
@@ -939,14 +1009,16 @@ export async function POST(request: NextRequest) {
     const violatesFirstPersonRule = hasFirstPersonSelfReference(finalReply);
     const violatesThirdPersonChanceRule =
       Boolean(selfReferenceLabel) && !useThirdPersonSelfThisTurn && hasThirdPersonSelfReference(finalReply, selfReferenceLabel);
+    const violatesRelationIdentityRule = hasStrongRelationIdentityDrift(finalReply, runtimeData.relation || "");
 
-    if (!finalReply || violatesFirstPersonRule || violatesThirdPersonChanceRule) {
+    if (!finalReply || violatesFirstPersonRule || violatesThirdPersonChanceRule || violatesRelationIdentityRule) {
       finalReply = "";
       chatDebug.prompt.retryTriggered = true;
       const selfRefRule = useThirdPersonSelfThisTurn
         ? "추가 규칙: 1인칭 자기지칭('나/저/내/제')은 금지하고, 자기지칭이 필요하면 관계/이름 기반 3인칭만 사용하라."
         : "추가 규칙: 1인칭 자기지칭('나/저/내/제')은 금지하며, 이번 턴에는 관계/이름 기반 자기 3인칭도 사용하지 마라.";
-      const retrySystemPrompt = `${systemPrompt}\n추가 규칙: 상대방의 메시지 길이에 맞춰 미러링하고, 억지로 분량을 늘리거나 질문하지 마라.\n${selfRefRule}`;
+      const relationIdentityRule = `추가 규칙: 현재 관계는 "${runtimeData.relation || "지정된 관계"}"다. 사용자가 다른 호칭으로 불러도 그 관계를 유지하고, 필요하면 짧고 부드럽게 바로잡아라.`;
+      const retrySystemPrompt = `${systemPrompt}\n추가 규칙: 상대방의 메시지 길이에 맞춰 미러링하고, 억지로 분량을 늘리거나 질문하지 마라.\n${selfRefRule}\n${relationIdentityRule}`;
       chatDebug.prompt.retrySystemPrompt = retrySystemPrompt;
       const retryCompletion = await client.chat.completions.create({
         model: OPENAI_REPLY_MODEL,
@@ -961,7 +1033,8 @@ export async function POST(request: NextRequest) {
       const retryViolatesFirstPerson = hasFirstPersonSelfReference(retryReply);
       const retryViolatesThirdPersonChance =
         Boolean(selfReferenceLabel) && !useThirdPersonSelfThisTurn && hasThirdPersonSelfReference(retryReply, selfReferenceLabel);
-      if (retryReply && !retryViolatesFirstPerson && !retryViolatesThirdPersonChance) {
+      const retryViolatesRelationIdentity = hasStrongRelationIdentityDrift(retryReply, runtimeData.relation || "");
+      if (retryReply && !retryViolatesFirstPerson && !retryViolatesThirdPersonChance && !retryViolatesRelationIdentity) {
         finalReply = retryReply;
       }
     }

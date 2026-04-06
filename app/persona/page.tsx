@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, type ChangeEvent, type FocusEvent, type TouchEvent } from "react";
+import { useEffect, useMemo, useState, useRef, type ChangeEvent, type FocusEvent, type TouchEvent } from "react";
 import { useRouter } from "next/navigation";
 import Navigation from "@/app/_components/Navigation";
 import { useSession } from "next-auth/react";
@@ -21,6 +21,25 @@ type Persona = {
     last_message_content: string | null;
     analysis?: PersonaAnalysis;
     runtime?: PersonaRuntime;
+};
+
+type EditSnapshot = {
+    name: string;
+    relation: string;
+    callsUserAs: string;
+    frequentPhrases: string[];
+    tone: string[];
+    politeness: string;
+    sentenceLength: string;
+    replyTempo: string;
+    empathyStyle: string;
+    goal: string;
+    customGoalText: string;
+    laughterPatterns: string[];
+    sadnessPatterns: string[];
+    memories: string[];
+    avoidTopics: string[];
+    avatarUrl: string;
 };
 
 const DROPDOWN_OPTIONS = {
@@ -48,6 +67,107 @@ function resolveAvatarPreviewUrl(avatarUrl: string | null | undefined) {
     return avatarUrl.includes("amazonaws.com") ? `/api/image-proxy?url=${encodeURIComponent(avatarUrl)}` : avatarUrl;
 }
 
+function normalizeSnapshotText(value: unknown) {
+    return String(value ?? "").trim();
+}
+
+function normalizeSnapshotList(values: unknown) {
+    if (!Array.isArray(values)) return [] as string[];
+    return values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean);
+}
+
+function splitToneToList(value: unknown) {
+    if (Array.isArray(value)) return normalizeSnapshotList(value);
+    return String(value ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+function arraysEqual(a: string[], b: string[]) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
+function isEditSnapshotEqual(a: EditSnapshot | null, b: EditSnapshot | null) {
+    if (!a || !b) return false;
+    return (
+        a.name === b.name &&
+        a.relation === b.relation &&
+        a.callsUserAs === b.callsUserAs &&
+        arraysEqual(a.frequentPhrases, b.frequentPhrases) &&
+        arraysEqual(a.tone, b.tone) &&
+        a.politeness === b.politeness &&
+        a.sentenceLength === b.sentenceLength &&
+        a.replyTempo === b.replyTempo &&
+        a.empathyStyle === b.empathyStyle &&
+        a.goal === b.goal &&
+        a.customGoalText === b.customGoalText &&
+        arraysEqual(a.laughterPatterns, b.laughterPatterns) &&
+        arraysEqual(a.sadnessPatterns, b.sadnessPatterns) &&
+        arraysEqual(a.memories, b.memories) &&
+        arraysEqual(a.avoidTopics, b.avoidTopics) &&
+        a.avatarUrl === b.avatarUrl
+    );
+}
+
+function buildSnapshotFromPersona(persona: Persona): EditSnapshot {
+    const rt = persona.runtime;
+    const al = persona.analysis;
+    const resolvedGoal = resolveGoalSelection({
+        runtimeGoal: rt?.goal,
+        analysisGoal: al?.conversationIntent?.primaryGoal,
+        runtimeCustomGoalText: rt?.customGoalText,
+        analysisCustomGoalText: al?.conversationIntent?.customGoalText,
+    });
+    const resolvedGoalLabel = toGoalLabel(resolvedGoal.goal);
+    return {
+        name: normalizeSnapshotText(persona.name),
+        relation: normalizeSnapshotText(rt?.relation || al?.personaInput?.relation || ""),
+        callsUserAs: normalizeSnapshotText(rt?.addressing?.callsUserAs?.[0] || al?.addressing?.callsUserAs?.[0] || "나"),
+        frequentPhrases: normalizeSnapshotList(rt?.expressions?.frequentPhrases || al?.textHabits?.frequentPhrases || []),
+        tone: normalizeSnapshotList(rt?.style?.tone || al?.speechStyle?.baseTone || []),
+        politeness: normalizeConversationTension(rt?.style?.politeness || al?.speechStyle?.politeness || ""),
+        sentenceLength: normalizeSnapshotText(rt?.style?.sentenceLength || al?.speechStyle?.sentenceLength || "적당한 길이"),
+        replyTempo: normalizeSnapshotText(rt?.style?.replyTempo || al?.speechStyle?.responseTempo || "적당한 템포"),
+        empathyStyle: rt?.behavior?.empathyFirst === false ? "차분한 이성적 위로" : "감성 공감 우선",
+        goal: resolvedGoalLabel,
+        customGoalText: resolvedGoalLabel === GOAL_VALUE_TO_LABEL.custom ? resolvedGoal.customGoalText : "",
+        laughterPatterns: normalizeSnapshotList(rt?.expressions?.laughterPatterns || al?.expressionStyle?.laughterPatterns || []),
+        sadnessPatterns: normalizeSnapshotList(rt?.expressions?.sadnessPatterns || al?.expressionStyle?.sadnessPatterns || []),
+        memories: normalizeSnapshotList(rt?.memories || al?.memoryAnchors?.map((m) => m.summary) || []),
+        avoidTopics: normalizeSnapshotList(rt?.topics?.avoid || al?.topics?.avoidTopics || []),
+        avatarUrl: normalizeSnapshotText(persona.avatar_url),
+    };
+}
+
+function buildSnapshotFromEditForm(editForm: any, avatarUrl: string | null): EditSnapshot {
+    const goalLabel = normalizeSnapshotText(editForm?.goal) || GOAL_VALUE_TO_LABEL.casual_talk;
+    return {
+        name: normalizeSnapshotText(editForm?.name),
+        relation: normalizeSnapshotText(editForm?.relation),
+        callsUserAs: normalizeSnapshotText(editForm?.callsUserAs),
+        frequentPhrases: normalizeSnapshotList(editForm?.frequentPhrases),
+        tone: splitToneToList(editForm?.tone),
+        politeness: normalizeConversationTension(normalizeSnapshotText(editForm?.politeness)),
+        sentenceLength: normalizeSnapshotText(editForm?.sentenceLength),
+        replyTempo: normalizeSnapshotText(editForm?.replyTempo),
+        empathyStyle: normalizeSnapshotText(editForm?.empathyStyle),
+        goal: goalLabel,
+        customGoalText: goalLabel === GOAL_VALUE_TO_LABEL.custom ? normalizeSnapshotText(editForm?.customGoalText) : "",
+        laughterPatterns: normalizeSnapshotList(editForm?.laughterPatterns),
+        sadnessPatterns: normalizeSnapshotList(editForm?.sadnessPatterns),
+        memories: normalizeSnapshotList(editForm?.memories),
+        avoidTopics: normalizeSnapshotList(editForm?.avoidTopics),
+        avatarUrl: normalizeSnapshotText(avatarUrl),
+    };
+}
+
 function isEditableTarget(target: EventTarget | null): target is HTMLElement {
     if (!(target instanceof HTMLElement)) return false;
     return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
@@ -61,12 +181,79 @@ function readNativeKeyboardInset() {
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
+function normalizeGoalValue(value?: string | null): PrimaryGoal | null {
+    const normalized = String(value ?? "").trim();
+    if (!normalized) return null;
+
+    if (
+        normalized === "comfort" ||
+        normalized === "memory" ||
+        normalized === "unfinished_words" ||
+        normalized === "casual_talk" ||
+        normalized === "custom"
+    ) {
+        return normalized as PrimaryGoal;
+    }
+
+    if (normalized === "unfinished") return "unfinished_words";
+    if (normalized === "daily") return "casual_talk";
+
+    const byLabel = Object.entries(GOAL_VALUE_TO_LABEL).find(([, text]) => text === normalized);
+    if (byLabel) return byLabel[0] as PrimaryGoal;
+
+    return null;
+}
+
+function resolveGoalSelection(params: {
+    runtimeGoal?: string | null;
+    analysisGoal?: string | null;
+    runtimeCustomGoalText?: string | null;
+    analysisCustomGoalText?: string | null;
+}) {
+    const runtimeGoal = normalizeGoalValue(params.runtimeGoal);
+    const analysisGoal = normalizeGoalValue(params.analysisGoal);
+    const runtimeCustomGoalText = (params.runtimeCustomGoalText || "").trim();
+    const analysisCustomGoalText = (params.analysisCustomGoalText || "").trim();
+
+    if (runtimeGoal === "custom") {
+        if (runtimeCustomGoalText) {
+            return { goal: "custom" as PrimaryGoal, customGoalText: runtimeCustomGoalText };
+        }
+        if (analysisGoal && analysisGoal !== "custom") {
+            return { goal: analysisGoal, customGoalText: "" };
+        }
+        return {
+            goal: "custom" as PrimaryGoal,
+            customGoalText: analysisCustomGoalText,
+        };
+    }
+
+    if (runtimeGoal) {
+        return {
+            goal: runtimeGoal,
+            customGoalText: "",
+        };
+    }
+
+    if (analysisGoal) {
+        return {
+            goal: analysisGoal,
+            customGoalText: analysisGoal === "custom" ? (analysisCustomGoalText || runtimeCustomGoalText) : "",
+        };
+    }
+
+    return { goal: "casual_talk" as PrimaryGoal, customGoalText: "" };
+}
+
 function toGoalLabel(value?: string) {
-    if (!value) return GOAL_VALUE_TO_LABEL.casual_talk;
-    return GOAL_VALUE_TO_LABEL[value as PrimaryGoal] || GOAL_VALUE_TO_LABEL.casual_talk;
+    const normalized = normalizeGoalValue(value);
+    if (!normalized) return GOAL_VALUE_TO_LABEL.casual_talk;
+    return GOAL_VALUE_TO_LABEL[normalized];
 }
 
 function toGoalValue(label?: string): PrimaryGoal {
+    const normalized = normalizeGoalValue(label);
+    if (normalized) return normalized;
     const entry = Object.entries(GOAL_VALUE_TO_LABEL).find(([, text]) => text === label);
     if (!entry) return "casual_talk";
     return entry[0] as PrimaryGoal;
@@ -129,6 +316,7 @@ export default function PersonaPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [isEditInputFocused, setIsEditInputFocused] = useState(false);
     const [editForm, setEditForm] = useState<any>(null);
+    const [initialEditSnapshot, setInitialEditSnapshot] = useState<EditSnapshot | null>(null);
     const [editAvatarUrl, setEditAvatarUrl] = useState<string | null>(null);
     const [isAvatarUploading, setIsAvatarUploading] = useState(false);
     const [avatarUploadError, setAvatarUploadError] = useState("");
@@ -379,11 +567,18 @@ export default function PersonaPage() {
         setIsEditing(false);
         setIsEditInputFocused(false);
         setEditAvatarUrl(persona.avatar_url || null);
+        setInitialEditSnapshot(buildSnapshotFromPersona(persona));
         setAvatarUploadError("");
         setIsAvatarUploading(false);
         const rt = persona.runtime;
         const al = persona.analysis;
         const relation = rt?.relation || al?.personaInput?.relation || "";
+        const resolvedGoal = resolveGoalSelection({
+            runtimeGoal: rt?.goal,
+            analysisGoal: al?.conversationIntent?.primaryGoal,
+            runtimeCustomGoalText: rt?.customGoalText,
+            analysisCustomGoalText: al?.conversationIntent?.customGoalText,
+        });
 
         setEditForm({
             name: persona.name,
@@ -396,8 +591,8 @@ export default function PersonaPage() {
             sentenceLength: rt?.style?.sentenceLength || al?.speechStyle?.sentenceLength || "적당한 길이",
             replyTempo: rt?.style?.replyTempo || al?.speechStyle?.responseTempo || "적당한 템포",
             empathyStyle: rt?.behavior?.empathyFirst === false ? "차분한 이성적 위로" : "감성 공감 우선",
-            goal: toGoalLabel(rt?.goal || al?.conversationIntent?.primaryGoal),
-            customGoalText: (rt?.customGoalText || al?.conversationIntent?.customGoalText || "").trim(),
+            goal: toGoalLabel(resolvedGoal.goal),
+            customGoalText: resolvedGoal.customGoalText,
 
             laughterPatterns: rt?.expressions?.laughterPatterns || al?.expressionStyle?.laughterPatterns || [],
             sadnessPatterns: rt?.expressions?.sadnessPatterns || al?.expressionStyle?.sadnessPatterns || [],
@@ -405,6 +600,12 @@ export default function PersonaPage() {
             avoidTopics: rt?.topics?.avoid || al?.topics?.avoidTopics || [],
         });
     };
+
+    const hasPendingChanges = useMemo(() => {
+        if (!isEditing || !editForm || !initialEditSnapshot) return false;
+        const current = buildSnapshotFromEditForm(editForm, editAvatarUrl);
+        return !isEditSnapshotEqual(initialEditSnapshot, current);
+    }, [isEditing, editForm, editAvatarUrl, initialEditSnapshot]);
 
     const handleAvatarFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -445,6 +646,7 @@ export default function PersonaPage() {
 
     const handleSave = async () => {
         if (!selectedPersona || !editForm) return;
+        if (!hasPendingChanges) return;
         setIsSaving(true);
         try {
             const updatedRuntime: PersonaRuntime = {
@@ -499,12 +701,14 @@ export default function PersonaPage() {
                 return;
             }
             if (data.ok) {
+                const nextSnapshot = buildSnapshotFromEditForm(editForm, editAvatarUrl);
                 setPersonas(prev => prev.map(p =>
                     p.persona_id === selectedPersona.persona_id
                         ? { ...p, name: editForm.name, avatar_url: editAvatarUrl || null, runtime: updatedRuntime as any }
                         : p
                 ));
                 setSelectedPersona(prev => prev ? ({ ...prev, name: editForm.name, avatar_url: editAvatarUrl || null, runtime: updatedRuntime as any }) : null);
+                setInitialEditSnapshot(nextSnapshot);
                 setIsEditing(false);
             }
         } catch (err) {
@@ -518,6 +722,7 @@ export default function PersonaPage() {
         setSelectedPersona(null);
         setIsEditing(false);
         setIsEditInputFocused(false);
+        setInitialEditSnapshot(null);
         setEditAvatarUrl(null);
         setAvatarUploadError("");
         setIsAvatarUploading(false);
@@ -920,13 +1125,21 @@ export default function PersonaPage() {
                                             ) : (
                                                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                                                     {[
-                                                        {
-                                                            label: '대화 목적',
-                                                            val:
-                                                                selectedPersona.runtime?.goal === "custom"
-                                                                    ? (selectedPersona.runtime?.customGoalText || "직접 입력")
-                                                                    : toGoalLabel(selectedPersona.runtime?.goal),
-                                                        },
+                                                        (() => {
+                                                            const resolvedGoal = resolveGoalSelection({
+                                                                runtimeGoal: selectedPersona.runtime?.goal,
+                                                                analysisGoal: selectedPersona.analysis?.conversationIntent?.primaryGoal,
+                                                                runtimeCustomGoalText: selectedPersona.runtime?.customGoalText,
+                                                                analysisCustomGoalText: selectedPersona.analysis?.conversationIntent?.customGoalText,
+                                                            });
+                                                            return {
+                                                                label: '대화 목적',
+                                                                val:
+                                                                    resolvedGoal.goal === "custom"
+                                                                        ? (resolvedGoal.customGoalText || "직접 입력")
+                                                                        : toGoalLabel(resolvedGoal.goal),
+                                                            };
+                                                        })(),
                                                         { label: '대화 텐션', val: normalizeConversationTension(selectedPersona.runtime?.style?.politeness || "") },
                                                         { label: '공감 방식', val: selectedPersona.runtime?.behavior?.empathyFirst ? "감성 공감 우선" : "차분한 이성적 위로" }
                                                     ].map(item => (
@@ -1081,7 +1294,7 @@ export default function PersonaPage() {
                                         </button>
                                         <button
                                             onClick={handleSave}
-                                            disabled={isSaving || isAvatarUploading}
+                                            disabled={isSaving || isAvatarUploading || !hasPendingChanges}
                                             className="group w-full flex items-center justify-center gap-2 rounded-full bg-[#4a626d] px-4 py-4 text-base font-semibold text-[#f0f9ff] shadow-[0_12px_30px_rgba(47,52,46,0.28)] transition-all duration-300 hover:bg-[#3e5661] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 md:rounded-2xl md:text-lg md:font-bold md:shadow-lg"
                                         >
                                             {isSaving ? (

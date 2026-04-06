@@ -427,7 +427,6 @@ function buildPersonaJson(
       typoExamples: [],
     },
     personaMeta: {
-      occupation: stepInputs.step3.personaOccupation.trim(),
       workAttitudeSummary: "",
       workTendencyTags: [],
       selfTalkStyle: "",

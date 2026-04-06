@@ -363,14 +363,10 @@ function inferUserCallsPersonaAs(userLines: string[], relation: string, personaN
   return unique([cleanRelation, cleanName, ...inferred].filter(Boolean)).slice(0, 4);
 }
 
-function analyzeWorkStyleFromPersonaLines(personaLines: string[], occupation: string) {
-  const occupationTrimmed = occupation.trim();
+function analyzeWorkStyleFromPersonaLines(personaLines: string[]) {
   const workLines = personaLines.filter((line) => {
     const normalized = line.replace(/\s/g, "");
-    return (
-      /(일|회사|업무|출근|퇴근|야근|근무|현장|손님|매출|회의|프로젝트|수업|환자|진료|학생|가르치|개발|코드)/.test(normalized) ||
-      (occupationTrimmed && normalized.includes(occupationTrimmed.replace(/\s/g, "")))
-    );
+    return /(일|회사|업무|출근|퇴근|야근|근무|현장|손님|매출|회의|프로젝트|수업|환자|진료|학생|가르치|개발|코드)/.test(normalized);
   });
 
   const corpus = workLines.join("\n");
@@ -383,9 +379,7 @@ function analyzeWorkStyleFromPersonaLines(personaLines: string[], occupation: st
   let selfTalkStyle = "오늘 일은 무난했어. 너는 어땠어?";
 
   if (workLines.length === 0) {
-    attitudeSummary = occupationTrimmed
-      ? `${occupationTrimmed} 관련 발화 데이터가 많지 않아 직업 태도는 기본값으로 추정했습니다.`
-      : "직업 관련 발화 데이터가 많지 않아 직업 태도를 추정하기 어렵습니다.";
+    attitudeSummary = "직업 관련 발화 데이터가 많지 않아 직업 태도를 추정하기 어렵습니다.";
     tendencyTags = ["직업 데이터 부족"];
     selfTalkStyle = "오늘 하루는 그냥 조용히 지나갔어.";
     return { attitudeSummary, tendencyTags, selfTalkStyle };
@@ -528,7 +522,7 @@ export function analyzePersonaMock(input: PersonaAnalyzeInput): PersonaAnalysis 
 
   const topics = pickTopics(corpus, input.step3.userNickname);
   const memoryAnchors = buildMemoryAnchors(lines, input.step3.relation, input.step3.userNickname);
-  const workStyle = analyzeWorkStyleFromPersonaLines(lines, input.step3.personaOccupation);
+  const workStyle = analyzeWorkStyleFromPersonaLines(lines);
 
   const confidenceBase = hasConversationText ? (lines.length >= 25 ? 0.84 : lines.length >= 8 ? 0.72 : 0.58) : 0.46;
   const confidence = clamp(
@@ -565,10 +559,6 @@ export function analyzePersonaMock(input: PersonaAnalyzeInput): PersonaAnalysis 
   if (input.step3.userNickname.trim() && !addressingInference.strongAlias && hasConversationText) {
     uncertainFields.push({ field: "addressing.callsUserAs", reason: "입력한 애칭이 대화 원문에서 충분히 확인되지 않아 보조 호칭으로만 반영했습니다." });
   }
-  if (!input.step3.personaOccupation.trim()) {
-    uncertainFields.push({ field: "personaWorkStyle", reason: "3단계 직업 정보가 없어 직업 관련 태도는 대화 원문 기반으로만 추정했습니다." });
-  }
-
   const limitations = [
     hasConversationText ? "제공된 대화 범위 내에서만 분석했습니다." : "대화 원문 없이 수동 설정값 위주로 분석했습니다.",
     hasConversationText ? "카카오톡 내보내기 형식의 시간/이름 메타 줄은 자동 제외했습니다." : "대화 원문이 없어 메타 줄 정제 과정을 적용하지 않았습니다.",
@@ -594,7 +584,6 @@ export function analyzePersonaMock(input: PersonaAnalyzeInput): PersonaAnalysis 
       gender: input.step3.personaGender,
       avatarUrl: input.step3.avatarUrl,
       userNickname: input.step3.userNickname,
-      occupation: input.step3.personaOccupation,
     },
 
     personaWorkStyle: {

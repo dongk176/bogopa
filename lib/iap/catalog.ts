@@ -88,7 +88,7 @@ export function getIapCatalog(): IapProduct[] {
     },
     {
       key: "unlimited_chat_24h",
-      type: "non_consumable",
+      type: "consumable",
       title: "무제한 대화 이용권(24시간)",
       memoryCredit: 0,
       unlimitedHours: 24,

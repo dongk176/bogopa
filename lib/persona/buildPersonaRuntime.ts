@@ -32,7 +32,6 @@ export function buildPersonaRuntime(analysis: PersonaAnalysis): PersonaRuntime {
     },
 
     personaMeta: {
-      occupation: analysis.personaInput.occupation || "",
       workAttitudeSummary: analysis.personaWorkStyle.attitudeSummary,
       workTendencyTags: analysis.personaWorkStyle.tendencyTags.slice(0, 5),
       selfTalkStyle: analysis.personaWorkStyle.selfTalkStyle,

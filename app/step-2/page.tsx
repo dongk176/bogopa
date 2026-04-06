@@ -20,7 +20,6 @@ type StepThreeData = {
   personaName: string;
   personaGender: "male" | "female";
   userNickname: string;
-  personaOccupation: string;
   step: number;
   updatedAt: string;
 };
@@ -187,32 +186,6 @@ function getPersonaNamePlaceholder(
   return "울 애기, 우리 엄마, 야";
 }
 
-function getOccupationPlaceholder(
-  relationship: RelationshipKey | null,
-  personaGender: "male" | "female",
-  userGender: StepOneGender | null,
-) {
-  const femaleJobs = "간호사, 교사, 디자이너";
-  const maleJobs = "개발자, 회사원, 자영업";
-
-  if (relationship === "mother") return "주부, 간호사, 교사";
-  if (relationship === "father") return "회사원, 자영업, 기사";
-  if (relationship === "olderSister") return "디자이너, 마케터, 간호사";
-  if (relationship === "olderBrother") return "개발자, 회사원, 자영업";
-
-  if (relationship === "youngerSibling") {
-    return personaGender === "male" ? "대학생, 개발자, 회사원" : "대학생, 간호사, 디자이너";
-  }
-
-  if (relationship === "partner") {
-    if (userGender === "Male") return femaleJobs;
-    if (userGender === "Female") return maleJobs;
-    return personaGender === "male" ? maleJobs : femaleJobs;
-  }
-
-  return personaGender === "male" ? maleJobs : femaleJobs;
-}
-
 function ArrowLeftIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -364,7 +337,6 @@ function StepTwoPageContent() {
   const relationshipSectionRef = useRef<HTMLDivElement | null>(null);
   const genderSectionRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
-  const occupationInputRef = useRef<HTMLInputElement | null>(null);
   const nicknameInputRef = useRef<HTMLInputElement | null>(null);
   const [personaImageName, setPersonaImageName] = useState("");
   const [personaImageKey, setPersonaImageKey] = useState("");
@@ -379,12 +351,10 @@ function StepTwoPageContent() {
   const [isIntroGenderConfirmed, setIsIntroGenderConfirmed] = useState(false);
   const [userGender, setUserGender] = useState<StepOneGender | null>(null);
   const [personaName, setPersonaName] = useState("");
-  const [personaOccupation, setPersonaOccupation] = useState("");
   const [personaGender, setPersonaGender] = useState<"male" | "female">("female");
   const [userNickname, setUserNickname] = useState("");
   const [relationshipError, setRelationshipError] = useState("");
   const [nameError, setNameError] = useState("");
-  const [occupationError, setOccupationError] = useState("");
   const [nicknameError, setNicknameError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [imageError, setImageError] = useState("");
@@ -398,7 +368,6 @@ function StepTwoPageContent() {
   const [isRelationshipAttention, setIsRelationshipAttention] = useState(false);
   const [isGenderAttention, setIsGenderAttention] = useState(false);
   const [isNameAttention, setIsNameAttention] = useState(false);
-  const [isOccupationAttention, setIsOccupationAttention] = useState(false);
   const [isNicknameAttention, setIsNicknameAttention] = useState(false);
   const currentStep = viewMode === "relationship" ? 2 : 3;
   const progressWidthClass = viewMode === "relationship" ? "w-1/2" : "w-3/4";
@@ -476,7 +445,6 @@ function StepTwoPageContent() {
   const isFormStepValid =
     finalRelationshipForValidation.length > 0 &&
     personaName.trim().length > 0 &&
-    personaOccupation.trim().length > 0 &&
     userNickname.trim().length > 0 &&
     !isImageProcessing &&
     !imageError;
@@ -565,7 +533,6 @@ function StepTwoPageContent() {
       const saved = JSON.parse(rawStep3) as Partial<StepThreeData>;
 
       if (typeof saved.personaName === "string") setPersonaName(saved.personaName);
-      if (typeof saved.personaOccupation === "string") setPersonaOccupation(saved.personaOccupation);
       if (typeof saved.personaImageName === "string") setPersonaImageName(saved.personaImageName);
       if (typeof saved.personaImageKey === "string") {
         setPersonaImageKey(saved.personaImageKey);
@@ -689,13 +656,11 @@ function StepTwoPageContent() {
     const finalRelationship = getFinalRelationshipLabel(relationship);
 
     const trimmedName = personaName.trim();
-    const trimmedOccupation = personaOccupation.trim();
     const trimmedNickname = userNickname.trim();
 
     const hasDraftContent = Boolean(
       finalRelationship ||
         trimmedName ||
-        trimmedOccupation ||
         trimmedNickname ||
         personaImageUrl ||
         personaImageKey ||
@@ -713,7 +678,6 @@ function StepTwoPageContent() {
       personaName: trimmedName,
       personaGender,
       userNickname: trimmedNickname,
-      personaOccupation: trimmedOccupation,
       step: 2,
       updatedAt: new Date().toISOString(),
     };
@@ -724,7 +688,6 @@ function StepTwoPageContent() {
     relationshipLabelOverride,
     userGender,
     personaName,
-    personaOccupation,
     userNickname,
     personaGender,
     personaImageName,
@@ -819,18 +782,16 @@ function StepTwoPageContent() {
     }
 
     const finalRelationship = getFinalRelationshipLabel(relationship);
+    const nameTarget = finalRelationship || "관계";
 
     const nextRelationshipError = finalRelationship.length === 0 ? "관계를 선택해주세요." : "";
     const trimmedName = personaName.trim();
-    const nextNameError = trimmedName.length === 0 ? "이름 또는 애칭을 입력해주세요." : "";
-    const trimmedOccupation = personaOccupation.trim();
-    const nextOccupationError = trimmedOccupation.length === 0 ? "직업을 입력해주세요." : "";
+    const nextNameError = trimmedName.length === 0 ? `${nameTarget}의 이름 또는 애칭을 입력해주세요.` : "";
     const trimmedNickname = userNickname.trim();
-    const nextNicknameError = trimmedNickname.length === 0 ? "나를 불러주던 애칭을 입력해주세요." : "";
+    const nextNicknameError = trimmedNickname.length === 0 ? `${nameTarget}가 나를 불러주던 애칭을 입력해주세요.` : "";
 
     setRelationshipError(nextRelationshipError);
     setNameError(nextNameError);
-    setOccupationError(nextOccupationError);
     setNicknameError(nextNicknameError);
     setSaveError("");
 
@@ -845,11 +806,6 @@ function StepTwoPageContent() {
 
     if (nextNameError) {
       triggerAttention(nameInputRef.current, setIsNameAttention, () => nameInputRef.current?.focus());
-      return;
-    }
-
-    if (nextOccupationError) {
-      triggerAttention(occupationInputRef.current, setIsOccupationAttention, () => occupationInputRef.current?.focus());
       return;
     }
 
@@ -913,7 +869,6 @@ function StepTwoPageContent() {
       personaName: trimmedName,
       personaGender,
       userNickname: trimmedNickname,
-      personaOccupation: trimmedOccupation,
       step: 2,
       updatedAt: new Date().toISOString(),
     };
@@ -1159,7 +1114,7 @@ function StepTwoPageContent() {
 
               <div className="space-y-3">
                 <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-name">
-                  이름 또는 애칭 <span className="text-[#ffb4ab]">*</span>
+                  {(finalRelationshipForValidation || "관계")}의 이름 또는 애칭 <span className="text-[#ffb4ab]">*</span>
                 </label>
                 <div className="group relative">
                   <input
@@ -1193,39 +1148,9 @@ function StepTwoPageContent() {
               </div>
 
               <div className="space-y-3">
-                <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-occupation">
-                  직업 <span className="text-[#ffb4ab]">*</span>
-                </label>
-                <input
-                  id="persona-occupation"
-                  ref={occupationInputRef}
-                  name="persona_occupation"
-                  type="text"
-                  value={personaOccupation}
-                  onChange={(e) => {
-                    const nextValue = e.target.value;
-                    setPersonaOccupation(nextValue);
-                    if (isOccupationAttention) setIsOccupationAttention(false);
-                    if (occupationError && nextValue.trim().length > 0) setOccupationError("");
-                  }}
-                  placeholder={getOccupationPlaceholder(relationship, personaGender, userGender)}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  data-lpignore="true"
-                  data-form-type="other"
-                  className={`w-full rounded-xl border bg-[#f4f4ef] px-4 py-4 text-[#2f342e] placeholder:text-[#787c75] outline-none ring-0 transition-all ${
-                    occupationError || isOccupationAttention ? "border-[#ff7b7b] ring-1 ring-[#ff7b7b]/35" : "border-[#afb3ac]/45"
-                  }`}
-                />
-                {occupationError ? <p className={REQUIRED_ERROR_TEXT_CLASS} style={REQUIRED_ERROR_TEXT_STYLE}>{occupationError}</p> : null}
-              </div>
-
-              <div className="space-y-3">
                 <div className="ml-1 flex items-center justify-between">
                   <label className="block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-user-nickname">
-                    나를 불러주던 애칭 <span className="text-[#ffb4ab]">*</span>
+                    {(finalRelationshipForValidation || "관계")}가 나를 불러주던 애칭 <span className="text-[#ffb4ab]">*</span>
                   </label>
                 </div>
                 <input

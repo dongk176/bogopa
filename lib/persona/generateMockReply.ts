@@ -65,11 +65,9 @@ function goalSentence(runtime: PersonaRuntime) {
 }
 
 function selfTalkSentence(runtime: PersonaRuntime) {
-  const occupation = runtime.personaMeta?.occupation?.trim() || "";
   const workStyle = runtime.personaMeta?.selfTalkStyle?.trim() || "";
-  if (!occupation) return "";
-  if (workStyle) return workStyle;
-  return `오늘 ${occupation} 일은 무난하게 지나갔어.`;
+  if (!workStyle) return "";
+  return workStyle;
 }
 
 function cleanUserExcerpt(text: string) {

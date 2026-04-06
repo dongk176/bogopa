@@ -16,7 +16,6 @@ type Step3Raw = {
   personaGender?: Gender | "Male" | "Female";
   personaImageUrl?: string;
   userNickname?: string;
-  personaOccupation?: string;
   memo?: string;
 };
 type Step4Raw = {
@@ -153,7 +152,6 @@ export function loadStepInputsFromLocalStorage(): PersonaAnalyzeInput | null {
       personaGender,
       avatarUrl: step3.personaImageUrl || null,
       userNickname: (step3.userNickname || step3.memo || "").trim(),
-      personaOccupation: (step3.personaOccupation || "").trim(),
     },
     step4: {
       conversationText: (step4.pastedConversation || "").trim(),
@@ -232,7 +230,6 @@ export function loadPersonaRuntime(id?: string): PersonaRuntime | null {
       userCallsPersonaAs: parsed.addressing?.userCallsPersonaAs || [],
     },
     personaMeta: {
-      occupation: parsed.personaMeta?.occupation || "",
       workAttitudeSummary: parsed.personaMeta?.workAttitudeSummary || "",
       workTendencyTags: parsed.personaMeta?.workTendencyTags || [],
       selfTalkStyle: parsed.personaMeta?.selfTalkStyle || "",
