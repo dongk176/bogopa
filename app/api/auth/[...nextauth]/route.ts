@@ -95,6 +95,7 @@ export const authOptions: NextAuthOptions = {
                 const configuredId = (process.env.BOGOPA_LOCAL_LOGIN_ID || "bogopa").trim();
                 const configuredPassword =
                     process.env.BOGOPA_LOCAL_LOGIN_PASSWORD || "Bogopa2@aDmin021904219297398aWEA@";
+                const localUserId = `local:${configuredId}`;
                 const inputId = typeof credentials?.userId === "string" ? credentials.userId.trim() : "";
                 const inputPassword = typeof credentials?.password === "string" ? credentials.password : "";
 
@@ -106,7 +107,7 @@ export const authOptions: NextAuthOptions = {
                 if (!passwordMatches) return null;
 
                 return {
-                    id: configuredId,
+                    id: localUserId,
                     name: configuredId,
                     email: null,
                     image: null,

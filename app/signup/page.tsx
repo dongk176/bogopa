@@ -18,12 +18,22 @@ type UserProfileResponse = {
   profileCompleted: boolean;
 };
 
+type SignupDraft = {
+  step?: 1 | 2;
+  name?: string;
+  birthDate?: string;
+  gender?: Gender | null;
+  mbtiParts?: [string, string, string, string];
+  interests?: string[];
+};
+
 const MBTI_GROUPS = [
   ["E", "I"],
   ["N", "S"],
   ["T", "F"],
   ["P", "J"],
 ] as const;
+const SIGNUP_DRAFT_STORAGE_KEY = "bogopa_signup_draft_v1";
 
 function ArrowRightIcon() {
   return (
@@ -258,6 +268,8 @@ function SignupContent() {
   const returnTo = searchParams.get("returnTo") || "/step-1";
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isDraftHydrated, setIsDraftHydrated] = useState(false);
+  const [hasLocalDraft, setHasLocalDraft] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRouteTransitioning, setIsRouteTransitioning] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
@@ -285,6 +297,56 @@ function SignupContent() {
   }, [mbti, interests]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const rawDraft = window.localStorage.getItem(SIGNUP_DRAFT_STORAGE_KEY);
+      if (!rawDraft) return;
+      const parsed = JSON.parse(rawDraft) as SignupDraft;
+
+      if (parsed.step === 1 || parsed.step === 2) {
+        setStep(parsed.step);
+      }
+      if (typeof parsed.name === "string") {
+        setName(parsed.name);
+      }
+      if (typeof parsed.birthDate === "string") {
+        setBirthDate(parsed.birthDate);
+      }
+      if (parsed.gender === "male" || parsed.gender === "female" || parsed.gender === "other") {
+        setGender(parsed.gender);
+      }
+      if (
+        Array.isArray(parsed.mbtiParts) &&
+        parsed.mbtiParts.length === 4 &&
+        parsed.mbtiParts.every((part) => typeof part === "string")
+      ) {
+        setMbtiParts([
+          parsed.mbtiParts[0] || "",
+          parsed.mbtiParts[1] || "",
+          parsed.mbtiParts[2] || "",
+          parsed.mbtiParts[3] || "",
+        ]);
+      }
+      if (Array.isArray(parsed.interests)) {
+        const dedupedInterests = Array.from(
+          new Set(
+            parsed.interests
+              .map((item) => (typeof item === "string" ? item.trim() : ""))
+              .filter((item) => item.length > 0),
+          ),
+        ).slice(0, MAX_INTEREST_SELECTION);
+        setInterests(dedupedInterests);
+      }
+      setHasLocalDraft(true);
+    } catch (error) {
+      console.error("[signup] failed to parse local draft", error);
+    } finally {
+      setIsDraftHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isDraftHydrated) return;
     let cancelled = false;
 
     const loadProfile = async () => {
@@ -300,16 +362,20 @@ function SignupContent() {
         const profile = payload.profile;
         if (!profile || cancelled) return;
         if (profile.profileCompleted) {
+          if (typeof window !== "undefined") {
+            window.localStorage.removeItem(SIGNUP_DRAFT_STORAGE_KEY);
+          }
           router.replace(returnTo);
           return;
         }
-        setName(profile.name || "");
-        setBirthDate(profile.birthDate || "");
-        setGender(profile.gender || null);
         const mbtiValue = (profile.mbti || "").toUpperCase();
-        if (
+        const hasValidMbtiProfileValue =
           mbtiValue.length === 4 &&
-          MBTI_GROUPS.every((group, index) => (group as readonly string[]).includes(mbtiValue[index] || ""))
+          MBTI_GROUPS.every((group, index) => (group as readonly string[]).includes(mbtiValue[index] || ""));
+
+        if (
+          !hasLocalDraft &&
+          hasValidMbtiProfileValue
         ) {
           setMbtiParts([
             mbtiValue[0] || "",
@@ -326,7 +392,26 @@ function SignupContent() {
               return [value];
             })
           : [];
-        setInterests(Array.from(new Set(normalizedInterests)).slice(0, MAX_INTEREST_SELECTION));
+        const profileInterests = Array.from(new Set(normalizedInterests)).slice(0, MAX_INTEREST_SELECTION);
+
+        if (hasLocalDraft) {
+          setName((prev) => prev || profile.name || "");
+          setBirthDate((prev) => prev || profile.birthDate || "");
+          setGender((prev) => prev ?? profile.gender ?? null);
+          if (hasValidMbtiProfileValue) {
+            setMbtiParts((prev) =>
+              prev.some((part) => part.length > 0)
+                ? prev
+                : [mbtiValue[0] || "", mbtiValue[1] || "", mbtiValue[2] || "", mbtiValue[3] || ""],
+            );
+          }
+          setInterests((prev) => (prev.length > 0 ? prev : profileInterests));
+        } else {
+          setName(profile.name || "");
+          setBirthDate(profile.birthDate || "");
+          setGender(profile.gender || null);
+          setInterests(profileInterests);
+        }
       } catch (loadError) {
         console.error("[signup] failed to load profile", loadError);
       } finally {
@@ -341,7 +426,24 @@ function SignupContent() {
     return () => {
       cancelled = true;
     };
-  }, [returnTo, router]);
+  }, [hasLocalDraft, isDraftHydrated, returnTo, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || isLoading) return;
+    try {
+      const draft: SignupDraft = {
+        step,
+        name,
+        birthDate,
+        gender,
+        mbtiParts,
+        interests,
+      };
+      window.localStorage.setItem(SIGNUP_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch (error) {
+      console.error("[signup] failed to persist local draft", error);
+    }
+  }, [birthDate, gender, interests, isLoading, mbtiParts, name, step]);
 
   useEffect(() => {
     return () => {
@@ -444,6 +546,7 @@ function SignupContent() {
       window.localStorage.setItem("bogopa_profile_step1", JSON.stringify(onboardingStepOne));
       window.localStorage.setItem(SIGNUP_COMPLETED_AT_KEY, String(Date.now()));
       window.localStorage.setItem(SIGNUP_COMPLETE_MODAL_PENDING_KEY, "1");
+      window.localStorage.removeItem(SIGNUP_DRAFT_STORAGE_KEY);
 
       const target = returnTo.startsWith("/step-") ? returnTo : "/step-1";
       setIsRouteTransitioning(true);
