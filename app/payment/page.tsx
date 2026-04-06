@@ -45,6 +45,7 @@ function PaymentContent() {
   const returnTo = searchParams.get("returnTo") || "/profile";
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
   const [memoryBalance, setMemoryBalance] = useState<number | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
   const [isPurchasingKey, setIsPurchasingKey] = useState<IapProductKey | null>(null);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
   const memoryPassPromoPrice = 3300;
@@ -78,40 +79,43 @@ function PaymentContent() {
     }
   }, []);
 
+  const refreshMemoryPassStatus = async () => {
+    const response = await fetch("/api/memory-pass", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json().catch(() => ({}));
+    setMemoryBalance(Number(data?.memoryBalance ?? 0));
+    setIsSubscribed(Boolean(data?.isSubscribed));
+  };
+
   useEffect(() => {
     let cancelled = false;
 
-    const refreshMemoryBalance = async () => {
+    const loadStatus = async () => {
       try {
         const response = await fetch("/api/memory-pass", { cache: "no-store" });
         if (!response.ok) return;
-        const data = await response.json();
-        if (!cancelled) {
-          setMemoryBalance(Number(data?.memoryBalance ?? 0));
-        }
+        const data = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        setMemoryBalance(Number(data?.memoryBalance ?? 0));
+        setIsSubscribed(Boolean(data?.isSubscribed));
       } catch {
         if (!cancelled) {
           setMemoryBalance(null);
+          setIsSubscribed(false);
         }
       }
     };
 
-    void refreshMemoryBalance();
+    void loadStatus();
 
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const refreshMemoryBalance = async () => {
-    const response = await fetch("/api/memory-pass", { cache: "no-store" });
-    if (!response.ok) return;
-    const data = await response.json().catch(() => ({}));
-    setMemoryBalance(Number(data?.memoryBalance ?? 0));
-  };
-
   const startPurchase = async (productKey: IapProductKey) => {
     if (isPurchasingKey) return;
+    if (productKey === "memory_pass_monthly" && isSubscribed) return;
     setPendingNotice(null);
     setIsPurchasingKey(productKey);
 
@@ -121,7 +125,12 @@ function PaymentContent() {
       if (typeof applied.memoryBalance === "number") {
         setMemoryBalance(applied.memoryBalance);
       } else {
-        await refreshMemoryBalance();
+        await refreshMemoryPassStatus();
+      }
+      if (typeof applied.isSubscribed === "boolean") {
+        setIsSubscribed(applied.isSubscribed);
+      } else if (productKey === "memory_pass_monthly") {
+        setIsSubscribed(true);
       }
 
       setPendingNotice("결제가 반영되었습니다.");
@@ -216,10 +225,10 @@ function PaymentContent() {
                 <button
                   type="button"
                   onClick={() => void startPurchase("memory_pass_monthly")}
-                  disabled={isPurchasingKey !== null}
+                  disabled={isPurchasingKey !== null || isSubscribed}
                   className="inline-flex items-center justify-center rounded-xl border border-white/85 bg-white px-8 py-4 text-lg font-bold text-[#3e5560] shadow-xl shadow-black/20 transition-colors hover:bg-[#f3f8fb] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isPurchasingKey === "memory_pass_monthly" ? "구매 처리중..." : "구독하기"}
+                  {isSubscribed ? "구독중" : isPurchasingKey === "memory_pass_monthly" ? "구매 처리중..." : "구독하기"}
                 </button>
               </div>
             </div>

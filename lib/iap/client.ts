@@ -74,7 +74,12 @@ async function applyPurchaseToServer(input: {
   if (!response.ok) {
     throw new Error(String(data?.error || "결제 반영에 실패했습니다."));
   }
-  return data as { memoryBalance?: number };
+  return data as {
+    memoryBalance?: number;
+    isSubscribed?: boolean;
+    isUnlimitedChatActive?: boolean;
+    unlimitedChatExpiresAt?: string | null;
+  };
 }
 
 export async function purchaseIapProduct(productKey: IapProductKey) {
