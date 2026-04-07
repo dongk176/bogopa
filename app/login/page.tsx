@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
+import WithdrawBlockedNoticeOverlay from "@/app/_components/WithdrawBlockedNoticeOverlay";
 
 function LoginContent() {
   const router = useRouter();
@@ -107,6 +108,7 @@ function LoginContent() {
 
   return (
     <main className="fixed inset-0 overflow-hidden bg-white px-6 pb-10 pt-[calc(2rem+var(--native-safe-top))] text-[#2f342e]">
+      <WithdrawBlockedNoticeOverlay />
       <section className="mx-auto flex w-full max-w-sm flex-col">
         <button
           type="button"

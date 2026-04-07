@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 function formatBlockedUntilKst(raw: string | null) {
   if (!raw) return "";
@@ -19,22 +20,22 @@ function formatBlockedUntilKst(raw: string | null) {
 function buildWithdrawBlockedMessage(blockedUntil: string | null) {
   const formatted = formatBlockedUntilKst(blockedUntil);
   if (!formatted) {
-    return "탈퇴한 계정은 30일 동안 다시 로그인할 수 없습니다.";
+    return "탈퇴한 계정은 30일 동안 로그인 및 재가입이 제한됩니다.";
   }
-  return `탈퇴한 계정은 30일 동안 다시 로그인할 수 없습니다. (${formatted} 이후 가능)`;
+  return `탈퇴한 계정은 30일 동안 로그인 및 재가입이 제한됩니다. (${formatted} 이후 다시 가입 가능)`;
 }
 
 export default function WithdrawBlockedNoticeOverlay() {
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
   const [blockedUntil, setBlockedUntil] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("blocked") !== "1") return;
-    setBlockedUntil(params.get("until"));
+    const blocked = searchParams.get("blocked");
+    if (blocked !== "1") return;
+    setBlockedUntil(searchParams.get("until"));
     setOpen(true);
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!open) return;
