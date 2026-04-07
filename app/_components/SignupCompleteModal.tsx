@@ -74,7 +74,7 @@ export default function SignupCompleteModal() {
                   <path d="M10 6.3v4.2l2.7 1.8" strokeLinecap="round" strokeLinejoin="round" />
                   <circle cx="10" cy="10" r="0.8" fill="currentColor" stroke="none" />
                 </svg>
-                <span>50기억</span>
+                <span>60기억</span>
               </span>
               <span>이 충전되었습니다.</span>
             </span>

@@ -26,11 +26,13 @@ export async function DELETE(request: Request) {
   }
 
   try {
-    await deleteUserAccountData(sessionUser.id);
+    await deleteUserAccountData({
+      userId: sessionUser.id,
+      provider: typeof sessionUser.provider === "string" ? sessionUser.provider : null,
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[api-user-account] failed to delete account", error);
     return NextResponse.json({ error: "회원탈퇴 처리에 실패했습니다." }, { status: 500 });
   }
 }
-

@@ -4,6 +4,13 @@ export default withAuth({
     pages: {
         signIn: "/", // 로그인 안되어 있으면 무조건 홈으로 튕기게 함
     },
+    callbacks: {
+        authorized: ({ req, token }) => {
+            if (!token) return false;
+            void req;
+            return true;
+        },
+    },
 });
 
 export const config = {

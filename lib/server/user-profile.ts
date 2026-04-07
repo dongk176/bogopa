@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS bogopa."users" (
   "gender" VARCHAR(16),
   "mbti" VARCHAR(4),
   "interests" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "admin" BOOLEAN NOT NULL DEFAULT FALSE,
   "profile_completed" BOOLEAN NOT NULL DEFAULT FALSE,
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -67,6 +68,7 @@ export async function ensureUsersTable() {
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "gender" VARCHAR(16);`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "mbti" VARCHAR(4);`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "interests" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "admin" BOOLEAN NOT NULL DEFAULT FALSE;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "profile_completed" BOOLEAN NOT NULL DEFAULT FALSE;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
@@ -284,6 +286,25 @@ export async function getUserAuthSnapshot(userId: string): Promise<UserAuthSnaps
       legacyAvatarUrl: normalizeImageUrl(typeof row.image === "string" ? row.image : null),
     }),
   };
+}
+
+export async function isUserAdmin(userId: string): Promise<boolean> {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) return false;
+
+  await ensureUsersTable();
+  const pool = getDbPool();
+  const res = await pool.query(
+    `
+    SELECT COALESCE("admin", FALSE) AS is_admin
+    FROM bogopa."users"
+    WHERE "id" = $1
+    LIMIT 1
+    `,
+    [normalizedUserId],
+  );
+
+  return Boolean(res.rows[0]?.is_admin);
 }
 
 export async function saveUserProfile(input: {

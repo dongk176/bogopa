@@ -5,7 +5,8 @@ import AppleProvider from "next-auth/providers/apple";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { createPrivateKey, sign, timingSafeEqual } from "crypto";
 import { consumeMobileAuthTransfer } from "@/lib/server/mobile-auth-transfer";
-import { getUserAuthSnapshot, getUserProfile, upsertUserFromOAuth } from "@/lib/server/user-profile";
+import { getUserAuthSnapshot, getUserProfile, isUserAdmin, upsertUserFromOAuth } from "@/lib/server/user-profile";
+import { deriveLoginBlockAccountKey, getActiveLoginBlock } from "@/lib/server/login-blocks";
 
 function normalizeImageUrl(url: string | null | undefined) {
     if (!url) return null;
@@ -106,6 +107,14 @@ export const authOptions: NextAuthOptions = {
                 const passwordMatches = a.length === b.length && timingSafeEqual(a, b);
                 if (!passwordMatches) return null;
 
+                const loginBlock = await getActiveLoginBlock({
+                    provider: "local-password",
+                    accountKey: inputId,
+                });
+                if (loginBlock?.blockedUntil) {
+                    throw new Error(`ACCOUNT_WITHDRAWN_BLOCKED_UNTIL:${loginBlock.blockedUntil}`);
+                }
+
                 return {
                     id: localUserId,
                     name: configuredId,
@@ -169,6 +178,16 @@ export const authOptions: NextAuthOptions = {
                         ? (typeof user.id === "string" ? user.id : "")
                         : (account.providerAccountId || "");
                 if (!id) return true;
+
+                const blockedAccountKey = deriveLoginBlockAccountKey(id, provider);
+                const blocked = await getActiveLoginBlock({
+                    provider,
+                    accountKey: blockedAccountKey,
+                });
+                if (blocked?.blockedUntil) {
+                    return `/login?blocked=1&until=${encodeURIComponent(blocked.blockedUntil)}&provider=${encodeURIComponent(provider)}`;
+                }
+
                 const email = user.email || null;
                 const name = user.name || "사용자";
                 const image = normalizeImageUrl(user.image || null);
@@ -196,6 +215,11 @@ export const authOptions: NextAuthOptions = {
                 token.name = user.name ?? token.name;
                 token.email = user.email ?? token.email;
                 token.picture = normalizeImageUrl(user.image ?? token.picture);
+                try {
+                    token.isAdmin = await isUserAdmin(String(user.id || ""));
+                } catch {
+                    token.isAdmin = false;
+                }
                 return token;
             }
 
@@ -220,6 +244,17 @@ export const authOptions: NextAuthOptions = {
                 } catch {
                     // keep current token picture
                 }
+                try {
+                    token.isAdmin = await isUserAdmin(String(token.providerAccountId || ""));
+                } catch {
+                    token.isAdmin = false;
+                }
+            } else if (typeof token.isAdmin !== "boolean" && typeof token.providerAccountId === "string") {
+                try {
+                    token.isAdmin = await isUserAdmin(token.providerAccountId);
+                } catch {
+                    token.isAdmin = false;
+                }
             }
             return token;
         },
@@ -232,6 +267,7 @@ export const authOptions: NextAuthOptions = {
             session.user.name = typeof token.name === "string" ? token.name : session.user.name;
             session.user.email = typeof token.email === "string" ? token.email : session.user.email;
             session.user.image = normalizeImageUrl(token.picture ?? session.user.image);
+            session.user.isAdmin = Boolean(token.isAdmin);
             return session;
         },
         async redirect({ url, baseUrl }: any) {
@@ -241,7 +277,7 @@ export const authOptions: NextAuthOptions = {
             }
 
             // Keep explicit home/legal redirects as-is (e.g. signOut callbackUrl "/")
-            if (target.pathname === "/" || target.pathname.startsWith("/legal")) {
+            if (target.pathname === "/" || target.pathname === "/login" || target.pathname.startsWith("/legal")) {
                 return target.toString();
             }
 

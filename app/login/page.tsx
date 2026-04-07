@@ -1,12 +1,35 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 
-export default function LoginPage() {
+function formatBlockedUntilKst(raw: string | null | undefined) {
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function buildWithdrawBlockedMessage(blockedUntil: string | null | undefined) {
+  const formatted = formatBlockedUntilKst(blockedUntil);
+  if (!formatted) {
+    return "탈퇴한 계정은 30일 동안 다시 로그인할 수 없습니다.";
+  }
+  return `탈퇴한 계정은 30일 동안 다시 로그인할 수 없습니다. (${formatted} 이후 가능)`;
+}
+
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -33,6 +56,13 @@ export default function LoginPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const blocked = searchParams.get("blocked");
+    if (blocked !== "1") return;
+    const blockedUntil = searchParams.get("until");
+    setError(buildWithdrawBlockedMessage(blockedUntil));
+  }, [searchParams]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting) return;
@@ -46,6 +76,25 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setError("");
 
+    try {
+      const statusResponse = await fetch(`/api/auth/local-login-status?userId=${encodeURIComponent(normalizedId)}`, {
+        cache: "no-store",
+      });
+      if (statusResponse.ok) {
+        const statusPayload = (await statusResponse.json().catch(() => ({}))) as {
+          blocked?: boolean;
+          blockedUntil?: string | null;
+        };
+        if (statusPayload.blocked) {
+          setError(buildWithdrawBlockedMessage(statusPayload.blockedUntil));
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    } catch {
+      // ignore pre-check errors and continue sign-in
+    }
+
     const result = await signIn("local-password", {
       redirect: false,
       userId: normalizedId,
@@ -54,7 +103,12 @@ export default function LoginPage() {
     });
 
     if (!result || result.error) {
-      setError("아이디 또는 비밀번호가 올바르지 않습니다.");
+      if (typeof result?.error === "string" && result.error.startsWith("ACCOUNT_WITHDRAWN_BLOCKED_UNTIL:")) {
+        const blockedUntil = result.error.slice("ACCOUNT_WITHDRAWN_BLOCKED_UNTIL:".length);
+        setError(buildWithdrawBlockedMessage(blockedUntil));
+      } else {
+        setError("아이디 또는 비밀번호가 올바르지 않습니다.");
+      }
       setIsSubmitting(false);
       return;
     }
@@ -117,5 +171,19 @@ export default function LoginPage() {
         </form>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="fixed inset-0 grid place-items-center overflow-hidden bg-white text-[#2f342e]">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
+        </main>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -181,9 +181,9 @@ export default function LettersInboxPage() {
         ) : (
           <section className="rounded-3xl border border-white/10 bg-[#38403b] p-6 text-center">
             <p className="text-sm text-[#b9cad1]">
-              아직 대화할 기억이 없어요.
+              아직 편지를 받을 기억이 없어요
               <br />
-              먼저 내 기억을 만들어주세요.
+              먼저 내 기억을 만들어주세요
             </p>
             <Link
               href="/step-1"

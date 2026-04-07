@@ -1,4 +1,5 @@
 import { getDbPool } from "@/lib/server/db";
+import { deriveLoginBlockAccountKey, registerLoginBlock } from "@/lib/server/login-blocks";
 
 type QueryRunner = {
   query: (text: string, values?: unknown[]) => Promise<{ rowCount?: number; rows: unknown[] }>;
@@ -29,12 +30,46 @@ async function safeDelete(
   }
 }
 
-export async function deleteUserAccountData(userId: string) {
+export async function deleteUserAccountData(input: {
+  userId: string;
+  provider?: string | null;
+}) {
+  const userId = String(input.userId || "").trim();
+  if (!userId) {
+    throw new Error("userId is required");
+  }
   const pool = getDbPool();
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
+
+    const userSnapshotRes = await client.query(
+      `
+      SELECT id, provider
+      FROM bogopa."users"
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [userId],
+    );
+    const userSnapshot = userSnapshotRes.rows[0] as { id?: string; provider?: string } | undefined;
+    const providerFromUser = typeof userSnapshot?.provider === "string" ? userSnapshot.provider.trim() : "";
+    const providerFromInput = typeof input.provider === "string" ? input.provider.trim() : "";
+    const loginProvider = (providerFromUser || providerFromInput).toLowerCase();
+    const accountKey = deriveLoginBlockAccountKey(userId, loginProvider);
+
+    if (loginProvider && accountKey) {
+      await registerLoginBlock(
+        {
+          provider: loginProvider,
+          accountKey,
+          reason: "account_deleted",
+          deletedUserId: userId,
+        },
+        client,
+      );
+    }
 
     await safeDelete(
       client,

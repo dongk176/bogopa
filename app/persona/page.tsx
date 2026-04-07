@@ -873,7 +873,7 @@ export default function PersonaPage() {
                         <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4a626d] border-t-transparent" />
                     </div>
                 ) : personas.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-[2.5rem] bg-white p-20 text-center shadow-sm border" style={{ borderColor: BRAND_BORDER_COLOR }}>
+                    <div className="flex flex-col items-center justify-center rounded-[2.5rem] border bg-white px-6 py-20 text-center shadow-sm" style={{ borderColor: BRAND_BORDER_COLOR }}>
                         <div className="mb-6 grid h-20 w-20 place-items-center rounded-3xl bg-[#f4f4ef] text-[#afb3ac]">
                             <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />

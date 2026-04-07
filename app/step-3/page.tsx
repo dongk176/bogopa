@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   loadStepInputsFromLocalStorage,
@@ -12,7 +12,6 @@ import { PersonaAnalyzeInput } from "@/types/persona";
 import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMobileInputFocus from "@/app/_components/useMobileInputFocus";
-import { purchaseIapProduct } from "@/lib/iap/client";
 import { CONVERSATION_TENSION_OPTIONS, normalizeConversationTension } from "@/lib/persona/conversationTension";
 
 const STORAGE_KEY = "bogopa_profile_step4";
@@ -492,8 +491,6 @@ export default function StepThreePage() {
   });
   const [upgradeCta, setUpgradeCta] = useState<UpgradeCtaState | null>(null);
   const [isPassSheetOpen, setIsPassSheetOpen] = useState(false);
-  const [isPassPurchasing, setIsPassPurchasing] = useState(false);
-  const [passSheetNotice, setPassSheetNotice] = useState<string | null>(null);
   const [loadingProgressIndex, setLoadingProgressIndex] = useState(0);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [isStepReady, setIsStepReady] = useState(false);
@@ -564,6 +561,19 @@ export default function StepThreePage() {
     });
   }
 
+  const refreshMemoryPassStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/memory-pass", { cache: "no-store" });
+      if (!response.ok) return false;
+      const payload = (await response.json()) as { isSubscribed?: boolean; limits?: PlanLimits };
+      if (payload?.limits) setPlanLimits(payload.limits);
+      setIsSubscribed(Boolean(payload?.isSubscribed));
+      return Boolean(payload?.isSubscribed);
+    } catch {
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     setIsStepReady(false);
@@ -601,16 +611,8 @@ export default function StepThreePage() {
 
     void (async () => {
       try {
-        const [memoryPassResponse, userProfileResponse] = await Promise.all([
-          fetch("/api/memory-pass", { cache: "no-store" }),
-          fetch("/api/user/profile", { cache: "no-store" }),
-        ]);
-
-        if (memoryPassResponse.ok) {
-          const payload = (await memoryPassResponse.json()) as { isSubscribed?: boolean; limits?: PlanLimits };
-          if (payload?.limits) setPlanLimits(payload.limits);
-          setIsSubscribed(Boolean(payload?.isSubscribed));
-        }
+        await refreshMemoryPassStatus();
+        const userProfileResponse = await fetch("/api/user/profile", { cache: "no-store" });
 
         if (userProfileResponse.ok) {
           const payload = (await userProfileResponse.json()) as { ok?: boolean; profile?: UserProfileResponse };
@@ -632,7 +634,22 @@ export default function StepThreePage() {
         // keep free limits
       }
     })();
-  }, [router]);
+  }, [refreshMemoryPassStatus, router]);
+
+  useEffect(() => {
+    const refresh = () => {
+      void refreshMemoryPassStatus();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refreshMemoryPassStatus]);
 
   useEffect(() => {
     setOverrides((prev) => ({
@@ -851,48 +868,13 @@ export default function StepThreePage() {
   function goToPayment() {
     saveStep3DraftForReturn();
     setIsPassSheetOpen(false);
-    setPassSheetNotice(null);
     setUpgradeCta(null);
     router.push(`/payment?returnTo=${encodeURIComponent("/step-3")}`);
   }
 
   function openPassSheet() {
     setUpgradeCta(null);
-    setPassSheetNotice(null);
     setIsPassSheetOpen(true);
-  }
-
-  async function subscribeMemoryPassNow() {
-    if (isPassPurchasing) return;
-
-    setPassSheetNotice(null);
-    setIsPassPurchasing(true);
-
-    try {
-      const applied = await purchaseIapProduct("memory_pass_monthly");
-
-      if (typeof applied.memoryBalance !== "number") {
-        const memoryPassResponse = await fetch("/api/memory-pass", { cache: "no-store" });
-        if (!memoryPassResponse.ok) {
-          throw new Error("구독 반영 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
-        }
-      }
-
-      const memoryPassResponse = await fetch("/api/memory-pass", { cache: "no-store" });
-      if (memoryPassResponse.ok) {
-        const payload = (await memoryPassResponse.json()) as { isSubscribed?: boolean; limits?: PlanLimits };
-        if (payload?.limits) setPlanLimits(payload.limits);
-        setIsSubscribed(Boolean(payload?.isSubscribed));
-      }
-
-      setUpgradeCta(null);
-      setIsPassSheetOpen(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "구독을 진행하지 못했습니다.";
-      setPassSheetNotice(message);
-    } finally {
-      setIsPassPurchasing(false);
-    }
   }
 
   function openFrequentPhraseLimitCta() {
@@ -1161,7 +1143,6 @@ export default function StepThreePage() {
             aria-label="기억 패스 안내 닫기"
             className="absolute inset-0"
             onClick={() => {
-              setPassSheetNotice(null);
               setIsPassSheetOpen(false);
             }}
           />
@@ -1188,15 +1169,10 @@ export default function StepThreePage() {
               <p className="mt-0.5 text-[11px] text-[#f8fbff]/85">첫 달 이후 정상가 적용</p>
             </div>
 
-            {passSheetNotice ? (
-              <p className="mt-3 rounded-xl bg-[#f3f6f8] px-3 py-2 text-center text-xs font-semibold text-[#3e5560]">{passSheetNotice}</p>
-            ) : null}
-
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  setPassSheetNotice(null);
                   setIsPassSheetOpen(false);
                 }}
                 className="rounded-2xl border border-[#afb3ac]/35 bg-[#f4f4ef] px-4 py-3 text-sm font-bold text-[#4a626d] hover:bg-[#eceee8]"
@@ -1205,11 +1181,10 @@ export default function StepThreePage() {
               </button>
               <button
                 type="button"
-                onClick={() => void subscribeMemoryPassNow()}
-                disabled={isPassPurchasing}
-                className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661] disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={goToPayment}
+                className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661]"
               >
-                {isPassPurchasing ? "구매 처리중..." : "구독하기"}
+                결제하기
               </button>
             </div>
           </div>
