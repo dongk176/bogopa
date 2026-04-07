@@ -16,8 +16,15 @@ type NativeIapPurchaseResult = {
   rawPayload?: Record<string, unknown>;
 };
 
+type NativeIapRestoreResult = {
+  ok?: boolean;
+  count?: number;
+  restored?: NativeIapPurchaseResult[];
+};
+
 type NativeIapPlugin = {
   purchase(options: { productId: string; productKey?: string }): Promise<NativeIapPurchaseResult>;
+  restore?: () => Promise<NativeIapRestoreResult>;
 };
 
 const NATIVE_IAP_PLUGIN_CANDIDATES = ["NativeIap", "NativeIAP", "BogopaIap"] as const;
@@ -82,6 +89,55 @@ async function applyPurchaseToServer(input: {
   };
 }
 
+function toTimestamp(value: string | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function preflightMemoryPassWithRestore(input: {
+  nativeIap: NativeIapPlugin;
+  platform: IapPlatform;
+  storeProductId: string;
+}) {
+  if (typeof input.nativeIap.restore !== "function") return null;
+
+  const restoreResult = await input.nativeIap.restore().catch(() => null);
+  const restoredItems = Array.isArray(restoreResult?.restored) ? restoreResult!.restored! : [];
+  if (restoredItems.length === 0) return null;
+
+  const memoryPassItems = restoredItems
+    .filter((item) => String(item.productId || "").trim() === input.storeProductId)
+    .sort((a, b) => toTimestamp(b.purchasedAt) - toTimestamp(a.purchasedAt));
+
+  if (memoryPassItems.length === 0) return null;
+
+  const latest = memoryPassItems[0];
+  const restoredTransactionId = String(
+    latest.transactionId || latest.orderId || latest.purchaseToken || "",
+  ).trim();
+  if (!restoredTransactionId) return null;
+
+  const originalTransactionId = String(latest.originalTransactionId || "").trim();
+  const purchasedAt = String(latest.purchasedAt || new Date().toISOString());
+
+  return applyPurchaseToServer({
+    platform: input.platform,
+    productId: input.storeProductId,
+    transactionId: restoredTransactionId,
+    originalTransactionId,
+    purchasedAt,
+    rawPayload: latest.rawPayload || {
+      source: "native_storekit2_restore",
+      productId: latest.productId,
+      transactionId: latest.transactionId,
+      originalTransactionId: latest.originalTransactionId,
+      purchasedAt: latest.purchasedAt,
+    },
+  });
+}
+
 export async function purchaseIapProduct(productKey: IapProductKey) {
   const platform = resolveRuntimePlatform();
   const storeProductId = await resolveStoreProductId(platform, productKey);
@@ -93,6 +149,17 @@ export async function purchaseIapProduct(productKey: IapProductKey) {
       throw new Error("네이티브 결제 모듈을 찾지 못했습니다. 앱을 다시 설치한 뒤 시도해주세요.");
     }
     throw new Error("결제는 네이티브 앱에서만 가능합니다.");
+  }
+
+  if (productKey === "memory_pass_monthly") {
+    const preflight = await preflightMemoryPassWithRestore({
+      nativeIap,
+      platform,
+      storeProductId,
+    });
+    if (preflight) {
+      return preflight;
+    }
   }
 
   const purchaseResult = await nativeIap.purchase({
