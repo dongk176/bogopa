@@ -7,6 +7,7 @@ import { createPrivateKey, sign, timingSafeEqual } from "crypto";
 import { consumeMobileAuthTransfer } from "@/lib/server/mobile-auth-transfer";
 import { getUserAuthSnapshot, getUserProfile, isUserAdmin, upsertUserFromOAuth } from "@/lib/server/user-profile";
 import { deriveLoginBlockAccountKey, getActiveLoginBlock } from "@/lib/server/login-blocks";
+import { verifyLocalPasswordCredentials } from "@/lib/server/local-password-auth";
 
 function normalizeImageUrl(url: string | null | undefined) {
     if (!url) return null;
@@ -96,16 +97,10 @@ export const authOptions: NextAuthOptions = {
                 const configuredId = (process.env.BOGOPA_LOCAL_LOGIN_ID || "bogopa").trim();
                 const configuredPassword =
                     process.env.BOGOPA_LOCAL_LOGIN_PASSWORD || "Bogopa2@aDmin021904219297398aWEA@";
-                const localUserId = `local:${configuredId}`;
                 const inputId = typeof credentials?.userId === "string" ? credentials.userId.trim() : "";
                 const inputPassword = typeof credentials?.password === "string" ? credentials.password : "";
 
-                if (!inputId || !inputPassword || inputId !== configuredId) return null;
-
-                const a = Buffer.from(inputPassword);
-                const b = Buffer.from(configuredPassword);
-                const passwordMatches = a.length === b.length && timingSafeEqual(a, b);
-                if (!passwordMatches) return null;
+                if (!inputId || !inputPassword) return null;
 
                 const loginBlock = await getActiveLoginBlock({
                     provider: "local-password",
@@ -115,11 +110,33 @@ export const authOptions: NextAuthOptions = {
                     throw new Error(`ACCOUNT_WITHDRAWN_BLOCKED_UNTIL:${loginBlock.blockedUntil}`);
                 }
 
+                if (inputId === configuredId) {
+                    const localUserId = `local:${configuredId}`;
+                    const a = Buffer.from(inputPassword);
+                    const b = Buffer.from(configuredPassword);
+                    const passwordMatches = a.length === b.length && timingSafeEqual(a, b);
+                    if (!passwordMatches) return null;
+
+                    return {
+                        id: localUserId,
+                        name: configuredId,
+                        email: null,
+                        image: null,
+                        profileCompleted: false,
+                    };
+                }
+
+                const localAccount = await verifyLocalPasswordCredentials({
+                    loginId: inputId,
+                    password: inputPassword,
+                });
+                if (!localAccount) return null;
+
                 return {
-                    id: localUserId,
-                    name: configuredId,
-                    email: null,
-                    image: null,
+                    id: localAccount.userId,
+                    name: localAccount.name,
+                    email: localAccount.email,
+                    image: localAccount.image,
                     profileCompleted: false,
                 };
             },

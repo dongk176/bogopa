@@ -126,6 +126,12 @@ export async function deleteUserAccountData(input: {
 
     await safeDelete(
       client,
+      `DELETE FROM bogopa.local_password_accounts WHERE user_id = $1`,
+      [userId],
+    );
+
+    await safeDelete(
+      client,
       `DELETE FROM bogopa.mobile_auth_transfers WHERE user_id = $1`,
       [userId],
     );

@@ -13,6 +13,7 @@ function LoginContent() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   useNativeSwipeBack(() => router.back(), { startMode: "content" });
 
   useEffect(() => {
@@ -106,6 +107,64 @@ function LoginContent() {
     router.replace("/auth/entry?next=%2F");
   }
 
+  async function handleCreateAccount() {
+    if (isSubmitting || isCreating) return;
+
+    const normalizedId = userId.trim();
+    if (!normalizedId || !password) {
+      setError("아이디와 비밀번호를 입력해주세요.");
+      return;
+    }
+
+    setIsCreating(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/auth/local-signup", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: normalizedId,
+          password,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        blockedUntil?: string | null;
+      };
+
+      if (!response.ok) {
+        if (response.status === 423) {
+          redirectBlockedToHome(payload.blockedUntil || null);
+          return;
+        }
+        setError(payload.error || "아이디 생성 중 문제가 발생했습니다.");
+        return;
+      }
+
+      const result = await signIn("local-password", {
+        redirect: false,
+        userId: normalizedId,
+        password,
+        callbackUrl: "/auth/entry?next=%2F",
+      });
+
+      if (!result || result.error) {
+        setError("아이디가 생성되었지만 자동 로그인에 실패했습니다. 다시 로그인해 주세요.");
+        return;
+      }
+
+      router.replace("/auth/entry?next=%2F");
+    } catch {
+      setError("아이디 생성 중 문제가 발생했습니다.");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   return (
     <main className="fixed inset-0 overflow-hidden bg-white px-6 pb-10 pt-[calc(2rem+var(--native-safe-top))] text-[#2f342e]">
       <WithdrawBlockedNoticeOverlay />
@@ -154,10 +213,19 @@ function LoginContent() {
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isCreating}
             className="mt-2 w-full rounded-2xl bg-[#4a626d] px-4 py-3 text-base font-extrabold text-[#f0f9ff] disabled:opacity-60"
           >
             {isSubmitting ? "로그인 중..." : "로그인"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void handleCreateAccount()}
+            disabled={isSubmitting || isCreating}
+            className="w-full rounded-2xl border border-[#4a626d] bg-white px-4 py-3 text-base font-bold text-[#4a626d] disabled:opacity-60"
+          >
+            {isCreating ? "아이디 생성 중..." : "아이디 만들기"}
           </button>
         </form>
       </section>

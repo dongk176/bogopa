@@ -47,6 +47,7 @@ function PaymentContent() {
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
   const [memoryBalance, setMemoryBalance] = useState<number | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [hasPurchasedMemoryPass, setHasPurchasedMemoryPass] = useState(false);
   const [isPurchasingKey, setIsPurchasingKey] = useState<IapProductKey | null>(null);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
   const paywallViewLoggedRef = useRef(false);
@@ -102,6 +103,7 @@ function PaymentContent() {
       setMemoryBalance(Number(data?.memoryBalance ?? 0));
       const nextSubscribed = Boolean(data?.isSubscribed);
       setIsSubscribed(nextSubscribed);
+      setHasPurchasedMemoryPass(Boolean(data?.hasPurchasedMemoryPass));
       return nextSubscribed;
     } catch {
       return false;
@@ -119,10 +121,12 @@ function PaymentContent() {
         if (cancelled) return;
         setMemoryBalance(Number(data?.memoryBalance ?? 0));
         setIsSubscribed(Boolean(data?.isSubscribed));
+        setHasPurchasedMemoryPass(Boolean(data?.hasPurchasedMemoryPass));
       } catch {
         if (!cancelled) {
           setMemoryBalance(null);
           setIsSubscribed(false);
+          setHasPurchasedMemoryPass(false);
         }
       }
     };
@@ -259,12 +263,23 @@ function PaymentContent() {
 
               <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-white/90">첫 달 특가</p>
-                  <div className="mt-1 flex items-end gap-3">
-                    <p className="text-lg font-semibold text-white/70 line-through">{formatKrw(memoryPassMonthlyPrice)}원</p>
-                    <p className="font-headline text-3xl font-bold text-white md:text-4xl">{formatKrw(memoryPassPromoPrice)}원</p>
-                  </div>
-                  <p className="mt-1 text-sm text-white/90">첫 달 이후 정상가 적용</p>
+                  {hasPurchasedMemoryPass ? (
+                    <>
+                      <p className="text-sm font-semibold text-white/90">월 구독 요금</p>
+                      <div className="mt-1 flex items-end gap-3">
+                        <p className="font-headline text-3xl font-bold text-white md:text-4xl">{formatKrw(memoryPassMonthlyPrice)}원</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-white/90">첫 달 특가</p>
+                      <div className="mt-1 flex items-end gap-3">
+                        <p className="text-lg font-semibold text-white/70 line-through">{formatKrw(memoryPassMonthlyPrice)}원</p>
+                        <p className="font-headline text-3xl font-bold text-white md:text-4xl">{formatKrw(memoryPassPromoPrice)}원</p>
+                      </div>
+                      <p className="mt-1 text-sm text-white/90">첫 달 이후 정상가 적용</p>
+                    </>
+                  )}
                 </div>
                 <button
                   type="button"

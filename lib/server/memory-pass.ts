@@ -49,6 +49,7 @@ export async function ensureMemoryPassTables() {
 
 export type MemoryPassStatus = {
   isSubscribed: boolean;
+  hasPurchasedMemoryPass: boolean;
   memoryBalance: number;
   isUnlimitedChatActive: boolean;
   unlimitedChatExpiresAt: string | null;
@@ -130,6 +131,25 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
   const current = row.rows[0];
   const isSubscribed = Boolean(current?.is_memory_pass_active);
   const memoryBalance = Number(current?.memory_balance || 0);
+  let hasPurchasedMemoryPass = false;
+  try {
+    const purchasedRes = await pool.query(
+      `
+      SELECT EXISTS(
+        SELECT 1
+        FROM bogopa.user_iap_purchases
+        WHERE user_id = $1
+          AND product_key = 'memory_pass_monthly'
+      ) AS has_purchased
+      `,
+      [userId],
+    );
+    hasPurchasedMemoryPass = Boolean(purchasedRes.rows[0]?.has_purchased);
+  } catch (error: any) {
+    if (error?.code !== "42P01") {
+      throw error;
+    }
+  }
   const unlimitedChatExpiresAtRaw = current?.unlimited_chat_expires_at
     ? new Date(current.unlimited_chat_expires_at).toISOString()
     : null;
@@ -139,6 +159,7 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
 
   return {
     isSubscribed,
+    hasPurchasedMemoryPass,
     memoryBalance,
     isUnlimitedChatActive,
     unlimitedChatExpiresAt: unlimitedChatExpiresAtRaw,
