@@ -216,8 +216,11 @@ export default function HomeMemoryCarousel() {
     };
   }, [isHydrated, session, status]);
 
+  const isOverlayBlockingScroll =
+    isLetterMemoryRequiredOpen || isLetterPassRequiredOpen || isLetterDailyLimitOpen;
+
   useEffect(() => {
-    if (!isLetterPassRequiredOpen || typeof document === "undefined") return;
+    if (!isOverlayBlockingScroll || typeof document === "undefined") return;
 
     const body = document.body;
     const html = document.documentElement;
@@ -237,7 +240,7 @@ export default function HomeMemoryCarousel() {
       body.style.overflow = prevBodyOverflow;
       html.style.overflow = prevHtmlOverflow;
     };
-  }, [isLetterPassRequiredOpen]);
+  }, [isOverlayBlockingScroll]);
 
   const shouldShowLoading = (!isHydrated || status === "loading" || isLoading) && items.length === 0;
   const canOpenLetters = isHydrated && status !== "loading" && Boolean(session);
