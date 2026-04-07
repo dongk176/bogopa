@@ -35,7 +35,7 @@ function canUseNativeStoreKitVerification(input: VerifyPurchaseBody) {
   const raw = (input.rawPayload || {}) as Record<string, unknown>;
   const source = String(raw.source || "").trim().toLowerCase();
   const verificationStatus = String(raw.verificationStatus || "").trim().toLowerCase();
-  const isNativeSource = source === "native_storekit2" || source === "native_storekit2_restore";
+  const isNativeSource = source === "native_storekit2";
   return isNativeSource && verificationStatus === "verified";
 }
 
