@@ -5,28 +5,6 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 
-function formatBlockedUntilKst(raw: string | null | undefined) {
-  if (!raw) return "";
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function buildWithdrawBlockedMessage(blockedUntil: string | null | undefined) {
-  const formatted = formatBlockedUntilKst(blockedUntil);
-  if (!formatted) {
-    return "탈퇴한 계정은 30일 동안 다시 로그인할 수 없습니다.";
-  }
-  return `탈퇴한 계정은 30일 동안 다시 로그인할 수 없습니다. (${formatted} 이후 가능)`;
-}
-
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -59,9 +37,20 @@ function LoginContent() {
   useEffect(() => {
     const blocked = searchParams.get("blocked");
     if (blocked !== "1") return;
+    const params = new URLSearchParams({ blocked: "1" });
     const blockedUntil = searchParams.get("until");
-    setError(buildWithdrawBlockedMessage(blockedUntil));
-  }, [searchParams]);
+    const provider = searchParams.get("provider");
+    if (blockedUntil) params.set("until", blockedUntil);
+    if (provider) params.set("provider", provider);
+    router.replace(`/?${params.toString()}`);
+  }, [router, searchParams]);
+
+  function redirectBlockedToHome(blockedUntil: string | null | undefined) {
+    const params = new URLSearchParams({ blocked: "1" });
+    if (blockedUntil) params.set("until", blockedUntil);
+    params.set("provider", "local-password");
+    router.replace(`/?${params.toString()}`);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,7 +75,7 @@ function LoginContent() {
           blockedUntil?: string | null;
         };
         if (statusPayload.blocked) {
-          setError(buildWithdrawBlockedMessage(statusPayload.blockedUntil));
+          redirectBlockedToHome(statusPayload.blockedUntil || null);
           setIsSubmitting(false);
           return;
         }
@@ -105,7 +94,7 @@ function LoginContent() {
     if (!result || result.error) {
       if (typeof result?.error === "string" && result.error.startsWith("ACCOUNT_WITHDRAWN_BLOCKED_UNTIL:")) {
         const blockedUntil = result.error.slice("ACCOUNT_WITHDRAWN_BLOCKED_UNTIL:".length);
-        setError(buildWithdrawBlockedMessage(blockedUntil));
+        redirectBlockedToHome(blockedUntil);
       } else {
         setError("아이디 또는 비밀번호가 올바르지 않습니다.");
       }

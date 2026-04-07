@@ -186,7 +186,7 @@ export const authOptions: NextAuthOptions = {
                 });
                 if (blocked?.blockedUntil) {
                     if (provider === "local-password") {
-                        return `/login?blocked=1&until=${encodeURIComponent(blocked.blockedUntil)}&provider=${encodeURIComponent(provider)}`;
+                        return `/?blocked=1&until=${encodeURIComponent(blocked.blockedUntil)}&provider=${encodeURIComponent(provider)}`;
                     }
                     return `/auth/blocked?blocked=1&until=${encodeURIComponent(blocked.blockedUntil)}&provider=${encodeURIComponent(provider)}`;
                 }

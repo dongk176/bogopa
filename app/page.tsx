@@ -14,6 +14,7 @@ import HomeWebOnly from "@/app/_components/HomeWebOnly";
 import HomeAppOnly from "@/app/_components/HomeAppOnly";
 import HomeMemoryCarouselClientOnly from "@/app/_components/HomeMemoryCarouselClientOnly";
 import NativeAppLoginScreen from "@/app/_components/NativeAppLoginScreen";
+import WithdrawBlockedNoticeOverlay from "@/app/_components/WithdrawBlockedNoticeOverlay";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { getUserProfile } from "@/lib/server/user-profile";
 
@@ -412,6 +413,7 @@ export default async function Home() {
 
   return (
     <div className={`min-h-screen bg-[#faf9f5] ${initialIsNativeApp ? "native-home-static" : ""}`}>
+      <WithdrawBlockedNoticeOverlay />
       <SignupCompleteModal />
       <Navigation />
 

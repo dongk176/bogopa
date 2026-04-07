@@ -6,6 +6,7 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NativeAppleAuth } from "@/lib/native-apple-auth";
+import WithdrawBlockedNoticeOverlay from "@/app/_components/WithdrawBlockedNoticeOverlay";
 
 export default function NativeAppLoginScreen() {
   const router = useRouter();
@@ -128,6 +129,7 @@ export default function NativeAppLoginScreen() {
 
   return (
     <div className="fixed inset-0 h-dvh overflow-hidden bg-white px-6 pb-[calc(2rem+var(--native-safe-bottom))] pt-[calc(2rem+var(--native-safe-top))] text-[#2f342e]">
+      <WithdrawBlockedNoticeOverlay />
       <div className="mx-auto flex h-full max-w-sm flex-col items-center justify-center">
         <img src="/logo/bogopa%20logo.png" alt="Bogopa 로고" className="mb-6 h-32 w-32 object-contain" />
 

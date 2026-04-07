@@ -41,7 +41,7 @@ export default async function AuthBlockedPage({ searchParams }: AuthBlockedPageP
   if (blockedUntil) query.set("until", blockedUntil);
   if (provider) query.set("provider", provider);
 
-  const webLoginPath = `/login?${query.toString()}`;
+  const webLoginPath = `/?${query.toString()}`;
   const deepLink = `co.kr.bogopa.app://auth/complete?${query.toString()}`;
   const blockedUntilLabel = formatBlockedUntilKst(blockedUntil);
   const message = blockedUntilLabel
@@ -79,7 +79,7 @@ export default async function AuthBlockedPage({ searchParams }: AuthBlockedPageP
         </a>
         <div>
           <Link href={webLoginPath} className="text-sm font-semibold text-[#4a626d] underline underline-offset-4">
-            웹 로그인 화면으로 이동
+            메인 로그인 화면으로 이동
           </Link>
         </div>
       </div>

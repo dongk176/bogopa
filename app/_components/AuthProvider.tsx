@@ -184,7 +184,7 @@ function MobileAuthBridge() {
                 if (until) params.set("until", until);
                 if (provider) params.set("provider", provider);
                 await Browser.close().catch(() => {});
-                router.replace(`/login?${params.toString()}`);
+                router.replace(`/?${params.toString()}`);
                 return;
             }
 
