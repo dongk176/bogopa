@@ -134,6 +134,7 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
   const memoryBalance = Number(current?.memory_balance || 0);
   let isSubscribed = false;
   let syncedFromApple = false;
+  let appleTableAvailable = false;
 
   try {
     const memoryPassProduct = getIapCatalog().find((item) => item.key === "memory_pass_monthly");
@@ -159,6 +160,7 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
       `,
       [userId, productIds],
     );
+    appleTableAvailable = true;
     const subRow = subscriptionRes.rows[0] as { status?: string; expires_at?: string | Date | null } | undefined;
     if (subRow) {
       syncedFromApple = true;
@@ -168,6 +170,10 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
       const hasExpiry = typeof expiresAtMs === "number" && Number.isFinite(expiresAtMs);
       const notExpired = !hasExpiry || (expiresAtMs as number) > Date.now();
       isSubscribed = status === "active" && notExpired;
+    } else {
+      // apple_subscriptions 테이블이 존재하지만 사용자 구독 행이 없으면 미구독으로 본다.
+      syncedFromApple = true;
+      isSubscribed = false;
     }
   } catch (error: any) {
     if (error?.code !== "42P01") {
@@ -175,7 +181,7 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
     }
   }
 
-  if (!syncedFromApple) {
+  if (!syncedFromApple && !appleTableAvailable) {
     isSubscribed = fallbackIsSubscribed;
   }
 
