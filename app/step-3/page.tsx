@@ -884,11 +884,21 @@ export default function StepThreePage() {
 
   async function subscribeMemoryPassNow() {
     if (isPassPurchasing) return;
+    if (isSubscribed) {
+      setPassSheetNotice("이미 기억 패스를 이용 중이에요.");
+      return;
+    }
 
     setPassSheetNotice(null);
     setIsPassPurchasing(true);
 
     try {
+      const subscribedNow = await refreshMemoryPassStatus();
+      if (subscribedNow) {
+        setPassSheetNotice("이미 기억 패스를 이용 중이에요.");
+        return;
+      }
+
       const applied = await purchaseIapProduct("memory_pass_monthly");
       const refreshedSubscribed = await refreshMemoryPassStatus();
       const finalSubscribed = Boolean(applied?.isSubscribed) || refreshedSubscribed;
@@ -1221,10 +1231,10 @@ export default function StepThreePage() {
               <button
                 type="button"
                 onClick={() => void subscribeMemoryPassNow()}
-                disabled={isPassPurchasing}
+                disabled={isPassPurchasing || isSubscribed}
                 className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isPassPurchasing ? "구매 처리중..." : "구독하기"}
+                {isSubscribed ? "구독중" : isPassPurchasing ? "구매 처리중..." : "구독하기"}
               </button>
             </div>
           </div>

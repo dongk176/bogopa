@@ -95,11 +95,17 @@ function PaymentContent() {
   };
 
   const refreshMemoryPassStatus = async () => {
-    const response = await fetch("/api/memory-pass", { cache: "no-store" });
-    if (!response.ok) return;
-    const data = await response.json().catch(() => ({}));
-    setMemoryBalance(Number(data?.memoryBalance ?? 0));
-    setIsSubscribed(Boolean(data?.isSubscribed));
+    try {
+      const response = await fetch("/api/memory-pass", { cache: "no-store" });
+      if (!response.ok) return false;
+      const data = await response.json().catch(() => ({}));
+      setMemoryBalance(Number(data?.memoryBalance ?? 0));
+      const nextSubscribed = Boolean(data?.isSubscribed);
+      setIsSubscribed(nextSubscribed);
+      return nextSubscribed;
+    } catch {
+      return false;
+    }
   };
 
   useEffect(() => {
@@ -140,6 +146,15 @@ function PaymentContent() {
   const startPurchase = async (productKey: IapProductKey) => {
     if (isPurchasingKey) return;
     if (productKey === "memory_pass_monthly" && isSubscribed) return;
+
+    if (productKey === "memory_pass_monthly") {
+      const subscribedNow = await refreshMemoryPassStatus();
+      if (subscribedNow) {
+        setPendingNotice("이미 기억 패스를 이용 중이에요.");
+        return;
+      }
+    }
+
     void trackAnalyticsEvent("paywall_cta_clicked", {
       source: "payment_page",
       productKey,
@@ -159,7 +174,7 @@ function PaymentContent() {
       if (typeof applied.isSubscribed === "boolean") {
         setIsSubscribed(applied.isSubscribed);
       } else if (productKey === "memory_pass_monthly") {
-        setIsSubscribed(true);
+        await refreshMemoryPassStatus();
       }
 
       setPendingNotice("결제가 반영되었습니다.");

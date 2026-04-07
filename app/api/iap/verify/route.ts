@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { IapPlatform } from "@/lib/iap/catalog";
+import { findIapProductByStoreId, IapPlatform } from "@/lib/iap/catalog";
 import { applyVerifiedIapPurchase } from "@/lib/server/iap";
 import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 
@@ -39,21 +39,34 @@ function canUseNativeStoreKitVerification(input: VerifyPurchaseBody) {
   return isNativeSource && verificationStatus === "verified";
 }
 
-async function verifyWithStore(input: VerifyPurchaseBody) {
+async function verifyWithStore(
+  input: VerifyPurchaseBody,
+  context: { productKey: string },
+) {
+  const nativeStoreKitVerified = canUseNativeStoreKitVerification(input);
+  if (nativeStoreKitVerified) {
+    return {
+      ok: true,
+      provider: input.platform,
+      mode: "native_storekit2" as const,
+    };
+  }
+
+  // Subscription must always carry native StoreKit2 verified payload.
+  if (context.productKey === "memory_pass_monthly" && input.platform === "ios") {
+    return {
+      ok: false,
+      code: "SUBSCRIPTION_NATIVE_VERIFICATION_REQUIRED",
+      message: "구독 결제 검증에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    };
+  }
+
   const allowMock = canUseMockVerification();
   if (allowMock) {
     return {
       ok: true,
       provider: input.platform,
       mode: "mock" as const,
-    };
-  }
-
-  if (canUseNativeStoreKitVerification(input)) {
-    return {
-      ok: true,
-      provider: input.platform,
-      mode: "native_storekit2" as const,
     };
   }
 
@@ -86,8 +99,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "transactionId가 필요합니다." }, { status: 400 });
   }
 
+  const product = findIapProductByStoreId({
+    platform,
+    productId,
+  });
+  if (!product) {
+    return NextResponse.json({ error: "등록되지 않은 상품입니다." }, { status: 400 });
+  }
+
   try {
-    const verified = await verifyWithStore(body);
+    const verified = await verifyWithStore(body, { productKey: product.key });
     if (!verified.ok) {
       return NextResponse.json({ error: verified.message, code: verified.code }, { status: 501 });
     }

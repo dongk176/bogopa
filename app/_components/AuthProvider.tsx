@@ -176,6 +176,18 @@ function MobileAuthBridge() {
             if (parsedUrl.protocol !== "co.kr.bogopa.app:") return;
             if (parsedUrl.hostname !== "auth" || parsedUrl.pathname !== "/complete") return;
 
+            const isBlocked = parsedUrl.searchParams.get("blocked") === "1";
+            if (isBlocked) {
+                const until = parsedUrl.searchParams.get("until")?.trim() || "";
+                const provider = parsedUrl.searchParams.get("provider")?.trim() || "";
+                const params = new URLSearchParams({ blocked: "1" });
+                if (until) params.set("until", until);
+                if (provider) params.set("provider", provider);
+                await Browser.close().catch(() => {});
+                router.replace(`/login?${params.toString()}`);
+                return;
+            }
+
             const token = parsedUrl.searchParams.get("token")?.trim() || "";
             const nextPath = normalizeNextPath(parsedUrl.searchParams.get("next"));
             if (!token) return;

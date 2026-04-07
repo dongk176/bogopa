@@ -185,7 +185,10 @@ export const authOptions: NextAuthOptions = {
                     accountKey: blockedAccountKey,
                 });
                 if (blocked?.blockedUntil) {
-                    return `/login?blocked=1&until=${encodeURIComponent(blocked.blockedUntil)}&provider=${encodeURIComponent(provider)}`;
+                    if (provider === "local-password") {
+                        return `/login?blocked=1&until=${encodeURIComponent(blocked.blockedUntil)}&provider=${encodeURIComponent(provider)}`;
+                    }
+                    return `/auth/blocked?blocked=1&until=${encodeURIComponent(blocked.blockedUntil)}&provider=${encodeURIComponent(provider)}`;
                 }
 
                 const email = user.email || null;
@@ -283,6 +286,11 @@ export const authOptions: NextAuthOptions = {
 
             // Preserve explicit auth-entry targets with query (e.g. ?next=/chat).
             if (target.pathname === "/auth/entry") {
+                return target.toString();
+            }
+
+            // Preserve blocked-account bridge page (web + native deep-link handoff).
+            if (target.pathname === "/auth/blocked") {
                 return target.toString();
             }
 
