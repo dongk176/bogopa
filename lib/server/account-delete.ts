@@ -118,11 +118,7 @@ export async function deleteUserAccountData(input: {
       [userId],
     );
 
-    await safeDelete(
-      client,
-      `DELETE FROM bogopa.user_iap_purchases WHERE user_id = $1`,
-      [userId],
-    );
+    // Keep IAP ledger rows to prevent Store transaction replay across different accounts.
 
     await safeDelete(
       client,

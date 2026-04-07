@@ -217,6 +217,26 @@ export async function applyVerifiedIapPurchase(
   try {
     await client.query("BEGIN");
 
+    // Prevent sharing one Apple subscription across multiple Bogopa accounts.
+    if (product.key === "memory_pass_monthly" && originalTransactionId) {
+      const ownerByOriginalRes = await client.query(
+        `
+        SELECT user_id
+        FROM bogopa.user_iap_purchases
+        WHERE product_key = 'memory_pass_monthly'
+          AND store_original_transaction_id = $1
+          AND user_id <> $2
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [originalTransactionId, userId],
+      );
+      const ownerByOriginal = String(ownerByOriginalRes.rows[0]?.user_id || "").trim();
+      if (ownerByOriginal) {
+        throw new Error("IAP_SUBSCRIPTION_OWNED_BY_ANOTHER_ACCOUNT");
+      }
+    }
+
     const purchaseRes = await client.query(
       `
       INSERT INTO bogopa.user_iap_purchases (

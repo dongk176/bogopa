@@ -158,6 +158,12 @@ export async function POST(request: Request) {
     if (message === "IAP_TRANSACTION_ALREADY_USED") {
       return NextResponse.json({ error: "이미 다른 계정에서 사용된 거래입니다." }, { status: 409 });
     }
+    if (message === "IAP_SUBSCRIPTION_OWNED_BY_ANOTHER_ACCOUNT") {
+      return NextResponse.json(
+        { error: "현재 Apple 계정의 기억 패스는 다른 보고파 계정에 연결되어 있습니다." },
+        { status: 409 },
+      );
+    }
 
     console.error("[api-iap-verify] failed", error);
     return NextResponse.json({ error: "결제 반영에 실패했습니다." }, { status: 500 });

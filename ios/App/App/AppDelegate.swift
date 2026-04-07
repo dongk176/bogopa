@@ -1772,6 +1772,16 @@ public final class NativeIapPlugin: CAPPlugin, CAPBridgedPlugin {
                     return
                 }
 
+                if product.type == .autoRenewable {
+                    if await hasActiveSubscriptionEntitlement(for: productId) {
+                        rejectOnMain(
+                            call,
+                            message: "현재 Apple 계정에 동일 구독이 이미 활성화되어 있습니다. App Store 구독 관리에서 상태를 먼저 확인해주세요."
+                        )
+                        return
+                    }
+                }
+
                 let result = try await product.purchase()
                 switch result {
                 case .success(let verification):
@@ -1808,6 +1818,24 @@ public final class NativeIapPlugin: CAPPlugin, CAPBridgedPlugin {
                 rejectOnMain(call, message: "결제를 진행하지 못했습니다. \(error.localizedDescription)", error: error)
             }
         }
+    }
+
+    @available(iOS 15.0, *)
+    private func hasActiveSubscriptionEntitlement(for productId: String) async -> Bool {
+        for await entitlement in Transaction.currentEntitlements {
+            switch entitlement {
+            case .verified(let transaction):
+                if transaction.productID != productId { continue }
+                if transaction.revocationDate != nil { continue }
+                if let expirationDate = transaction.expirationDate, expirationDate < Date() {
+                    continue
+                }
+                return true
+            case .unverified:
+                continue
+            }
+        }
+        return false
     }
 
     @objc public func restore(_ call: CAPPluginCall) {
