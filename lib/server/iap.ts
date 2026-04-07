@@ -76,6 +76,28 @@ function parseOptionalDate(value: string | undefined) {
   return parsed.toISOString();
 }
 
+function parseOptionalIsoLike(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const fromMs = new Date(value);
+    if (!Number.isNaN(fromMs.getTime())) return fromMs.toISOString();
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function inferSubscriptionExpiresAtIso(rawPayload: Record<string, unknown>) {
+  return (
+    parseOptionalIsoLike(rawPayload.expirationDate) ||
+    parseOptionalIsoLike(rawPayload.expiresDate) ||
+    parseOptionalIsoLike(rawPayload.expiresAt) ||
+    null
+  );
+}
+
 async function ensureUserEntitlementRow(executor: QueryExecutor, userId: string) {
   await executor.query(
     `
@@ -120,6 +142,53 @@ async function applyMemoryPassMonthlyGrantInTx(
   );
 
   return Number(result.rows[0]?.memory_balance || 0);
+}
+
+async function upsertAppleSubscriptionActiveInTx(
+  executor: QueryExecutor,
+  input: {
+    originalTransactionId: string;
+    userId: string;
+    productId: string;
+    transactionId: string;
+    expiresAtIso: string | null;
+  },
+) {
+  if (!input.originalTransactionId) return;
+
+  await executor.query(
+    `
+    INSERT INTO bogopa.apple_subscriptions (
+      original_transaction_id,
+      user_id,
+      product_id,
+      status,
+      expires_at,
+      last_transaction_id,
+      last_notification_type,
+      last_notification_subtype,
+      updated_at
+    )
+    VALUES ($1, $2, $3, 'active', $4::timestamptz, $5, 'PURCHASE', '', NOW())
+    ON CONFLICT (original_transaction_id)
+    DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      product_id = EXCLUDED.product_id,
+      status = 'active',
+      expires_at = COALESCE(EXCLUDED.expires_at, bogopa.apple_subscriptions.expires_at),
+      last_transaction_id = EXCLUDED.last_transaction_id,
+      last_notification_type = 'PURCHASE',
+      last_notification_subtype = '',
+      updated_at = NOW()
+    `,
+    [
+      input.originalTransactionId,
+      input.userId,
+      input.productId,
+      input.expiresAtIso,
+      input.transactionId,
+    ],
+  );
 }
 
 async function applyMemoryRechargeInTx(
@@ -197,6 +266,7 @@ export async function applyVerifiedIapPurchase(
   const originalTransactionId = normalizeNonEmpty(input.originalTransactionId);
   const purchasedAt = parseOptionalDate(input.purchasedAt);
   const rawPayload = input.rawPayload || {};
+  const inferredSubscriptionExpiresAt = inferSubscriptionExpiresAtIso(rawPayload);
 
   if (!userId) throw new Error("IAP_USER_ID_REQUIRED");
   if (!productId) throw new Error("IAP_PRODUCT_ID_REQUIRED");
@@ -217,8 +287,10 @@ export async function applyVerifiedIapPurchase(
   try {
     await client.query("BEGIN");
 
+    const subscriptionOriginalTransactionId = originalTransactionId || transactionId;
+
     // Prevent sharing one Apple subscription across multiple Bogopa accounts.
-    if (product.key === "memory_pass_monthly" && originalTransactionId) {
+    if (product.key === "memory_pass_monthly" && subscriptionOriginalTransactionId) {
       const ownerByOriginalRes = await client.query(
         `
         SELECT user_id
@@ -229,7 +301,7 @@ export async function applyVerifiedIapPurchase(
         ORDER BY created_at DESC
         LIMIT 1
         `,
-        [originalTransactionId, userId],
+        [subscriptionOriginalTransactionId, userId],
       );
       const ownerByOriginal = String(ownerByOriginalRes.rows[0]?.user_id || "").trim();
       if (ownerByOriginal) {
@@ -264,7 +336,7 @@ export async function applyVerifiedIapPurchase(
         product.key,
         productId,
         transactionId,
-        originalTransactionId,
+        product.key === "memory_pass_monthly" ? subscriptionOriginalTransactionId : originalTransactionId,
         purchasedAt,
         JSON.stringify(rawPayload),
       ],
@@ -295,6 +367,19 @@ export async function applyVerifiedIapPurchase(
 
     if (product.key === "memory_pass_monthly") {
       await applyMemoryPassMonthlyGrantInTx(client, userId);
+      try {
+        await upsertAppleSubscriptionActiveInTx(client, {
+          originalTransactionId: subscriptionOriginalTransactionId,
+          userId,
+          productId,
+          transactionId,
+          expiresAtIso: inferredSubscriptionExpiresAt,
+        });
+      } catch (error: any) {
+        if (error?.code !== "42P01" && error?.code !== "42703") {
+          throw error;
+        }
+      }
     } else if (product.key === "memory_pack_200" || product.key === "memory_pack_1000" || product.key === "memory_pack_20000") {
       await applyMemoryRechargeInTx(client, {
         userId,

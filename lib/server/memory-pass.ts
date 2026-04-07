@@ -1,5 +1,6 @@
 import { getDbPool } from "@/lib/server/db";
 import { getPlanLimits, MEMORY_PASS_MONTHLY_GRANT, MEMORY_PASS_PRICE_KRW } from "@/lib/memory-pass/config";
+import { getIapCatalog } from "@/lib/iap/catalog";
 
 export const DEFAULT_FREE_MEMORY_BALANCE = 60;
 
@@ -129,8 +130,66 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
   );
 
   const current = row.rows[0];
-  const isSubscribed = Boolean(current?.is_memory_pass_active);
+  const fallbackIsSubscribed = Boolean(current?.is_memory_pass_active);
   const memoryBalance = Number(current?.memory_balance || 0);
+  let isSubscribed = false;
+  let syncedFromApple = false;
+
+  try {
+    const memoryPassProduct = getIapCatalog().find((item) => item.key === "memory_pass_monthly");
+    const productIds = Array.from(
+      new Set(
+        [memoryPassProduct?.iosProductId, memoryPassProduct?.androidProductId]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    const subscriptionRes = await pool.query(
+      `
+      SELECT status, expires_at
+      FROM bogopa.apple_subscriptions
+      WHERE user_id = $1
+        AND (
+          COALESCE(array_length($2::text[], 1), 0) = 0
+          OR product_id = ANY($2::text[])
+        )
+      ORDER BY updated_at DESC
+      LIMIT 1
+      `,
+      [userId, productIds],
+    );
+    const subRow = subscriptionRes.rows[0] as { status?: string; expires_at?: string | Date | null } | undefined;
+    if (subRow) {
+      syncedFromApple = true;
+      const status = String(subRow.status || "").trim().toLowerCase();
+      const expiresAtIso = subRow.expires_at ? new Date(subRow.expires_at).toISOString() : null;
+      const expiresAtMs = expiresAtIso ? new Date(expiresAtIso).getTime() : null;
+      const hasExpiry = typeof expiresAtMs === "number" && Number.isFinite(expiresAtMs);
+      const notExpired = !hasExpiry || (expiresAtMs as number) > Date.now();
+      isSubscribed = status === "active" && notExpired;
+    }
+  } catch (error: any) {
+    if (error?.code !== "42P01") {
+      throw error;
+    }
+  }
+
+  if (!syncedFromApple) {
+    isSubscribed = fallbackIsSubscribed;
+  }
+
+  if (fallbackIsSubscribed !== isSubscribed) {
+    await pool.query(
+      `
+      UPDATE bogopa.user_entitlements
+      SET is_memory_pass_active = $2, updated_at = NOW()
+      WHERE user_id = $1
+      `,
+      [userId, isSubscribed],
+    );
+  }
+
   let hasPurchasedMemoryPass = false;
   try {
     const purchasedRes = await pool.query(
