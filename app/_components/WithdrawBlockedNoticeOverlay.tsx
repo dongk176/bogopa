@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 
 function formatBlockedUntilKst(raw: string | null) {
   if (!raw) return "";
@@ -36,20 +37,7 @@ export default function WithdrawBlockedNoticeOverlay() {
     setBlockedUntil(searchParams.get("until"));
     setOpen(true);
   }, [searchParams]);
-
-  useEffect(() => {
-    if (!open) return;
-    const body = document.body;
-    const html = document.documentElement;
-    const prevBodyOverflow = body.style.overflow;
-    const prevHtmlOverflow = html.style.overflow;
-    body.style.overflow = "hidden";
-    html.style.overflow = "hidden";
-    return () => {
-      body.style.overflow = prevBodyOverflow;
-      html.style.overflow = prevHtmlOverflow;
-    };
-  }, [open]);
+  useOverlayScrollLock(open);
 
   const message = useMemo(() => buildWithdrawBlockedMessage(blockedUntil), [blockedUntil]);
 

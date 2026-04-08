@@ -12,6 +12,7 @@ import { PersonaAnalyzeInput } from "@/types/persona";
 import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMobileInputFocus from "@/app/_components/useMobileInputFocus";
+import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
 import { CONVERSATION_TENSION_OPTIONS, normalizeConversationTension } from "@/lib/persona/conversationTension";
 
@@ -503,6 +504,7 @@ export default function StepThreePage() {
     overrides.replyTempo.trim().length > 0 &&
     overrides.empathyStyle.trim().length > 0;
   const isAnyDropdownOpen = activeDropdown !== null;
+  useOverlayScrollLock(Boolean(upgradeCta) || isPassSheetOpen || Boolean(passOwnershipConflictOverlayMessage));
   const isStepThreeSubmitDisabled =
     !isStepReady ||
     isSubmitting ||
@@ -691,18 +693,6 @@ export default function StepThreePage() {
       document.documentElement.style.overflow = prevHtmlOverflow;
     };
   }, [isAnyDropdownOpen]);
-
-  useEffect(() => {
-    if (!isPassSheetOpen) return;
-    const prevBodyOverflow = document.body.style.overflow;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevBodyOverflow;
-      document.documentElement.style.overflow = prevHtmlOverflow;
-    };
-  }, [isPassSheetOpen]);
 
   useEffect(() => {
     const hasDraftContent =

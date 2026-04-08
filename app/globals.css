@@ -401,6 +401,7 @@ html.modal-open,
 body.modal-open {
   overflow: hidden !important;
   overscroll-behavior: none !important;
+  touch-action: none !important;
 }
 
 html.native-lock-scroll,

@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 
 export default function HomeConfirmModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const router = useRouter();
+  useOverlayScrollLock(isOpen);
 
   if (!isOpen) return null;
 

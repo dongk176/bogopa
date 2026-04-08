@@ -10,6 +10,7 @@ import { getIapPriceKrw, MEMORY_PASS_LIST_PRICE_KRW } from "@/lib/iap/pricing";
 import Navigation from "@/app/_components/Navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import MemoryBalanceBadge from "@/app/_components/MemoryBalanceBadge";
+import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
 
 function formatKrw(value: number) {
@@ -51,6 +52,7 @@ function PaymentContent() {
   const [isPurchasingKey, setIsPurchasingKey] = useState<IapProductKey | null>(null);
   const [ownershipConflictOverlayMessage, setOwnershipConflictOverlayMessage] = useState<string | null>(null);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
+  useOverlayScrollLock(Boolean(ownershipConflictOverlayMessage));
   const paywallViewLoggedRef = useRef(false);
   const memoryPassPromoPrice = getIapPriceKrw("memory_pass_monthly");
   const memoryPassMonthlyPrice = MEMORY_PASS_LIST_PRICE_KRW;

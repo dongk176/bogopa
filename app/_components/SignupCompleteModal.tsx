@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SIGNUP_COMPLETE_MODAL_PENDING_KEY } from "@/lib/onboarding-flags";
+import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 
 export default function SignupCompleteModal() {
   const router = useRouter();
@@ -10,6 +11,7 @@ export default function SignupCompleteModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  useOverlayScrollLock(isOpen);
 
   useEffect(() => {
     const shouldOpen = window.localStorage.getItem(SIGNUP_COMPLETE_MODAL_PENDING_KEY) === "1";
@@ -19,11 +21,9 @@ export default function SignupCompleteModal() {
     const rafId = window.requestAnimationFrame(() => {
       setIsVisible(true);
     });
-    document.body.classList.add("modal-open");
     return () => {
       window.cancelAnimationFrame(rafId);
       setIsVisible(false);
-      document.body.classList.remove("modal-open");
     };
   }, []);
 
@@ -35,7 +35,6 @@ export default function SignupCompleteModal() {
       setIsOpen(false);
       setIsClosing(false);
       setIsVisible(false);
-      document.body.classList.remove("modal-open");
       if (moveToStepOne && pathname !== "/step-1") {
         router.push("/step-1");
       }

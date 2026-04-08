@@ -6,7 +6,8 @@ import { NativeAppleAuth } from "@/lib/native-apple-auth";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 
 type LoginModalProps = {
     isOpen: boolean;
@@ -26,25 +27,7 @@ export default function LoginModal({ isOpen, onClose, nextPath }: LoginModalProp
     const router = useRouter();
     const safeNextPath = normalizeNextPath(nextPath);
     const [isAppleSigningIn, setIsAppleSigningIn] = useState(false);
-
-    useEffect(() => {
-        if (!isOpen) return;
-
-        const { body, documentElement } = document;
-        const previousBodyOverflow = body.style.overflow;
-        const previousHtmlOverflow = documentElement.style.overflow;
-        const previousBodyTouchAction = body.style.touchAction;
-
-        body.style.overflow = "hidden";
-        documentElement.style.overflow = "hidden";
-        body.style.touchAction = "none";
-
-        return () => {
-            body.style.overflow = previousBodyOverflow;
-            documentElement.style.overflow = previousHtmlOverflow;
-            body.style.touchAction = previousBodyTouchAction;
-        };
-    }, [isOpen]);
+    useOverlayScrollLock(isOpen);
 
     if (!isOpen) return null;
     const callbackUrl = `/auth/entry?next=${encodeURIComponent(safeNextPath)}`;

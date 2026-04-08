@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 
 type LogoutConfirmModalProps = {
   isOpen: boolean;
@@ -15,6 +16,8 @@ export default function LogoutConfirmModal({
   onClose,
   onConfirm,
 }: LogoutConfirmModalProps) {
+  useOverlayScrollLock(isOpen);
+
   useEffect(() => {
     if (!isOpen) return;
 
