@@ -39,36 +39,12 @@ function canUseNativeStoreKitVerification(input: VerifyPurchaseBody) {
   return isNativeSource && verificationStatus === "verified";
 }
 
-function parseFutureIso(value: unknown) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const timestamp = Date.parse(trimmed);
-  if (!Number.isFinite(timestamp)) return null;
-  return timestamp > Date.now() ? trimmed : null;
-}
-
 async function verifyWithStore(
   input: VerifyPurchaseBody,
   context: { productKey: string },
 ) {
   const nativeStoreKitVerified = canUseNativeStoreKitVerification(input);
   if (nativeStoreKitVerified) {
-    if (context.productKey === "memory_pass_monthly" && input.platform === "ios") {
-      const raw = (input.rawPayload || {}) as Record<string, unknown>;
-      const activeExpiry =
-        parseFutureIso(raw.expirationDate) ||
-        parseFutureIso(raw.expiresDate) ||
-        parseFutureIso(raw.expiresAt);
-      if (!activeExpiry) {
-        return {
-          ok: false,
-          code: "SUBSCRIPTION_NOT_ACTIVE",
-          message: "유효한 구독 결제 내역을 확인하지 못했습니다. App Store 결제를 다시 진행해 주세요.",
-        };
-      }
-    }
-
     return {
       ok: true,
       provider: input.platform,
