@@ -18,9 +18,33 @@ type NativeIapPurchaseResult = {
 
 type NativeIapPlugin = {
   purchase(options: { productId: string; productKey?: string }): Promise<NativeIapPurchaseResult>;
+  restore?: () => Promise<{
+    ok?: boolean;
+    count?: number;
+    restored?: NativeIapPurchaseResult[];
+  }>;
 };
 
 const NATIVE_IAP_PLUGIN_CANDIDATES = ["NativeIap", "NativeIAP", "BogopaIap"] as const;
+const MEMORY_PASS_OWNERSHIP_CONFLICT_CODE = "IAP_MEMORY_PASS_OWNERSHIP_CONFLICT";
+
+export class MemoryPassOwnershipConflictError extends Error {
+  readonly code = MEMORY_PASS_OWNERSHIP_CONFLICT_CODE;
+  constructor(message: string) {
+    super(message);
+    this.name = "MemoryPassOwnershipConflictError";
+  }
+}
+
+export function isMemoryPassOwnershipConflictError(error: unknown): error is MemoryPassOwnershipConflictError {
+  return (
+    error instanceof MemoryPassOwnershipConflictError ||
+    (typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === MEMORY_PASS_OWNERSHIP_CONFLICT_CODE)
+  );
+}
 
 function resolveRuntimePlatform(): IapPlatform {
   if (Capacitor.isNativePlatform()) {
@@ -82,6 +106,75 @@ async function applyPurchaseToServer(input: {
   };
 }
 
+function parseOptionalTimestamp(value: unknown) {
+  if (typeof value !== "string") return null;
+  const ts = Date.parse(value.trim());
+  if (!Number.isFinite(ts)) return null;
+  return ts;
+}
+
+function isLikelyActiveSubscriptionPayload(payload: NativeIapPurchaseResult) {
+  const raw = (payload.rawPayload || {}) as Record<string, unknown>;
+  const revocationTs = parseOptionalTimestamp(raw.revocationDate);
+  if (typeof revocationTs === "number" && revocationTs <= Date.now()) return false;
+
+  const expiresTs =
+    parseOptionalTimestamp(raw.expirationDate) ??
+    parseOptionalTimestamp(raw.expiresDate) ??
+    parseOptionalTimestamp(raw.expiresAt);
+  if (typeof expiresTs === "number") return expiresTs > Date.now();
+
+  return true;
+}
+
+async function preflightMemoryPassOwnership(input: {
+  platform: IapPlatform;
+  storeProductId: string;
+  nativeIap: NativeIapPlugin;
+}) {
+  if (input.platform !== "ios") return;
+  if (typeof input.nativeIap.restore !== "function") return;
+
+  let restored: NativeIapPurchaseResult[] = [];
+  try {
+    const restoredResult = await input.nativeIap.restore();
+    restored = Array.isArray(restoredResult?.restored) ? restoredResult.restored : [];
+  } catch {
+    // Preflight is best-effort. If restore fails, continue purchase flow.
+    return;
+  }
+
+  const target = restored.find((item) => {
+    const productId = String(item.productId || item.rawPayload?.productId || "").trim();
+    if (!productId || productId !== input.storeProductId) return false;
+    return isLikelyActiveSubscriptionPayload(item);
+  });
+  if (!target) return;
+
+  const originalTransactionId = String(
+    target.originalTransactionId || target.rawPayload?.originalTransactionId || "",
+  ).trim();
+  if (!originalTransactionId) return;
+
+  const response = await fetch("/api/iap/memory-pass/preflight", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      platform: input.platform,
+      productId: input.storeProductId,
+      originalTransactionId,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (response.status === 409 || data?.code === "MEMORY_PASS_OWNED_BY_OTHER_ACTIVE") {
+    const message = String(
+      data?.error || "현재 Apple 계정의 기억 패스는 다른 보고파 아이디에 연결되어 있습니다.",
+    );
+    throw new MemoryPassOwnershipConflictError(message);
+  }
+}
+
 export async function purchaseIapProduct(productKey: IapProductKey) {
   const platform = resolveRuntimePlatform();
   const storeProductId = await resolveStoreProductId(platform, productKey);
@@ -93,6 +186,14 @@ export async function purchaseIapProduct(productKey: IapProductKey) {
       throw new Error("네이티브 결제 모듈을 찾지 못했습니다. 앱을 다시 설치한 뒤 시도해주세요.");
     }
     throw new Error("결제는 네이티브 앱에서만 가능합니다.");
+  }
+
+  if (productKey === "memory_pass_monthly") {
+    await preflightMemoryPassOwnership({
+      platform,
+      storeProductId,
+      nativeIap,
+    });
   }
 
   const purchaseResult = await nativeIap.purchase({

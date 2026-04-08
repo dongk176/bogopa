@@ -12,7 +12,7 @@ import { PersonaAnalyzeInput } from "@/types/persona";
 import HomeConfirmModal from "@/app/_components/HomeConfirmModal";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMobileInputFocus from "@/app/_components/useMobileInputFocus";
-import { purchaseIapProduct } from "@/lib/iap/client";
+import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
 import { CONVERSATION_TENSION_OPTIONS, normalizeConversationTension } from "@/lib/persona/conversationTension";
 
 const STORAGE_KEY = "bogopa_profile_step4";
@@ -494,6 +494,7 @@ export default function StepThreePage() {
   const [isPassSheetOpen, setIsPassSheetOpen] = useState(false);
   const [isPassPurchasing, setIsPassPurchasing] = useState(false);
   const [passSheetNotice, setPassSheetNotice] = useState<string | null>(null);
+  const [passOwnershipConflictOverlayMessage, setPassOwnershipConflictOverlayMessage] = useState<string | null>(null);
   const [loadingProgressIndex, setLoadingProgressIndex] = useState(0);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [isStepReady, setIsStepReady] = useState(false);
@@ -879,6 +880,7 @@ export default function StepThreePage() {
   function openPassSheet() {
     setUpgradeCta(null);
     setPassSheetNotice(null);
+    setPassOwnershipConflictOverlayMessage(null);
     setIsPassSheetOpen(true);
   }
 
@@ -890,6 +892,7 @@ export default function StepThreePage() {
     }
 
     setPassSheetNotice(null);
+    setPassOwnershipConflictOverlayMessage(null);
     setIsPassPurchasing(true);
 
     try {
@@ -911,6 +914,10 @@ export default function StepThreePage() {
       setIsPassSheetOpen(false);
       setPassSheetNotice(null);
     } catch (error) {
+      if (isMemoryPassOwnershipConflictError(error)) {
+        setPassOwnershipConflictOverlayMessage(error.message);
+        return;
+      }
       const message = error instanceof Error ? error.message : "구독을 진행하지 못했습니다.";
       setPassSheetNotice(message);
     } finally {
@@ -1235,6 +1242,23 @@ export default function StepThreePage() {
                 className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSubscribed ? "구독중" : isPassPurchasing ? "구매 처리중..." : "구독하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {passOwnershipConflictOverlayMessage ? (
+        <div className="fixed inset-0 z-[190] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-6 text-center shadow-2xl shadow-black/20">
+            <h3 className="font-headline text-2xl font-bold text-[#2f342e]">이미 다른 계정에 연결된 구독</h3>
+            <p className="mt-3 break-keep text-sm leading-relaxed text-[#5d605a]">{passOwnershipConflictOverlayMessage}</p>
+            <div className="mt-6 grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                onClick={() => setPassOwnershipConflictOverlayMessage(null)}
+                className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661]"
+              >
+                확인
               </button>
             </div>
           </div>

@@ -290,21 +290,85 @@ export async function applyVerifiedIapPurchase(
     const subscriptionOriginalTransactionId = originalTransactionId || transactionId;
 
     // Prevent sharing one Apple subscription across multiple Bogopa accounts.
+    // Allow transfer only when previous owner's subscription is no longer effectively active.
     if (product.key === "memory_pass_monthly" && subscriptionOriginalTransactionId) {
-      const ownerByOriginalRes = await client.query(
-        `
-        SELECT user_id
-        FROM bogopa.user_iap_purchases
-        WHERE product_key = 'memory_pass_monthly'
-          AND store_original_transaction_id = $1
-          AND user_id <> $2
-        ORDER BY created_at DESC
-        LIMIT 1
-        `,
-        [subscriptionOriginalTransactionId, userId],
-      );
-      const ownerByOriginal = String(ownerByOriginalRes.rows[0]?.user_id || "").trim();
-      if (ownerByOriginal) {
+      let blockedByActiveOwner = false;
+      let hasAuthoritativeSubscriptionRow = false;
+
+      // Primary source of truth: current subscription state table.
+      try {
+        const subscriptionOwnerRes = await client.query(
+          `
+          SELECT
+            user_id,
+            status,
+            expires_at,
+            CASE
+              WHEN status = 'active' AND (expires_at IS NULL OR expires_at > NOW()) THEN TRUE
+              ELSE FALSE
+            END AS is_effectively_active
+          FROM bogopa.apple_subscriptions
+          WHERE original_transaction_id = $1
+          ORDER BY updated_at DESC
+          LIMIT 1
+          `,
+          [subscriptionOriginalTransactionId],
+        );
+
+        const ownerRow = subscriptionOwnerRes.rows[0] as
+          | {
+              user_id?: string | null;
+              is_effectively_active?: boolean;
+            }
+          | undefined;
+        hasAuthoritativeSubscriptionRow = Boolean(ownerRow);
+        const ownerUserId = String(ownerRow?.user_id || "").trim();
+        const isEffectivelyActive = Boolean(ownerRow?.is_effectively_active);
+
+        if (ownerUserId && ownerUserId !== userId && isEffectivelyActive) {
+          blockedByActiveOwner = true;
+        }
+      } catch (error: any) {
+        if (error?.code !== "42P01") {
+          throw error;
+        }
+      }
+
+      // Fallback: if subscription table is unavailable/outdated, use latest purchase owner
+      // and block only when that owner is currently marked active.
+      if (!blockedByActiveOwner && !hasAuthoritativeSubscriptionRow) {
+        const ownerByOriginalRes = await client.query(
+          `
+          SELECT user_id
+          FROM bogopa.user_iap_purchases
+          WHERE product_key = 'memory_pass_monthly'
+            AND store_original_transaction_id = $1
+            AND user_id <> $2
+          ORDER BY created_at DESC
+          LIMIT 1
+          `,
+          [subscriptionOriginalTransactionId, userId],
+        );
+        const ownerByOriginal = String(ownerByOriginalRes.rows[0]?.user_id || "").trim();
+
+        if (ownerByOriginal) {
+          const ownerActiveRes = await client.query(
+            `
+            SELECT is_memory_pass_active
+            FROM bogopa.user_entitlements
+            WHERE user_id = $1
+            LIMIT 1
+            `,
+            [ownerByOriginal],
+          );
+          const ownerIsActive = Boolean(ownerActiveRes.rows[0]?.is_memory_pass_active);
+          if (ownerIsActive) {
+            blockedByActiveOwner = true;
+          }
+        }
+      }
+
+      if (blockedByActiveOwner) {
         throw new Error("IAP_SUBSCRIPTION_OWNED_BY_ANOTHER_ACCOUNT");
       }
     }

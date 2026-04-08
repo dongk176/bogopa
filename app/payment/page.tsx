@@ -10,7 +10,7 @@ import { getIapPriceKrw, MEMORY_PASS_LIST_PRICE_KRW } from "@/lib/iap/pricing";
 import Navigation from "@/app/_components/Navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import MemoryBalanceBadge from "@/app/_components/MemoryBalanceBadge";
-import { purchaseIapProduct } from "@/lib/iap/client";
+import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
 
 function formatKrw(value: number) {
   return new Intl.NumberFormat("ko-KR").format(value);
@@ -49,6 +49,7 @@ function PaymentContent() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [hasPurchasedMemoryPass, setHasPurchasedMemoryPass] = useState(false);
   const [isPurchasingKey, setIsPurchasingKey] = useState<IapProductKey | null>(null);
+  const [ownershipConflictOverlayMessage, setOwnershipConflictOverlayMessage] = useState<string | null>(null);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
   const paywallViewLoggedRef = useRef(false);
   const memoryPassPromoPrice = getIapPriceKrw("memory_pass_monthly");
@@ -164,6 +165,7 @@ function PaymentContent() {
       productKey,
       isSubscribed,
     });
+    setOwnershipConflictOverlayMessage(null);
     setPendingNotice(null);
     setIsPurchasingKey(productKey);
 
@@ -183,6 +185,10 @@ function PaymentContent() {
 
       setPendingNotice("결제가 반영되었습니다.");
     } catch (error) {
+      if (isMemoryPassOwnershipConflictError(error)) {
+        setOwnershipConflictOverlayMessage(error.message);
+        return;
+      }
       const message = error instanceof Error ? error.message : "결제를 진행하지 못했습니다.";
       setPendingNotice(message);
     } finally {
@@ -522,6 +528,24 @@ function PaymentContent() {
 
         <div aria-hidden className="h-[calc(2.5rem+env(safe-area-inset-bottom))] lg:hidden" />
       </main>
+
+      {ownershipConflictOverlayMessage ? (
+        <div className="fixed inset-0 z-[170] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-6 text-center shadow-2xl shadow-black/20">
+            <h3 className="font-headline text-2xl font-bold text-[#2f342e]">이미 다른 계정에 연결된 구독</h3>
+            <p className="mt-3 break-keep text-sm leading-relaxed text-[#5d605a]">{ownershipConflictOverlayMessage}</p>
+            <div className="mt-6 grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                onClick={() => setOwnershipConflictOverlayMessage(null)}
+                className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661]"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
