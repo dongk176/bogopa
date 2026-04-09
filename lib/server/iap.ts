@@ -486,14 +486,14 @@ export async function applyVerifiedIapPurchase(
         UPDATE bogopa.user_entitlements
         SET
           unlimited_chat_expires_at = CASE
-            WHEN unlimited_chat_expires_at IS NULL OR unlimited_chat_expires_at < NOW()
-              THEN NOW() + make_interval(hours => $2::int)
+            WHEN unlimited_chat_expires_at IS NULL OR unlimited_chat_expires_at < COALESCE($3::timestamptz, NOW())
+              THEN COALESCE($3::timestamptz, NOW()) + make_interval(hours => $2::int)
             ELSE unlimited_chat_expires_at + make_interval(hours => $2::int)
           END,
           updated_at = NOW()
         WHERE user_id = $1
         `,
-        [userId, product.unlimitedHours],
+        [userId, product.unlimitedHours, purchasedAt],
       );
     } else {
       throw new Error("IAP_PRODUCT_UNSUPPORTED");
