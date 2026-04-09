@@ -388,6 +388,10 @@ export async function applyVerifiedIapPurchase(
       VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7::timestamptz, $8::jsonb)
       ON CONFLICT (platform, store_transaction_id)
       DO UPDATE SET
+        user_id = CASE
+          WHEN bogopa.user_iap_purchases.product_key = 'memory_pass_monthly' THEN EXCLUDED.user_id
+          ELSE bogopa.user_iap_purchases.user_id
+        END,
         store_original_transaction_id = COALESCE(EXCLUDED.store_original_transaction_id, bogopa.user_iap_purchases.store_original_transaction_id),
         purchased_at = COALESCE(EXCLUDED.purchased_at, bogopa.user_iap_purchases.purchased_at),
         raw_payload = EXCLUDED.raw_payload,
