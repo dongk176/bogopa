@@ -341,7 +341,11 @@ function shouldApplyRenewalGrant(notificationType: string) {
   // webhook inserts/uses the transaction before client verify, causing
   // "IAP_TRANSACTION_ALREADY_USED" on the app side. Keep webhook grants
   // for renewal/recovery only.
-  return notificationType === "DID_RENEW" || notificationType === "DID_RECOVER";
+  return (
+    notificationType === "DID_RENEW" ||
+    notificationType === "DID_RECOVER" ||
+    notificationType === "INTERACTIVE_RENEWAL"
+  );
 }
 
 function shouldSyncEntitlementFlag(notificationType: string) {
