@@ -486,6 +486,7 @@ export default function StepThreePage() {
   const [overrides, setOverrides] = useState<Step4Overrides>(DEFAULT_OVERRIDES);
   const [planLimits, setPlanLimits] = useState<PlanLimits>(FREE_PLAN_LIMITS);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [hasPurchasedMemoryPass, setHasPurchasedMemoryPass] = useState(false);
   const [profileMeta, setProfileMeta] = useState<{ age: number | null; mbti: string; interests: string[] }>({
     age: null,
     mbti: "",
@@ -571,9 +572,10 @@ export default function StepThreePage() {
     try {
       const response = await fetch("/api/memory-pass", { cache: "no-store" });
       if (!response.ok) return false;
-      const payload = (await response.json()) as { isSubscribed?: boolean; limits?: PlanLimits };
+      const payload = (await response.json()) as { isSubscribed?: boolean; limits?: PlanLimits; hasPurchasedMemoryPass?: boolean };
       if (payload?.limits) setPlanLimits(payload.limits);
       setIsSubscribed(Boolean(payload?.isSubscribed));
+      setHasPurchasedMemoryPass(Boolean(payload?.hasPurchasedMemoryPass));
       return Boolean(payload?.isSubscribed);
     } catch {
       return false;
@@ -1200,12 +1202,18 @@ export default function StepThreePage() {
             </ul>
 
             <div className="mt-5 rounded-2xl bg-[#304b5a] px-4 py-3 text-center text-[#f8fbff]">
-              <p className="text-xs font-semibold text-[#f8fbff]/90">첫 달 특가</p>
+              <p className="text-xs font-semibold text-[#f8fbff]/90">{hasPurchasedMemoryPass ? "기억 패스 재구독" : "첫 달 특가"}</p>
               <div className="mt-1 flex items-end justify-center gap-2">
-                <span className="text-sm font-semibold text-[#f8fbff]/65 line-through">6,600원</span>
-                <span className="font-headline text-3xl font-extrabold text-[#f8fbff]">3,300원</span>
+                {!hasPurchasedMemoryPass && (
+                  <span className="text-sm font-semibold text-[#f8fbff]/65 line-through">6,600원</span>
+                )}
+                <span className="font-headline text-3xl font-extrabold text-[#f8fbff]">
+                  {hasPurchasedMemoryPass ? "6,600원" : "3,300원"}
+                </span>
               </div>
-              <p className="mt-0.5 text-[11px] text-[#f8fbff]/85">첫 달 이후 정상가 적용</p>
+              <p className="mt-0.5 text-[11px] text-[#f8fbff]/85">
+                {hasPurchasedMemoryPass ? "매월 정기결제" : "첫 달 이후 정상가 적용"}
+              </p>
             </div>
 
             {passSheetNotice ? (
