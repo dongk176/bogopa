@@ -639,15 +639,16 @@ function PaymentContent() {
         <div className="fixed inset-0 z-[170] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">
           <div className="w-full max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 text-center shadow-2xl shadow-black/20 animate-fade-in">
             <h3 className="font-headline text-2xl font-bold text-[#2f342e]">결제가 완료되었습니다</h3>
-            <p className="mt-3 break-keep text-sm leading-relaxed text-[#5d605a]">
-              이제 내 기억과 더 깊은 대화를 이어나갈 수 있습니다.
+            <p className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-relaxed text-[#5d605a]">
+              내 기억과 더 깊은 대화를 이어나갈 수 있습니다.
             </p>
             <div className="mt-8">
               <button
                 type="button"
                 onClick={() => void handlePostPurchaseCtaClick()}
                 disabled={isLoadingPersonas}
-                className="w-full rounded-2xl bg-[#3e5560] py-4 text-base font-bold text-white shadow-lg shadow-[#3e5560]/20 hover:bg-[#2d4049] transition-colors disabled:opacity-60"
+                className="w-full rounded-2xl bg-[#3e5560] py-4 text-base font-bold !text-[#f8fbff] shadow-lg shadow-[#3e5560]/20 transition-colors hover:bg-[#2d4049] disabled:opacity-60"
+                style={{ WebkitTextFillColor: "#f8fbff", color: "#f8fbff" }}
               >
                 {isLoadingPersonas ? "이동 중..." : "내 기억과 대화하러 가기"}
               </button>

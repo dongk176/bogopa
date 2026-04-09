@@ -34,6 +34,9 @@ const MBTI_GROUPS = [
   ["P", "J"],
 ] as const;
 const SIGNUP_DRAFT_STORAGE_KEY = "bogopa_signup_draft_v1";
+const SIGNUP_HIDDEN_INTEREST_KEYS = new Set<InterestKey>(["friend", "relationship", "family"]);
+const SIGNUP_INTEREST_OPTIONS = INTEREST_OPTIONS.filter((option) => !SIGNUP_HIDDEN_INTEREST_KEYS.has(option.key));
+const SIGNUP_INTEREST_LABEL_SET = new Set<string>(SIGNUP_INTEREST_OPTIONS.map((option) => option.label));
 
 function ArrowRightIcon() {
   return (
@@ -332,7 +335,7 @@ function SignupContent() {
           new Set(
             parsed.interests
               .map((item) => (typeof item === "string" ? item.trim() : ""))
-              .filter((item) => item.length > 0),
+              .filter((item) => item.length > 0 && SIGNUP_INTEREST_LABEL_SET.has(item)),
           ),
         ).slice(0, MAX_INTEREST_SELECTION);
         setInterests(dedupedInterests);
@@ -392,7 +395,9 @@ function SignupContent() {
               return [value];
             })
           : [];
-        const profileInterests = Array.from(new Set(normalizedInterests)).slice(0, MAX_INTEREST_SELECTION);
+        const profileInterests = Array.from(new Set(normalizedInterests))
+          .filter((item) => SIGNUP_INTEREST_LABEL_SET.has(item))
+          .slice(0, MAX_INTEREST_SELECTION);
 
         if (hasLocalDraft) {
           setName((prev) => prev || profile.name || "");
@@ -745,7 +750,7 @@ function SignupContent() {
                       )}
                     </div>
                     <div className="grid grid-cols-3 gap-2 xl:grid-cols-4 2xl:grid-cols-5">
-                      {INTEREST_OPTIONS.map((option) => {
+                      {SIGNUP_INTEREST_OPTIONS.map((option) => {
                         const selected = interests.includes(option.label);
                         return (
                           <button
