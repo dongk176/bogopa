@@ -221,3 +221,46 @@ export async function purchaseIapProduct(productKey: IapProductKey) {
     rawPayload,
   });
 }
+
+export async function restoreIapPurchases(): Promise<void> {
+  const platform = resolveRuntimePlatform();
+  if (!platform) return;
+
+  const nativeIap = getNativeIapPlugin();
+  if (!nativeIap || typeof nativeIap.restore !== "function") {
+    throw new Error("결제 내역 복원 기능을 지원하지 않는 환경입니다.");
+  }
+
+  const result = await nativeIap.restore();
+  if (!result || !Array.isArray(result.restored) || result.restored.length === 0) {
+    throw new Error("복조 가능한 결제 내역이 없습니다.");
+  }
+
+  let successCount = 0;
+  for (const item of result.restored) {
+    const storeProductId = item.productId;
+    const resolvedTransactionId = String(item.transactionId || item.orderId || item.purchaseToken || "").trim();
+    if (!storeProductId || !resolvedTransactionId) continue;
+
+    try {
+      await applyPurchaseToServer({
+        platform,
+        productId: storeProductId,
+        transactionId: resolvedTransactionId,
+        originalTransactionId: item.originalTransactionId,
+        purchasedAt: item.purchasedAt || new Date().toISOString(),
+        rawPayload: item.rawPayload || item,
+      });
+      successCount++;
+    } catch (err: any) {
+      // 본인 소유가 아니거나(Conflict) 이미 처리된 에러 등이 발생할 수 있음
+      if (err instanceof Error && err.message.includes("이미 다른 계정에서")) continue;
+      if (err instanceof Error && err.message.includes("연결되어 있습니다")) continue;
+      console.warn("[iap-restore] item sync failed", err);
+    }
+  }
+
+  if (successCount === 0) {
+    throw new Error("새로 복원된 유효한 결제 내역이 없습니다.");
+  }
+}

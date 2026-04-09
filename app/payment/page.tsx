@@ -11,7 +11,7 @@ import Navigation from "@/app/_components/Navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import MemoryBalanceBadge from "@/app/_components/MemoryBalanceBadge";
 import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
-import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
+import { isMemoryPassOwnershipConflictError, purchaseIapProduct, restoreIapPurchases } from "@/lib/iap/client";
 
 function formatKrw(value: number) {
   return new Intl.NumberFormat("ko-KR").format(value);
@@ -57,6 +57,7 @@ function PaymentContent() {
   const [showPostPurchaseCta, setShowPostPurchaseCta] = useState(false);
   const [isLoadingPersonas, setIsLoadingPersonas] = useState(false);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   useOverlayScrollLock(Boolean(ownershipConflictOverlayMessage) || showExtensionOverlay || showPostPurchaseCta);
   const paywallViewLoggedRef = useRef(false);
   const memoryPassPromoPrice = getIapPriceKrw("memory_pass_monthly");
@@ -223,6 +224,28 @@ function PaymentContent() {
       setPendingNotice(message);
     } finally {
       setIsPurchasingKey(null);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!Capacitor.isNativePlatform()) {
+      window.alert("결제 내역 복원은 앱 환경에서만 지원됩니다.");
+      return;
+    }
+    if (isRestoring || isPurchasingKey) return;
+    try {
+      setIsRestoring(true);
+      setPendingNotice("결제 내역 복원 중...");
+      await restoreIapPurchases();
+      await refreshMemoryPassStatus();
+      setPendingNotice(null);
+      window.alert("과거 결제 내역이 성공적으로 복원되었습니다.");
+    } catch (error: any) {
+      setPendingNotice(null);
+      if (error && error.message && (error.message.includes("취소") || /cancel/i.test(error.message))) return;
+      window.alert(error instanceof Error ? error.message : "결제 복원에 실패했습니다.");
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -480,7 +503,17 @@ function PaymentContent() {
           </div>
         </section>
 
-        <section className="mt-12 overflow-hidden rounded-3xl bg-white">
+        <div className="mt-8 text-center">
+          <button
+            type="button"
+            onClick={handleRestore}
+            className="text-sm font-bold text-[#4a626d] underline underline-offset-4 transition-colors hover:text-[#2f342e]"
+          >
+            {isRestoring ? "복원 처리 중..." : "App Store 구매 내역 복원"}
+          </button>
+        </div>
+
+        <section className="mt-10 overflow-hidden rounded-3xl bg-white">
           <button
             type="button"
             onClick={() => setIsPolicyOpen((prev) => !prev)}
@@ -572,7 +605,16 @@ function PaymentContent() {
                     <br />- 이벤트, 보상 등을 통해 무상으로 지급받은 재화는 환불 대상에서 제외됩니다.
                   </p>
 
-                  <p className="mt-4 font-semibold text-[#2f342e]">3. 환불 처리 안내</p>
+                  <div className="mt-5 border-t border-[#edf1f4] pt-5">
+                    <p className="font-semibold text-[#2f342e]">자세한 서비스 정책은 아래 문서를 확인해주세요.</p>
+                    <div className="mt-2 text-[#4a626d]">
+                      <Link href="/legal/terms" className="font-bold underline underline-offset-4 hover:text-[#2f342e]">이용약관</Link>
+                      <span className="mx-3">|</span>
+                      <Link href="/legal/privacy" className="font-bold underline underline-offset-4 hover:text-[#2f342e]">개인정보처리방침</Link>
+                    </div>
+                  </div>
+
+                  <p className="mt-6 font-semibold text-[#2f342e]">3. 환불 처리 안내</p>
                   <p className="mt-1">
                     조건을 충족하는 정당한 환불 요청에 한해, 접수일로부터 영업일 기준 3일 이내에 결제 취소 절차가 진행됩니다. 단, 결제 대행사(PG) 및 앱
                     마켓(앱스토어, 플레이스토어)의 정책에 따라 실제 환급까지는 추가 시일이 소요될 수 있습니다.
