@@ -51,11 +51,20 @@ function PaymentContent() {
   const [hasPurchasedMemoryPass, setHasPurchasedMemoryPass] = useState(false);
   const [isPurchasingKey, setIsPurchasingKey] = useState<IapProductKey | null>(null);
   const [ownershipConflictOverlayMessage, setOwnershipConflictOverlayMessage] = useState<string | null>(null);
+  const [isUnlimitedChatActive, setIsUnlimitedChatActive] = useState(false);
+  const [unlimitedChatExpiresAt, setUnlimitedChatExpiresAt] = useState<string | null>(null);
+  const [showExtensionOverlay, setShowExtensionOverlay] = useState(false);
+  const [showPostPurchaseCta, setShowPostPurchaseCta] = useState(false);
+  const [isLoadingPersonas, setIsLoadingPersonas] = useState(false);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
-  useOverlayScrollLock(Boolean(ownershipConflictOverlayMessage));
+  useOverlayScrollLock(Boolean(ownershipConflictOverlayMessage) || showExtensionOverlay || showPostPurchaseCta);
   const paywallViewLoggedRef = useRef(false);
   const memoryPassPromoPrice = getIapPriceKrw("memory_pass_monthly");
   const memoryPassMonthlyPrice = MEMORY_PASS_LIST_PRICE_KRW;
+
+  const formattedExpiry = unlimitedChatExpiresAt
+    ? new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", hour: "numeric", minute: "numeric" }).format(new Date(unlimitedChatExpiresAt))
+    : "";
 
   const memoryPackBase = getIapPriceKrw("memory_pack_200");
   const memoryPack200Price = getIapPriceKrw("memory_pack_200");
@@ -107,6 +116,8 @@ function PaymentContent() {
       const nextSubscribed = Boolean(data?.isSubscribed);
       setIsSubscribed(nextSubscribed);
       setHasPurchasedMemoryPass(Boolean(data?.hasPurchasedMemoryPass));
+      setIsUnlimitedChatActive(Boolean(data?.isUnlimitedChatActive));
+      setUnlimitedChatExpiresAt(data?.unlimitedChatExpiresAt || null);
       return nextSubscribed;
     } catch {
       return false;
@@ -125,11 +136,15 @@ function PaymentContent() {
         setMemoryBalance(Number(data?.memoryBalance ?? 0));
         setIsSubscribed(Boolean(data?.isSubscribed));
         setHasPurchasedMemoryPass(Boolean(data?.hasPurchasedMemoryPass));
+        setIsUnlimitedChatActive(Boolean(data?.isUnlimitedChatActive));
+        setUnlimitedChatExpiresAt(data?.unlimitedChatExpiresAt || null);
       } catch {
         if (!cancelled) {
           setMemoryBalance(null);
           setIsSubscribed(false);
           setHasPurchasedMemoryPass(false);
+          setIsUnlimitedChatActive(false);
+          setUnlimitedChatExpiresAt(null);
         }
       }
     };
@@ -150,7 +165,7 @@ function PaymentContent() {
     });
   }, [returnTo]);
 
-  const startPurchase = async (productKey: IapProductKey) => {
+  const startPurchase = async (productKey: IapProductKey, skipExtensionCheck = false) => {
     if (isPurchasingKey) return;
     if (productKey === "memory_pass_monthly" && isSubscribed) return;
 
@@ -158,6 +173,13 @@ function PaymentContent() {
       const subscribedNow = await refreshMemoryPassStatus();
       if (subscribedNow) {
         setPendingNotice("이미 기억 패스를 이용 중이에요.");
+        return;
+      }
+    }
+
+    if (productKey === "unlimited_chat_24h" && !skipExtensionCheck) {
+      if (isUnlimitedChatActive) {
+        setShowExtensionOverlay(true);
         return;
       }
     }
@@ -174,8 +196,10 @@ function PaymentContent() {
     try {
       const applied = await purchaseIapProduct(productKey);
 
+      let latestBalance = memoryBalance;
       if (typeof applied.memoryBalance === "number") {
         setMemoryBalance(applied.memoryBalance);
+        latestBalance = applied.memoryBalance;
       } else {
         await refreshMemoryPassStatus();
       }
@@ -185,7 +209,11 @@ function PaymentContent() {
         await refreshMemoryPassStatus();
       }
 
-      setPendingNotice("결제가 반영되었습니다.");
+      if (productKey === "unlimited_chat_24h") {
+        await refreshMemoryPassStatus();
+      }
+
+      setShowPostPurchaseCta(true);
     } catch (error) {
       if (isMemoryPassOwnershipConflictError(error)) {
         setOwnershipConflictOverlayMessage(error.message);
@@ -195,6 +223,29 @@ function PaymentContent() {
       setPendingNotice(message);
     } finally {
       setIsPurchasingKey(null);
+    }
+  };
+
+  const handlePostPurchaseCtaClick = async () => {
+    setIsLoadingPersonas(true);
+    try {
+      const response = await fetch("/api/persona", { cache: "no-store" });
+      if (!response.ok) throw new Error("failed");
+      const data = await response.json();
+      if (!data.ok || !Array.isArray(data.personas)) throw new Error("failed");
+      
+      const count = data.personas.length;
+      if (count === 1) {
+        router.push(`/chat?id=${data.personas[0].persona_id}`);
+      } else if (count > 1) {
+        router.push("/chat/list");
+      } else {
+        router.push("/step-1/start");
+      }
+    } catch {
+      router.push("/chat/list");
+    } finally {
+      setIsLoadingPersonas(false);
     }
   };
 
@@ -311,8 +362,12 @@ function PaymentContent() {
                 <p className="mt-1 text-sm text-[#5d605a]">사용량 상관 없이 원하는 만큼 대화 가능</p>
               </div>
               <div className="rounded-xl bg-[#eef3f7] p-4">
-                <p className="font-bold text-[#2f342e]">결제 즉시 시작</p>
-                <p className="mt-1 text-sm text-[#5d605a]">지금 바로 깊은 대화로 전환</p>
+                <p className="font-bold text-[#2f342e]">{isUnlimitedChatActive ? "활성화 중" : "결제 즉시 시작"}</p>
+                <p className="mt-1 text-sm text-[#5d605a]">
+                  {isUnlimitedChatActive && formattedExpiry
+                    ? `${formattedExpiry}까지 이용 가능`
+                    : "지금 바로 깊은 대화로 전환"}
+                </p>
               </div>
             </div>
 
@@ -326,7 +381,7 @@ function PaymentContent() {
                 disabled={isPurchasingKey !== null}
                 className="mt-5 w-full rounded-xl bg-[#4a626d] px-6 py-4 font-bold text-white shadow-lg shadow-[#8ba8b833] transition-colors hover:bg-[#3e5661] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isPurchasingKey === "unlimited_chat_24h" ? "구매 처리중..." : "구매하기"}
+                {isPurchasingKey === "unlimited_chat_24h" ? "구매 처리중..." : (isUnlimitedChatActive ? "기간 연장하기" : "구매하기")}
               </button>
             </div>
           </article>
@@ -543,6 +598,58 @@ function PaymentContent() {
                 className="rounded-2xl bg-[#4a626d] px-4 py-3 text-sm font-bold text-[#f0f9ff] hover:bg-[#3e5661]"
               >
                 확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showExtensionOverlay ? (
+        <div className="fixed inset-0 z-[170] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-6 text-center shadow-2xl shadow-black/20 animate-fade-in">
+            <h3 className="font-headline text-2xl font-bold text-[#2f342e]">연장 결제 안내</h3>
+            <p className="mt-3 break-keep text-sm leading-relaxed text-[#5d605a]">
+              현재 무제한 대화 이용권을 이용 중입니다.<br />
+              결제를 진행하시면 기존 만료일로부터 24시간이 추가 연장됩니다.
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setShowExtensionOverlay(false)}
+                className="rounded-2xl border border-[#afb3ac]/20 py-3 text-sm font-bold text-[#655d5a] hover:bg-black/5 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExtensionOverlay(false);
+                  void startPurchase("unlimited_chat_24h", true);
+                }}
+                className="rounded-2xl bg-[#4a626d] py-3 text-sm font-bold text-white shadow-lg shadow-[#4a626d]/20 hover:bg-[#3e5661] transition-colors"
+              >
+                연장하기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showPostPurchaseCta ? (
+        <div className="fixed inset-0 z-[170] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-3xl border border-[#afb3ac]/20 bg-white p-8 text-center shadow-2xl shadow-black/20 animate-fade-in">
+            <h3 className="font-headline text-2xl font-bold text-[#2f342e]">결제가 완료되었습니다</h3>
+            <p className="mt-3 break-keep text-sm leading-relaxed text-[#5d605a]">
+              이제 내 기억과 더 깊은 대화를 이어나갈 수 있습니다.
+            </p>
+            <div className="mt-8">
+              <button
+                type="button"
+                onClick={() => void handlePostPurchaseCtaClick()}
+                disabled={isLoadingPersonas}
+                className="w-full rounded-2xl bg-[#3e5560] py-4 text-base font-bold text-white shadow-lg shadow-[#3e5560]/20 hover:bg-[#2d4049] transition-colors disabled:opacity-60"
+              >
+                {isLoadingPersonas ? "이동 중..." : "내 기억과 대화하러 가기"}
               </button>
             </div>
           </div>

@@ -372,6 +372,29 @@ function ChatContainer() {
   const [avatarLoadError, setAvatarLoadError] = useState(false);
   const [memoryBalance, setMemoryBalance] = useState<number | null>(null);
   const [isMemoryBadgeAnimating, setIsMemoryBadgeAnimating] = useState(false);
+  const [isUnlimitedChatActive, setIsUnlimitedChatActive] = useState(false);
+  const [unlimitedChatExpiresAt, setUnlimitedChatExpiresAt] = useState<string | null>(null);
+  const [showExpiredPrompt, setShowExpiredPrompt] = useState(false);
+  const isUnlimitedChatActiveRef = useRef(false);
+
+  useEffect(() => {
+    isUnlimitedChatActiveRef.current = isUnlimitedChatActive;
+  }, [isUnlimitedChatActive]);
+
+  useEffect(() => {
+    if (!isUnlimitedChatActive || !unlimitedChatExpiresAt) return;
+    
+    const interval = setInterval(() => {
+      const expirationDate = new Date(unlimitedChatExpiresAt).getTime();
+      if (Date.now() > expirationDate) {
+        setIsUnlimitedChatActive(false);
+        setUnlimitedChatExpiresAt(null);
+        setShowExpiredPrompt(true);
+      }
+    }, 10000);
+    
+    return () => clearInterval(interval);
+  }, [isUnlimitedChatActive, unlimitedChatExpiresAt]);
   const [isChatListOpen, setIsChatListOpen] = useState(false);
   const [isPersonaSheetOpen, setIsPersonaSheetOpen] = useState(false);
   const [isChatListHandleDragging, setIsChatListHandleDragging] = useState(false);
@@ -551,10 +574,14 @@ function ChatContainer() {
         const data = await response.json();
         if (!cancelled) {
           setMemoryBalance(Number(data?.memoryBalance ?? 0));
+          setIsUnlimitedChatActive(Boolean(data?.isUnlimitedChatActive));
+          setUnlimitedChatExpiresAt(data?.unlimitedChatExpiresAt || null);
         }
       } catch {
         if (!cancelled) {
           setMemoryBalance(null);
+          setIsUnlimitedChatActive(false);
+          setUnlimitedChatExpiresAt(null);
         }
       }
     };
@@ -1015,12 +1042,14 @@ function ChatContainer() {
           const latestBalance = Number(balancePayload?.memoryBalance ?? 0);
           memoryBalanceRef.current = latestBalance;
           setMemoryBalance(latestBalance);
+          isUnlimitedChatActiveRef.current = Boolean(balancePayload?.isUnlimitedChatActive);
         }
       } catch {
         // Ignore preflight errors and keep server-side guard as source of truth.
       }
     }
     if (
+      !isUnlimitedChatActiveRef.current &&
       typeof memoryBalanceRef.current === "number" &&
       memoryBalanceRef.current < MEMORY_COSTS.chat
     ) {
@@ -1038,7 +1067,7 @@ function ChatContainer() {
     setIsTyping(true);
     const startedAt = Date.now();
     let usedOptimisticSpend = false;
-    if (typeof memoryBalanceRef.current === "number") {
+    if (!isUnlimitedChatActiveRef.current && typeof memoryBalanceRef.current === "number") {
       const nextBalance = Math.max(memoryBalanceRef.current - MEMORY_COSTS.chat, 0);
       memoryBalanceRef.current = nextBalance;
       setMemoryBalance(nextBalance);
@@ -1544,6 +1573,37 @@ function ChatContainer() {
           <div className="rounded-2xl bg-[#2f342e]/92 px-5 py-3 text-center text-sm font-semibold text-white shadow-2xl">
             {typingBlockedNotice}
           </div>
+        </div>
+      ) : null}
+
+      {showExpiredPrompt ? (
+        <div className="fixed inset-0 z-[181] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm">
+          <section className="w-full max-w-sm rounded-[2rem] bg-white p-8 text-center shadow-2xl animate-fade-in">
+            <h3 className="font-headline text-xl font-bold text-[#2f342e]">무제한 대화 이용권 종료</h3>
+            <p className="mt-4 text-sm leading-relaxed text-[#5d605a]">
+              이용권 시간이 종료되었습니다.<br />
+              계속 기억 소모 없이 대화하시려면 연장해 주세요.
+            </p>
+            <div className="mt-8 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setShowExpiredPrompt(false)}
+                className="rounded-2xl border border-[#d9dde1] bg-white px-4 py-3.5 text-sm font-semibold text-[#4b5563] hover:bg-[#f3f4f6] transition-colors"
+              >
+                나중에 하기
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExpiredPrompt(false);
+                  router.push(`/payment?returnTo=${encodeURIComponent(`/chat?id=${runtime?.personaId || ""}`)}`);
+                }}
+                className="rounded-2xl bg-[#4a626d] px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-[#4a626d]/20 hover:bg-[#3e5661] transition-colors"
+              >
+                연장하기
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 

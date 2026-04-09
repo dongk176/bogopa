@@ -10,6 +10,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private var didRegisterNativeChatPlugin = false
     private var didRegisterNativeAppleAuthPlugin = false
     private var didRegisterNativeIapPlugin = false
+    private var transactionUpdatesTask: Task<Void, Never>?
 
     private var bogopaBackgroundColor: UIColor {
         UIColor.white
@@ -84,6 +85,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        if #available(iOS 15.0, *) {
+            transactionUpdatesTask = Task {
+                for await verification in Transaction.updates {
+                    if case .verified(let transaction) = verification {
+                        await transaction.finish()
+                    }
+                }
+            }
+        }
+        
         DispatchQueue.main.async { [weak self] in
             self?.applyBogopaNativeAppearance()
             self?.registerNativeChatPluginIfNeeded()
