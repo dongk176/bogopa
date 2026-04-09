@@ -416,6 +416,24 @@ export async function applyVerifiedIapPurchase(
     }
 
     if (purchaseRow.applied_at) {
+      if (product.key === "memory_pass_monthly") {
+        // Idempotent re-verify can happen when StoreKit returns an already-known transaction.
+        // Re-sync subscription snapshot from the latest verified payload so the status is not stale.
+        try {
+          await upsertAppleSubscriptionActiveInTx(client, {
+            originalTransactionId: subscriptionOriginalTransactionId,
+            userId,
+            productId,
+            transactionId,
+            expiresAtIso: inferredSubscriptionExpiresAt,
+          });
+        } catch (error: any) {
+          if (error?.code !== "42P01" && error?.code !== "42703") {
+            throw error;
+          }
+        }
+      }
+
       await client.query("COMMIT");
       const current = await getOrCreateMemoryPassStatus(userId);
       return {

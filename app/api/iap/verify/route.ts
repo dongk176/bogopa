@@ -129,6 +129,16 @@ export async function POST(request: Request) {
       },
     });
 
+    if (product.key === "memory_pass_monthly" && !applied.isSubscribed) {
+      return NextResponse.json(
+        {
+          error: "유효한 구독 결제 내역을 확인하지 못했습니다. App Store 결제를 다시 진행해 주세요.",
+          code: "SUBSCRIPTION_NOT_ACTIVE_AFTER_VERIFY",
+        },
+        { status: 409 },
+      );
+    }
+
     if (!applied.idempotent) {
       await logAnalyticsEventSafe({
         userId: sessionUser.id,
