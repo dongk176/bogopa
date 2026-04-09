@@ -336,7 +336,19 @@ function resolveSubscriptionStatus(input: {
 }
 
 function shouldApplyRenewalGrant(notificationType: string) {
-  return notificationType === "SUBSCRIBED" || notificationType === "DID_RENEW" || notificationType === "DID_RECOVER";
+  // Initial subscription grant is applied by the in-app /api/iap/verify flow.
+  // If we also grant on SUBSCRIBED webhook, a race can happen:
+  // webhook inserts/uses the transaction before client verify, causing
+  // "IAP_TRANSACTION_ALREADY_USED" on the app side. Keep webhook grants
+  // for renewal/recovery only.
+  return notificationType === "DID_RENEW" || notificationType === "DID_RECOVER";
+}
+
+function shouldSyncEntitlementFlag(notificationType: string) {
+  // SUBSCRIBED is finalized by in-app verify flow.
+  // Avoid flipping flags here to prevent cross-account races when
+  // original_transaction_id ownership is being transferred.
+  return notificationType !== "SUBSCRIBED";
 }
 
 async function ensureUserEntitlementRow(userId: string) {
@@ -681,10 +693,12 @@ export async function processAppleServerNotification(input: {
         });
       }
 
-      if (subscriptionStatus === "active") {
-        await setMemoryPassActiveFlag(userId, true);
-      } else if (subscriptionStatus === "inactive") {
-        await setMemoryPassActiveFlag(userId, false);
+      if (shouldSyncEntitlementFlag(notificationType)) {
+        if (subscriptionStatus === "active") {
+          await setMemoryPassActiveFlag(userId, true);
+        } else if (subscriptionStatus === "inactive") {
+          await setMemoryPassActiveFlag(userId, false);
+        }
       }
     }
 
