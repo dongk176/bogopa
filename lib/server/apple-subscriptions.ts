@@ -336,15 +336,14 @@ function resolveSubscriptionStatus(input: {
 }
 
 function shouldApplyRenewalGrant(notificationType: string) {
-  // Initial subscription grant is applied by the in-app /api/iap/verify flow.
-  // If we also grant on SUBSCRIBED webhook, a race can happen:
-  // webhook inserts/uses the transaction before client verify, causing
-  // "IAP_TRANSACTION_ALREADY_USED" on the app side. Keep webhook grants
-  // for renewal/recovery only.
+  // Webhook inserts/uses the transaction before client verify.
+  // Because 'user_iap_purchases' UPSERT uses the same user_id, it safely returns idempotent = true for the client.
+  // Therefore, it's safe to grant on SUBSCRIBED to handle out-of-app Sandbox resubscribes.
   return (
     notificationType === "DID_RENEW" ||
     notificationType === "DID_RECOVER" ||
-    notificationType === "INTERACTIVE_RENEWAL"
+    notificationType === "INTERACTIVE_RENEWAL" ||
+    notificationType === "SUBSCRIBED"
   );
 }
 
