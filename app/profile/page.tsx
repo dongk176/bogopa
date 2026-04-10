@@ -85,7 +85,7 @@ export default function ProfilePage() {
       </header>
 
       <main className="lg:pl-64">
-        <div className="mx-auto max-w-4xl px-3 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[calc(5rem+env(safe-area-inset-top))] md:px-6 md:pb-20 md:pt-20">
+        <div className="mx-auto max-w-4xl px-3 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[calc(6.5rem+env(safe-area-inset-top))] md:px-6 md:pb-20 md:pt-20">
           {/* Page Header */}
           <header className="mb-10 hidden text-center lg:block">
             <h1 className="font-headline text-lg font-bold tracking-tight text-[#4a626d]">
