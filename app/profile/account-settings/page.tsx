@@ -199,7 +199,7 @@ export default function AccountSettingsPage() {
       </nav>
 
       <main className="lg:pl-64">
-        <div className="mx-auto w-full max-w-4xl px-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[calc(6rem+env(safe-area-inset-top))] md:px-6 lg:pt-24">
+        <div className="mx-auto w-full max-w-4xl px-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[calc(6.75rem+env(safe-area-inset-top))] md:px-6 lg:pt-24">
           <section className="rounded-2xl border border-white/10 bg-[#303733] px-5 py-5">
             <p className="text-xs font-extrabold uppercase tracking-wider text-[#3e5560]">로그인 정보</p>
             <p className="mt-2 text-sm font-bold text-[#f0f5f2]">{providerLabel(provider)}</p>

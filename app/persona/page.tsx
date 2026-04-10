@@ -849,7 +849,7 @@ export default function PersonaPage() {
                 </div>
             </header>
 
-            <main className="mx-auto max-w-5xl px-3 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[calc(5rem+env(safe-area-inset-top))] md:px-6 md:pt-20 md:pb-20 lg:pl-64">
+            <main className="mx-auto max-w-5xl px-3 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[calc(5.75rem+env(safe-area-inset-top))] md:px-6 md:pt-20 md:pb-20 lg:pl-64">
                 <header className="mb-10 hidden text-center lg:block">
                     <h1 className="font-headline text-lg font-bold tracking-tight text-[#4a626d]">내 기억</h1>
                 </header>
