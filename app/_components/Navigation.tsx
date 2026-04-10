@@ -64,16 +64,6 @@ function CloseIcon({ className }: { className?: string }) {
   );
 }
 
-function MoreVerticalIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="5" r="2" />
-      <circle cx="12" cy="12" r="2" />
-      <circle cx="12" cy="19" r="2" />
-    </svg>
-  );
-}
-
 function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNav?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -82,8 +72,6 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
   const isMessagesContext = pathname?.startsWith("/chat");
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginNextPath, setLoginNextPath] = useState("/step-1/start");
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
@@ -263,7 +251,7 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
                 <div key={chat.personaId} className="relative group">
                   <Link
                     href={`/chat?id=${chat.personaId}`}
-                    className="flex items-center gap-3 rounded-2xl p-3 pr-10 transition-all hover:bg-white/5"
+                    className="flex items-center gap-3 rounded-2xl p-3 transition-all hover:bg-white/5"
                   >
                     <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-white/10">
                       {chat.avatarUrl ? (
@@ -283,68 +271,11 @@ function NavigationContent({ hideMobileBottomNav = false }: { hideMobileBottomNa
                       <p className="truncate text-[11px] text-[#5d605a] group-hover:text-[#2f342e]">{chat.lastMessage || "새로운 대화"}</p>
                     </div>
                   </Link>
-
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10">
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setOpenMenuId(openMenuId === chat.personaId ? null : chat.personaId);
-                      }}
-                      className="p-1.5 rounded-lg text-[#afb3ac] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10 hover:text-[#f0f5f2]"
-                    >
-                      <MoreVerticalIcon className="h-4 w-4" />
-                    </button>
-                    {openMenuId === chat.personaId && (
-                      <div className="absolute right-0 mt-1 w-28 bg-[#303733] border border-[#afb3ac]/20 rounded-xl shadow-xl overflow-hidden animate-fade-in">
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setOpenMenuId(null);
-                            setDeleteTargetId(chat.personaId);
-                          }}
-                          className="w-full text-left px-4 py-3 text-xs font-bold text-[#f0b6b4] hover:bg-white/5 transition-colors"
-                        >
-                          삭제하기
-                        </button>
-                      </div>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
           </div>
         </aside>
-      )}
-
-      {/* Delete Confirmation Modal for Navigation */}
-      {deleteTargetId && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/20 px-5 backdrop-blur-md">
-          <section className="w-full max-w-sm rounded-[2.5rem] bg-[#303733] p-8 shadow-2xl animate-fade-in relative border border-white/5">
-            <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">내 기억 삭제</h3>
-            <p className="mt-4 text-sm leading-relaxed text-[#5d605a]">
-              선택한 대화 기록을 완전히 삭제합니다. 이 작업은 되돌릴 수 없습니다.
-            </p>
-            <div className="mt-8 grid grid-cols-2 gap-3">
-              <button onClick={() => setDeleteTargetId(null)} className="rounded-2xl border border-[#afb3ac]/30 py-3.5 text-sm font-bold text-[#f0f5f2] hover:bg-white/5">
-                취소
-              </button>
-              <button
-                onClick={() => {
-                  fetch(`/api/persona?personaId=${deleteTargetId}`, { method: "DELETE" }).catch(e => console.error(e));
-                  setSavedChats(prev => prev.filter(c => c.personaId !== deleteTargetId));
-                  const removedId = deleteTargetId;
-                  setDeleteTargetId(null);
-                  if (pathname?.includes(removedId)) {
-                    window.location.href = "/chat";
-                  }
-                }}
-                className="rounded-2xl bg-[#9f403d] py-3.5 text-sm font-bold text-white shadow-lg shadow-[#9f403d]/20 hover:opacity-90"
-              >
-                삭제하기
-              </button>
-            </div>
-          </section>
-        </div>
       )}
 
       {/* Mobile Bottom Tab Bar */}

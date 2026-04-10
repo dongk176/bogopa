@@ -6,20 +6,21 @@ import LegalExitScrollMarker from "@/app/_components/LegalExitScrollMarker";
 export default function DataDeletionPage() {
   const appDeleteSteps = [
     "보고파 앱 실행 후 로그인",
-    "메시지 > 대화 목록에서 삭제할 대화를 선택하고 삭제",
-    "내 기억 > 삭제할 기억을 선택하고 삭제",
-    "계정은 유지한 채 선택한 데이터만 삭제됩니다.",
+    "프로필 > 계정 정보 및 설정으로 이동",
+    "\"탈퇴하기\"를 선택하고 안내에 따라 계정 탈퇴를 완료",
+    "탈퇴 완료 시 메시지와 내 기억 데이터가 일괄 삭제됩니다.",
   ];
 
   const requestSteps = [
-    "앱에서 직접 삭제가 어려운 데이터는 이메일로 요청",
-    "요청 시 계정 식별 정보(로그인 이메일/ID)와 삭제할 항목을 함께 기재",
+    "앱 접근이 어려운 경우 이메일로 계정 삭제를 요청",
+    "요청 시 계정 식별 정보(로그인 이메일/ID)를 함께 기재",
     "확인 절차 후 처리 결과를 회신",
   ];
 
   const deletableData = [
-    "대화 기록(선택한 대화방 단위 삭제)",
-    "내 기억(페르소나) 데이터(선택 항목 삭제)",
+    "채팅 메시지 및 대화 기록",
+    "내 기억(페르소나) 데이터",
+    "편지 보관함 데이터",
   ];
 
   const retainedData = [
@@ -47,12 +48,11 @@ export default function DataDeletionPage() {
       <main className="mx-auto w-full max-w-3xl px-6 pb-28 pt-[calc(6rem+env(safe-area-inset-top))] md:pt-[calc(8rem+env(safe-area-inset-top))]">
         <h1 className="font-headline mb-3 text-3xl font-extrabold tracking-tight text-[#2f342e]">데이터 삭제 안내</h1>
         <p className="mb-8 text-sm leading-relaxed text-[#4f5a53]">
-          본 페이지는 아티룸이 제공하는 AI 컴패니언 서비스 <strong>보고파(Bogopa)</strong>에서 계정을 삭제하지 않고
-          데이터의 일부 또는 전체 삭제를 요청하는 방법을 안내합니다.
+          보고파는 메시지/내 기억 단위의 개별 삭제를 제공하지 않으며, 데이터 삭제는 계정 탈퇴 시 일괄 처리됩니다.
         </p>
 
         <section className="mb-8 space-y-3 rounded-2xl border border-[#d9dfdb] bg-white/70 p-5">
-          <h2 className="text-base font-bold text-[#4a626d]">1. 앱에서 직접 삭제하는 방법</h2>
+          <h2 className="text-base font-bold text-[#4a626d]">1. 앱에서 데이터 삭제하는 방법</h2>
           <ol className="list-inside list-decimal space-y-2 text-sm leading-relaxed text-[#2f342e]">
             {appDeleteSteps.map((step) => (
               <li key={step}>{step}</li>
@@ -71,7 +71,7 @@ export default function DataDeletionPage() {
         </section>
 
         <section className="mb-8 space-y-3 rounded-2xl border border-[#d9dfdb] bg-white/70 p-5">
-          <h2 className="text-base font-bold text-[#4a626d]">3. 삭제 가능한 데이터 유형</h2>
+          <h2 className="text-base font-bold text-[#4a626d]">3. 계정 탈퇴 시 삭제되는 데이터</h2>
           <ul className="list-inside list-disc space-y-2 text-sm leading-relaxed text-[#2f342e]">
             {deletableData.map((item) => (
               <li key={item}>{item}</li>

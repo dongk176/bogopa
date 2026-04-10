@@ -63,6 +63,7 @@ export default function AccountDeletionPage() {
         <section className="mb-8 space-y-3 rounded-2xl border border-[#d9dfdb] bg-white/70 p-5">
           <h2 className="text-base font-bold text-[#4a626d]">2. 삭제 처리 기준</h2>
           <ul className="list-inside list-disc space-y-2 text-sm leading-relaxed text-[#2f342e]">
+            <li>서비스 내 메시지/내 기억의 개별 삭제는 제공하지 않으며, 계정 탈퇴 시 일괄 삭제됩니다.</li>
             <li>탈퇴 요청이 완료되면 계정은 즉시 비활성화됩니다.</li>
             <li>비활성화된 계정의 일반 서비스 데이터는 지체 없이 삭제 절차를 진행합니다.</li>
             <li>단, 법령상 보관 의무가 있는 정보는 해당 기간 동안 분리 보관 후 파기됩니다.</li>

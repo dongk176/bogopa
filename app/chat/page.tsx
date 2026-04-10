@@ -121,13 +121,6 @@ const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
 const USER_INPUT_CHAR_LIMIT = 100;
 const RECENT_CONTEXT_MESSAGES = 8; // 4 turns
 const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
-const ONBOARDING_STORAGE_KEYS = [
-  "bogopa_profile_step1",
-  "bogopa_profile_step2",
-  "bogopa_profile_step3",
-  "bogopa_profile_step4",
-  "bogopa_onboarding_session_id",
-];
 
 function toId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -162,14 +155,6 @@ function toAbsoluteAvatarUrl(rawValue: string | null | undefined) {
   }
 }
 
-function maskDisplayName(name: string) {
-  const compact = name.replace(/\s+/g, "").trim();
-  if (!compact) return "익*명";
-  if (compact.length === 1) return `${compact}*`;
-  if (compact.length === 2) return `${compact[0]}*`;
-  return `${compact[0]}*${compact[compact.length - 1]}`;
-}
-
 function nowIso() {
   return new Date().toISOString();
 }
@@ -198,26 +183,6 @@ function UserAvatarIcon() {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
       <circle cx="12" cy="8" r="3.5" />
       <path d="M5.6 19.2a6.4 6.4 0 0 1 12.8 0" />
-    </svg>
-  );
-}
-
-function MenuIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <circle cx="12" cy="5" r="1.2" />
-      <circle cx="12" cy="12" r="1.2" />
-      <circle cx="12" cy="19" r="1.2" />
-    </svg>
-  );
-}
-
-function MoreVerticalIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="5" r="2" />
-      <circle cx="12" cy="12" r="2" />
-      <circle cx="12" cy="19" r="2" />
     </svg>
   );
 }
@@ -357,15 +322,7 @@ function ChatContainer() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [chatToDelete, setChatToDelete] = useState<string | null>(null);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [showReviewModal, setShowReviewModal] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [reviewText, setReviewText] = useState("");
-  const [feedbackText, setFeedbackText] = useState("");
-  const [reviewError, setReviewError] = useState("");
-  const [isSavingReview, setIsSavingReview] = useState(false);
   const [dateLabel, setDateLabel] = useState("");
   const [savedChats, setSavedChats] = useState<StoredChatState[]>([]);
   const [step3AvatarUrl, setStep3AvatarUrl] = useState("");
@@ -544,24 +501,6 @@ function ChatContainer() {
     setMessages([{ id: toId(), role: "assistant", content: first, createdAt: firstAt }]);
     setDateLabel(formatDateLabel(firstAt));
     setIsTyping(false);
-  }
-
-  async function resetChatOnly() {
-    if (!runtime) return;
-    setMenuOpen(false);
-    setInput("");
-    setMessages([]);
-    setDateLabel("");
-    window.localStorage.removeItem(getChatStateKey(runtime.personaId));
-
-    // Clear DB
-    try {
-      await fetch(`/api/chat/session?personaId=${runtime.personaId}`, { method: "DELETE" });
-    } catch (err) {
-      console.error("[chat] failed to reset db session", err);
-    }
-
-    void queueInitialAssistantMessage(runtime);
   }
 
   useEffect(() => {
@@ -813,17 +752,6 @@ function ChatContainer() {
   }, [isComposerFocused]);
 
   useEffect(() => {
-    const closeMenu = () => setMenuOpen(false);
-    window.addEventListener("click", closeMenu);
-    return () => window.removeEventListener("click", closeMenu);
-  }, []);
-
-  useEffect(() => {
-    if (!isPersonaSheetOpen) return;
-    setMenuOpen(false);
-  }, [isPersonaSheetOpen]);
-
-  useEffect(() => {
     if (isChatListOpen) return;
     setIsChatListHandleDragging(false);
     chatListSwipeStartYRef.current = null;
@@ -933,24 +861,6 @@ function ChatContainer() {
     };
   }, [runtime, nativeAvatarUrl, nativePersonaList, messages, isTyping, memoryBalance]);
 
-  function openDeleteFlow() {
-    setMenuOpen(false);
-    setReviewError("");
-    if (runtime?.personaId) {
-      setChatToDelete(runtime.personaId);
-    }
-  }
-
-  function clearLocalMemory() {
-    if (runtime) {
-      window.localStorage.removeItem(getChatStateKey(runtime.personaId));
-    }
-    clearPersonaArtifacts();
-    ONBOARDING_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
-  }
-
-  const reviewUserName = ((runtime as any)?.userName || "").trim();
-
   function handleChatListSwipeStart(event: TouchEvent<HTMLDivElement>) {
     if (event.touches.length !== 1) return;
     const y = event.touches[0].clientY;
@@ -979,51 +889,6 @@ function ChatContainer() {
 
     if (deltaY > SHEET_CLOSE_SWIPE_THRESHOLD) {
       setIsChatListOpen(false);
-    }
-  }
-
-  async function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedReview = reviewText.trim();
-
-    if (!trimmedReview || trimmedReview.length >= 50) {
-      setReviewError("후기는 1~49자로 작성해주세요.");
-      return;
-    }
-
-    setIsSavingReview(true);
-    setReviewError("");
-
-    try {
-      const response = await fetch("/api/reviews", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: reviewUserName,
-          nameMasked: maskDisplayName(reviewUserName),
-          review: trimmedReview,
-          feedback: feedbackText.trim(),
-        }),
-      });
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "후기 저장에 실패했습니다.");
-      }
-
-      if (savedChats.length > 0) {
-        // More chats remain, just go to list
-        window.localStorage.removeItem(getChatStateKey(runtime?.personaId || ""));
-        clearPersonaArtifacts(runtime?.personaId);
-        router.push("/chat/list");
-      } else {
-        // Last one deleted, clean everything and go home
-        clearLocalMemory();
-        router.push("/");
-      }
-    } catch (error) {
-      setReviewError(error instanceof Error ? error.message : "후기 저장 중 오류가 발생했습니다.");
-      setIsSavingReview(false);
     }
   }
 
@@ -1635,91 +1500,6 @@ function ChatContainer() {
           </section>
         </div>
       ) : null}
-
-      {/* Modals */}
-      {showResetConfirm && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 px-5 backdrop-blur-sm">
-          <section className="w-full max-w-sm rounded-[2.5rem] bg-white p-8 shadow-2xl animate-fade-in relative" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-headline text-xl font-bold text-[#2f342e]">채팅 초기화</h3>
-            <p className="mt-4 text-sm leading-relaxed text-[#655d5a]">
-              현재 창의 대화 내용만 모두 지워지고 처음 인사부터 다시 시작됩니다. 진행하시겠습니까?
-            </p>
-            <div className="mt-8 grid grid-cols-2 gap-3">
-              <button onClick={() => setShowResetConfirm(false)} className="rounded-2xl border border-[#afb3ac]/20 py-3.5 text-sm font-bold text-[#655d5a] hover:bg-black/5">
-                취소
-              </button>
-              <button onClick={() => { setShowResetConfirm(false); resetChatOnly(); }} className="rounded-2xl bg-[#9f403d] py-3.5 text-sm font-bold text-white shadow-lg shadow-[#9f403d]/20 hover:opacity-90">
-                초기화
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {chatToDelete !== null && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 px-5 backdrop-blur-sm">
-          <section className="w-full max-w-sm rounded-[2.5rem] bg-white p-8 shadow-2xl animate-fade-in relative" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-headline text-xl font-bold text-[#2f342e]">내 기억 삭제</h3>
-            <p className="mt-4 text-sm leading-relaxed text-[#655d5a]">
-              선택한 페르소나와 대화 기록을 완전히 삭제합니다. 이 작업은 되돌릴 수 없습니다.
-            </p>
-            <div className="mt-8 grid grid-cols-2 gap-3">
-              <button onClick={() => setChatToDelete(null)} className="rounded-2xl border border-[#afb3ac]/20 py-3.5 text-sm font-bold text-[#655d5a] hover:bg-black/5">
-                취소
-              </button>
-              <button
-                onClick={() => {
-                  const targetId = chatToDelete;
-                  if (!targetId) return;
-                  fetch(`/api/persona?personaId=${targetId}`, { method: "DELETE" }).catch(e => console.error(e));
-                  clearPersonaArtifacts(targetId);
-                  window.localStorage.removeItem(getChatStateKey(targetId));
-                  setSavedChats(prev => prev.filter(c => c.personaId !== targetId));
-                  setChatToDelete(null);
-                  if (runtime?.personaId === targetId) setShowReviewModal(true);
-                }}
-                className="rounded-2xl bg-[#9f403d] py-3.5 text-sm font-bold text-white shadow-lg shadow-[#9f403d]/20 hover:opacity-90"
-              >
-                삭제하기
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {showReviewModal && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 px-5 backdrop-blur-md">
-          <section className="w-full max-w-sm rounded-[2.5rem] bg-white p-8 shadow-2xl animate-fade-in relative" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-headline text-2xl font-bold text-[#2f342e]">후기 남기기</h3>
-            <p className="mt-3 text-sm text-[#655d5a]">짧게 남겨주시면 더 나은 대화를 만드는 데 도움이 됩니다.</p>
-
-            <form className="mt-8 space-y-6" onSubmit={handleReviewSubmit}>
-              <div className="space-y-3">
-                <label className="text-sm font-bold text-[#2f342e]">후기 (필수, 50자 미만)</label>
-                <textarea
-                  value={reviewText}
-                  onChange={(e) => { setReviewText(e.target.value); setReviewError(""); }}
-                  maxLength={49}
-                  rows={3}
-                  className="w-full resize-none rounded-2xl bg-[#faf9f5] border-none p-4 text-sm text-[#2f342e] outline-none ring-1 ring-[#afb3ac]/20 focus:ring-2 focus:ring-[#4a626d]/20"
-                  placeholder="예: 생각보다 마음이 차분해져서 좋았어요."
-                />
-                <p className="text-right text-[10px] text-[#afb3ac]">{reviewText.trim().length}/49</p>
-              </div>
-
-              {reviewError && <p className="text-sm font-bold text-[#9f403d]">{reviewError}</p>}
-
-              <button
-                type="submit"
-                disabled={isSavingReview || !reviewText.trim() || reviewText.trim().length >= 50}
-                className="w-full rounded-2xl bg-[#4a626d] py-4 text-base font-bold text-white shadow-lg shadow-[#4a626d]/20 disabled:opacity-50 transition-all hover:scale-[0.98]"
-              >
-                {isSavingReview ? "저장 중..." : "후기 저장하고 완료"}
-              </button>
-            </form>
-          </section>
-        </div>
-      )}
 
       <PersonaMemorySheet
         open={isPersonaSheetOpen}

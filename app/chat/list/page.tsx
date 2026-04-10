@@ -21,27 +21,10 @@ type StoredChatState = {
     updatedAt: string;
 };
 
-const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
-
-function getChatStateKey(personaId: string) {
-    return `${CHAT_STATE_KEY_PREFIX}:${personaId}`;
-}
-
-function MoreVerticalIcon() {
-    return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="5" r="2" />
-            <circle cx="12" cy="12" r="2" />
-            <circle cx="12" cy="19" r="2" />
-        </svg>
-    );
-}
-
 export default function ChatListPage() {
     const router = useRouter();
     const [savedChats, setSavedChats] = useState<StoredChatState[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [chatToDelete, setChatToDelete] = useState<string | null>(null);
 
     // Review states
     const [showReviewModal, setShowReviewModal] = useState(false);
@@ -88,29 +71,6 @@ export default function ChatListPage() {
 
         fetchPersonas();
     }, []);
-
-    async function handleDelete() {
-        if (!chatToDelete) return;
-
-        // Chat session reset only (persona must remain)
-        try {
-            await fetch(`/api/chat/session?personaId=${encodeURIComponent(chatToDelete)}`, { method: "DELETE" });
-        } catch (err) {
-            console.error("[chat-list] failed to reset chat session", err);
-        }
-
-        // clear only local chat cache for this persona
-        window.localStorage.removeItem(getChatStateKey(chatToDelete));
-
-        setSavedChats((prev) => prev.filter((c) => c.personaId !== chatToDelete));
-        setChatToDelete(null);
-    }
-
-    function maskDisplayName(name: string) {
-        if (!name) return "";
-        if (name.length <= 1) return "*";
-        return name[0] + "*".repeat(name.length - 1);
-    }
 
     async function handleReviewSubmit(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -201,17 +161,6 @@ export default function ChatListPage() {
                                         </p>
                                     </div>
                                 </Link>
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        setChatToDelete(chat.personaId);
-                                    }}
-                                    className="p-2 text-[#afb3ac] transition-colors active:text-[#9f403d]"
-                                    aria-label="채팅 삭제"
-                                >
-                                    <MoreVerticalIcon />
-                                </button>
                             </div>
                         ))
                     )}
@@ -233,33 +182,6 @@ export default function ChatListPage() {
                     </button>
                 ) : null}
             </main>
-
-            {chatToDelete !== null ? (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 px-5">
-                    <section className="w-full max-w-md rounded-3xl bg-[#303733] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.4)]">
-                        <h3 className="font-headline text-xl font-bold text-[#f0f5f2]">채팅 삭제</h3>
-                        <p className="mt-3 text-sm leading-relaxed text-[#5d605a]">
-                            선택한 기억과의 대화 기록만 초기화합니다.
-                        </p>
-                        <div className="mt-5 grid grid-cols-2 gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setChatToDelete(null)}
-                                className="rounded-xl border border-[#afb3ac]/30 px-4 py-3 text-sm font-semibold text-[#f0f5f2] transition-colors active:bg-white/5"
-                            >
-                                취소
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleDelete}
-                                className="rounded-xl bg-[#9f403d] px-4 py-3 text-sm font-semibold text-[#fff7f6] transition-opacity active:opacity-90"
-                            >
-                                삭제 확인
-                            </button>
-                        </div>
-                    </section>
-                </div>
-            ) : null}
 
             {showReviewModal ? (
                 <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/50 px-5">

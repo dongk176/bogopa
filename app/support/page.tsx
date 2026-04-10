@@ -33,7 +33,7 @@ export default function SupportPage() {
         <section className="rounded-3xl border border-[#d9dfdb] bg-white p-6 md:p-8">
           <h1 className="font-headline text-3xl font-extrabold tracking-tight text-[#2f342e] md:text-4xl">고객지원</h1>
           <p className="mt-3 text-sm leading-relaxed text-[#4f5a53]">
-            문의/결제/계정 삭제 관련 안내를 한 곳에서 확인하실 수 있습니다.
+            문의/결제/계정 및 데이터 삭제(탈퇴) 관련 안내를 한 곳에서 확인하실 수 있습니다.
           </p>
         </section>
 
@@ -68,6 +68,7 @@ export default function SupportPage() {
         <section className="mt-5 rounded-3xl border border-[#d9dfdb] bg-white p-6 md:p-8">
           <h2 className="text-base font-bold text-[#4a626d] md:text-lg">계정 및 데이터 삭제</h2>
           <div className="mt-4 space-y-3 text-sm leading-relaxed text-[#2f342e]">
+            <p>메시지/내 기억의 개별 삭제는 제공하지 않으며, 데이터 삭제는 계정 탈퇴 시 일괄 처리됩니다.</p>
             <p>앱 내 설정에서 계정 삭제를 진행할 수 있으며, 앱 접근이 어려운 경우 이메일로 요청할 수 있습니다.</p>
             <div className="flex flex-wrap gap-2">
               <Link href="/legal/account-deletion" className="rounded-xl border border-[#d9dfdb] bg-[#f9fcff] px-3 py-1.5 text-xs font-semibold text-[#3e5560] hover:bg-[#eef6fb]">

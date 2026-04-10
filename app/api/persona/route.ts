@@ -3,7 +3,6 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { savePersonaToDb, getPersonasForUser, getPersonaById, countPersonasForUser } from "@/lib/server/chat-db";
 import { PersonaRuntime } from "@/types/persona";
-import { getDbPool } from "@/lib/server/db";
 import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import { consumeMemory, getOrCreateMemoryPassStatus } from "@/lib/server/memory-pass";
 import { inferAvatarStorage, resolveAvatarUrlFromStorage } from "@/lib/avatar-storage";
@@ -271,32 +270,20 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "페르소나 목록을 불러오지 못했습니다." }, { status: 500 });
     }
 }
-export async function DELETE(request: NextRequest) {
+export async function DELETE(_request: NextRequest) {
     const session = await getServerSession(authOptions);
     const sessionUser = session?.user as any;
     if (!sessionUser?.id) {
         return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
-    try {
-        const { searchParams } = new URL(request.url);
-        const personaId = searchParams.get("personaId");
-
-        if (!personaId) {
-            return NextResponse.json({ error: "personaId가 필요합니다." }, { status: 400 });
-        }
-
-        const pool = getDbPool();
-        await pool.query(
-            `DELETE FROM bogopa.personas WHERE persona_id = $1 AND user_id = $2`,
-            [personaId, sessionUser.id]
-        );
-
-        return NextResponse.json({ ok: true });
-    } catch (error) {
-        console.error("[api-persona] failed to delete persona", error);
-        return NextResponse.json({ error: "페르소나 삭제에 실패했습니다." }, { status: 500 });
-    }
+    return NextResponse.json(
+        {
+            error: "내 기억 삭제는 지원하지 않습니다. 데이터 삭제는 계정 탈퇴를 통해서만 가능합니다.",
+            code: "DELETION_REQUIRES_ACCOUNT_WITHDRAWAL",
+        },
+        { status: 403 },
+    );
 }
 
 export async function PATCH(request: NextRequest) {
