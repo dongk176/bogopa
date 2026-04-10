@@ -158,7 +158,7 @@ export default function AttendancePage() {
     <div className="min-h-screen bg-[#faf9f5] text-[#2f342e]">
       <Navigation hideMobileBottomNav />
 
-      <header className="sticky top-0 z-50 w-full bg-[#242926] pt-[var(--native-safe-top)] lg:pl-64">
+      <header className="sticky top-0 z-50 w-full bg-[#242926] pt-[calc(var(--native-safe-top)+0.45rem)] lg:pl-64">
         <div className="mx-auto flex h-16 w-full items-center justify-between px-3">
           <div className="flex items-center gap-2">
             <Link

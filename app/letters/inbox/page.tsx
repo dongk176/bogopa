@@ -118,7 +118,7 @@ export default function LettersInboxPage() {
     <div className="min-h-screen bg-[#ffffff] text-[#2f342e]">
       <Navigation hideMobileBottomNav />
 
-      <header className="sticky top-0 z-50 w-full border-b border-[#d6ddd8] bg-[#ffffff]/95 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:pl-64">
+      <header className="sticky top-0 z-50 w-full border-b border-[#d6ddd8] bg-[#ffffff]/95 pt-[calc(var(--native-safe-top)+0.35rem)] backdrop-blur-md lg:pl-64">
         <div className="mx-auto flex h-16 w-full items-center justify-between px-3">
           <div className="flex items-center gap-2">
             <Link
