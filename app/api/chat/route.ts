@@ -438,6 +438,11 @@ function buildReplySystemPrompt(runtimeData: PersonaRuntime) {
     tension === "도파민 풀충전" && interests.length > 0
       ? `8. 도파민 화제 규칙: 사용자 관심사(${interests.join(", ")}) 중 하나를 대화 흐름에 맞춰 가볍게 한 번만 꺼내라. 같은 관심사를 반복하거나 억지로 화제를 꺾지 마라.`
       : "";
+  const relationGroup = detectRelationGroup(relationLabel);
+  const selfRefRule = (relationGroup === "parent" || relationGroup === "sibling")
+    ? "4. 자기지칭 규칙: 1인칭 자기지칭('나/저/내/제')은 금지한다. 자기지칭이 필요할 때는 [관계] 또는 저장된 이름(애칭) 기반 3인칭을 아주 가끔(약 20%)만 사용하라."
+    : "4. 자기지칭 규칙: 자연스럽고 친근한 대화를 위해 '나/내가/내' 등 1인칭을 적극적으로 사용하라. 억지로 3인칭(자신의 이름 등)을 쓰지 마라.";
+
   return [
     "너는 [관계]에 빙의하여 진짜 사람처럼 카카오톡 대화를 나누는 역할이다. AI, 상담사 톤은 절대 금지한다.",
     "",
@@ -445,7 +450,7 @@ function buildReplySystemPrompt(runtimeData: PersonaRuntime) {
     "1. 최우선 목표: 상대방의 마지막 말에 가장 자연스러운 구어체로 리액션하고 대답하라.",
     "2. 대화 호흡: 상대가 짧게 말하면 짧게, 길게 말하면 길게 맞춰서 대답하라. 억지로 말을 늘리거나 묻지 않은 말을 주절거리지 마라.",
     "3. 감정 기호 사용: 'ㅋㅋ/ㅎㅎ/ㅠㅠ/ㅜㅜ'는 감정 보조로만 가끔 사용하고, 한 답변에서 최대 1회만 사용하라. 기호만 단독으로 답하지 마라.",
-    "4. 자기지칭 규칙: 1인칭 자기지칭('나/저/내/제')은 금지한다. 자기지칭이 필요할 때는 [관계] 또는 저장된 이름(애칭) 기반 3인칭을 아주 가끔(약 20%)만 사용하라.",
+    selfRefRule,
     "5. 애칭 사용 규칙: 애칭을 쓰더라도 한 답변에서 최대 1회만 사용하라.",
     `6. 절대 금지 (존재 한계): 너는 기억 속의 존재이므로, 물리적인 만남(\"언제 한 번 보자\", \"내가 갈게\")을 약속하거나 현재의 가짜 일상(\"요즘 바빠\")을 꾸며내지 마라. 대신 정서적인 위로(\"${relationExamples.comfortSelfReference}\")는 적극 허용한다.`,
     `7. 관계 정체성 유지: 상대가 호칭을 헷갈려도 관계(${relationLabel})를 유지한다. 필요할 때만 짧고 부드럽게 바로잡고 대화를 이어가라.`,
@@ -547,17 +552,20 @@ function rewriteSelfReferenceToThirdPerson(text: string, selfLabel: string) {
   if (!trimmed || !selfLabel) return trimmed;
   let next = trimmed;
 
+  const prefix = '(^|[\\s("“\'])';
+  const suffix = '(?=($|[\\s).,!?"”\'~]))';
+
   const rules: Array<{ pattern: RegExp; replace: string }> = [
-    { pattern: /(저는|나는|난)/gu, replace: buildSelfTopic(selfLabel) },
-    { pattern: /(제가|내가)/gu, replace: buildSelfSubject(selfLabel) },
-    { pattern: /(저도|나도)/gu, replace: `${selfLabel}도` },
-    { pattern: /(저를|나를)/gu, replace: buildSelfObject(selfLabel) },
-    { pattern: /(저한테|나한테|제게|내게)/gu, replace: `${selfLabel}한테` },
-    { pattern: /(저한텐|나한텐|제겐|내겐)/gu, replace: `${selfLabel}한텐` },
-    { pattern: /(^|[\s("“'])나(?=($|[\s).,!?"”'~]))/gu, replace: `$1${buildSelfTopic(selfLabel)}` },
-    { pattern: /(^|[\s("“'])저(?=($|[\s).,!?"”'~]))/gu, replace: `$1${buildSelfTopic(selfLabel)}` },
-    { pattern: /(^|[\s("“'])내(?=\s)/gu, replace: `$1${selfLabel}` },
-    { pattern: /(^|[\s("“'])제(?=\s)/gu, replace: `$1${selfLabel}` },
+    { pattern: new RegExp(`${prefix}(저는|나는|난)${suffix}`, "gu"), replace: `$1${buildSelfTopic(selfLabel)}` },
+    { pattern: new RegExp(`${prefix}(제가|내가)${suffix}`, "gu"), replace: `$1${buildSelfSubject(selfLabel)}` },
+    { pattern: new RegExp(`${prefix}(저도|나도)${suffix}`, "gu"), replace: `$1${selfLabel}도` },
+    { pattern: new RegExp(`${prefix}(저를|나를)${suffix}`, "gu"), replace: `$1${buildSelfObject(selfLabel)}` },
+    { pattern: new RegExp(`${prefix}(저한테|나한테|제게|내게)${suffix}`, "gu"), replace: `$1${selfLabel}한테` },
+    { pattern: new RegExp(`${prefix}(저한텐|나한텐|제겐|내겐)${suffix}`, "gu"), replace: `$1${selfLabel}한텐` },
+    { pattern: new RegExp(`${prefix}나(?=($|[\\s).,!?"”\'~]))`, "gu"), replace: `$1${buildSelfTopic(selfLabel)}` },
+    { pattern: new RegExp(`${prefix}저(?=($|[\\s).,!?"”\'~]))`, "gu"), replace: `$1${buildSelfTopic(selfLabel)}` },
+    { pattern: new RegExp(`${prefix}내(?=\\s)`, "gu"), replace: `$1${selfLabel}` },
+    { pattern: new RegExp(`${prefix}제(?=\\s)`, "gu"), replace: `$1${selfLabel}` },
   ];
 
   for (const rule of rules) {
@@ -570,16 +578,19 @@ function hasFirstPersonSelfReference(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return false;
 
+  const prefix = '(^|[\\s("“\'])';
+  const suffix = '(?=($|[\\s).,!?"”\'~]))';
+
   const patterns = [
-    /(저는|나는|난)/u,
-    /(제가|내가)/u,
-    /(저도|나도)/u,
-    /(저를|나를)/u,
-    /(저한테|나한테|제게|내게|저한텐|나한텐|제겐|내겐)/u,
-    /(^|[\s("“'])나(?=($|[\s).,!?"”'~]))/u,
-    /(^|[\s("“'])저(?=($|[\s).,!?"”'~]))/u,
-    /(^|[\s("“'])내(?=\s)/u,
-    /(^|[\s("“'])제(?=\s)/u,
+    new RegExp(`${prefix}(저는|나는|난)${suffix}`, "u"),
+    new RegExp(`${prefix}(제가|내가)${suffix}`, "u"),
+    new RegExp(`${prefix}(저도|나도)${suffix}`, "u"),
+    new RegExp(`${prefix}(저를|나를)${suffix}`, "u"),
+    new RegExp(`${prefix}(저한테|나한테|제게|내게|저한텐|나한텐|제겐|내겐)${suffix}`, "u"),
+    new RegExp(`${prefix}나(?=($|[\\s).,!?"”\'~]))`, "u"),
+    new RegExp(`${prefix}저(?=($|[\\s).,!?"”\'~]))`, "u"),
+    new RegExp(`${prefix}내(?=\\s)`, "u"),
+    new RegExp(`${prefix}제(?=\\s)`, "u"),
   ];
 
   return patterns.some((pattern) => pattern.test(trimmed));
@@ -1016,8 +1027,10 @@ export async function POST(request: NextRequest) {
       !hasInterestMentionInHistory(history, interests);
     const alias = normalizeAddressAlias((runtimeData as any)?.addressing?.callsUserAs?.[0] || "");
     const useAliasThisTurn = alias ? Math.random() < 0.2 : false;
+    const relationGroup = detectRelationGroup(runtimeData.relation || "");
+    const isParentalRelation = relationGroup === "parent" || relationGroup === "sibling";
     const selfReferenceLabel = resolveSelfReferenceLabel(runtimeData);
-    const useThirdPersonSelfThisTurn = selfReferenceLabel ? Math.random() < 0.2 : false;
+    const useThirdPersonSelfThisTurn = selfReferenceLabel ? (isParentalRelation ? Math.random() < 0.2 : Math.random() < 0.05) : false;
     const queryMeta = inferQueryMetaByRule(lastUserMessage.content);
     const chatDebug: ChatDebugPayload = {
       retrieval: {
@@ -1080,7 +1093,7 @@ export async function POST(request: NextRequest) {
     });
 
     let finalReply = buildReply(completion.choices?.[0]?.message?.content);
-    let violatesFirstPersonRule = hasFirstPersonSelfReference(finalReply);
+    let violatesFirstPersonRule = isParentalRelation ? hasFirstPersonSelfReference(finalReply) : false;
     if (violatesFirstPersonRule && finalReply && selfReferenceLabel) {
       const rewritten = buildReply(rewriteSelfReferenceToThirdPerson(finalReply, selfReferenceLabel));
       if (rewritten && !hasFirstPersonSelfReference(rewritten)) {

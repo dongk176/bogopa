@@ -12,6 +12,8 @@ export default function NativeAppLoginScreen() {
   const router = useRouter();
   const callbackUrl = "/auth/entry?next=%2F";
   const [isAppleSigningIn, setIsAppleSigningIn] = useState(false);
+  const [runtimePlatform, setRuntimePlatform] = useState<"unknown" | "web" | "ios" | "android">("unknown");
+  const canShowAppleLogin = runtimePlatform === "web" || runtimePlatform === "ios";
 
   useEffect(() => {
     const body = document.body;
@@ -37,6 +39,17 @@ export default function NativeAppLoginScreen() {
       body.style.touchAction = prevBodyTouchAction;
       html.style.touchAction = prevHtmlTouchAction;
     };
+  }, []);
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const platform = Capacitor.getPlatform();
+      if (platform === "ios" || platform === "android") {
+        setRuntimePlatform(platform);
+        return;
+      }
+    }
+    setRuntimePlatform("web");
   }, []);
 
   const openNativeLogin = async (provider: "kakao" | "google" | "apple") => {
@@ -181,28 +194,30 @@ export default function NativeAppLoginScreen() {
             Google로 로그인
           </a>
 
-          <a
-            href="/auth/mobile/start?provider=apple&next=%2F"
-            onClick={(event) => {
-              if (isAppleSigningIn) {
+          {canShowAppleLogin ? (
+            <a
+              href="/auth/mobile/start?provider=apple&next=%2F"
+              onClick={(event) => {
+                if (isAppleSigningIn) {
+                  event.preventDefault();
+                  return;
+                }
                 event.preventDefault();
-                return;
-              }
-              event.preventDefault();
-              void signInWithNativeApple();
-            }}
-            aria-disabled={isAppleSigningIn}
-            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#111111] px-6 py-4 text-[15px] font-bold text-[#ffffff] aria-disabled:opacity-60"
-          >
-            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center">
-              <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor" aria-hidden="true">
-                <path d="M16.37 12.22c.02 2.16 1.9 2.88 1.92 2.89-.02.05-.3 1.03-.99 2.04-.6.87-1.23 1.74-2.21 1.76-.96.02-1.27-.57-2.37-.57-1.1 0-1.44.55-2.35.59-.95.04-1.67-.95-2.28-1.82-1.24-1.8-2.18-5.1-.91-7.31.64-1.1 1.78-1.8 3.02-1.82.94-.02 1.83.64 2.37.64.54 0 1.56-.79 2.63-.68.45.02 1.7.18 2.5 1.34-.06.04-1.49.87-1.47 2.94zM14.9 6.72c.5-.61.83-1.45.74-2.3-.72.03-1.59.48-2.1 1.09-.46.53-.86 1.39-.75 2.21.81.06 1.63-.41 2.11-1z" />
-              </svg>
-            </span>
-            <span className="leading-none text-[#ffffff]">
-              {isAppleSigningIn ? "Apple 로그인 중..." : "Apple로 로그인"}
-            </span>
-          </a>
+                void signInWithNativeApple();
+              }}
+              aria-disabled={isAppleSigningIn}
+              className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#111111] px-6 py-4 text-[15px] font-bold text-[#ffffff] aria-disabled:opacity-60"
+            >
+              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center">
+                <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor" aria-hidden="true">
+                  <path d="M16.37 12.22c.02 2.16 1.9 2.88 1.92 2.89-.02.05-.3 1.03-.99 2.04-.6.87-1.23 1.74-2.21 1.76-.96.02-1.27-.57-2.37-.57-1.1 0-1.44.55-2.35.59-.95.04-1.67-.95-2.28-1.82-1.24-1.8-2.18-5.1-.91-7.31.64-1.1 1.78-1.8 3.02-1.82.94-.02 1.83.64 2.37.64.54 0 1.56-.79 2.63-.68.45.02 1.7.18 2.5 1.34-.06.04-1.49.87-1.47 2.94zM14.9 6.72c.5-.61.83-1.45.74-2.3-.72.03-1.59.48-2.1 1.09-.46.53-.86 1.39-.75 2.21.81.06 1.63-.41 2.11-1z" />
+                </svg>
+              </span>
+              <span className="leading-none text-[#ffffff]">
+                {isAppleSigningIn ? "Apple 로그인 중..." : "Apple로 로그인"}
+              </span>
+            </a>
+          ) : null}
         </div>
 
         <a
