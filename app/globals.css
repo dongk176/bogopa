@@ -60,6 +60,18 @@ html.native-app header.fixed.top-0 {
   padding-top: var(--native-safe-top) !important;
 }
 
+html.native-app nav.fixed.top-0 {
+  padding-top: var(--native-safe-top) !important;
+}
+
+/* Native app top bars: keep layout stable, nudge header content down uniformly */
+html.native-app header.fixed.top-0 > div,
+html.native-app nav.fixed.top-0 > div,
+html.native-app header.sticky.top-0 > div,
+html.native-app nav.sticky.top-0 > div {
+  padding-top: 0.35rem;
+}
+
 html.native-app nav.fixed.bottom-0 {
   padding-bottom: var(--native-safe-bottom) !important;
 }
