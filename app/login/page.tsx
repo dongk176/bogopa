@@ -13,7 +13,15 @@ function LoginContent() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  useNativeSwipeBack(() => router.back(), { startMode: "content" });
+  const goBack = () => {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.replace("/");
+  };
+
+  useNativeSwipeBack(goBack, { startMode: "content" });
 
   useEffect(() => {
     const body = document.body;
@@ -112,7 +120,7 @@ function LoginContent() {
       <section className="mx-auto flex w-full max-w-sm flex-col">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={goBack}
           className="mb-6 w-fit rounded-xl p-2 text-[#4a626d]"
           aria-label="뒤로가기"
         >

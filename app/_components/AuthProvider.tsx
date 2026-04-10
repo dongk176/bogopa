@@ -4,10 +4,9 @@ import { App as CapacitorApp } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize, KeyboardStyle } from "@capacitor/keyboard";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { signIn, SessionProvider } from "next-auth/react";
 import { useEffect } from "react";
-import { useSession } from "next-auth/react";
 
 function normalizeNextPath(nextPath: string | null) {
     if (!nextPath || !nextPath.startsWith("/")) return "/step-1";
@@ -19,8 +18,6 @@ function normalizeNextPath(nextPath: string | null) {
 
 function MobileAuthBridge() {
     const router = useRouter();
-    const pathname = usePathname();
-    const { status } = useSession();
 
     useEffect(() => {
         if (Capacitor.isNativePlatform()) {
@@ -28,13 +25,6 @@ function MobileAuthBridge() {
             document.body.classList.add("native-app");
         }
     }, []);
-
-    useEffect(() => {
-        if (!Capacitor.isNativePlatform()) return;
-        if (status !== "unauthenticated") return;
-        if (pathname !== "/") return;
-        router.replace("/login");
-    }, [pathname, router, status]);
 
     useEffect(() => {
         if (!Capacitor.isNativePlatform()) return;
