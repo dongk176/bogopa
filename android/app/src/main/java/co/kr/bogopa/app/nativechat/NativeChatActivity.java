@@ -10,6 +10,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.text.TextWatcher;
+import android.text.Editable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -71,6 +73,7 @@ public class NativeChatActivity extends AppCompatActivity {
 
     private LinearLayout composerContainer;
     private EditText inputView;
+    private ImageButton sendButton;
 
     private TextView blockedNoticeView;
 
@@ -301,15 +304,33 @@ public class NativeChatActivity extends AppCompatActivity {
         );
         composerContainer.addView(inputView, inputParams);
 
-        ImageButton sendButton = new ImageButton(this);
+        sendButton = new ImageButton(this);
         sendButton.setBackground(makeCircleDrawable(COLOR_BRAND));
         sendButton.setColorFilter(Color.WHITE);
-        sendButton.setImageResource(android.R.drawable.ic_menu_send);
+        sendButton.setImageResource(R.drawable.ic_send_compose);
+        sendButton.setScaleType(ImageView.ScaleType.CENTER);
+        sendButton.setPadding(dp(9), dp(9), dp(9), dp(9));
         sendButton.setOnClickListener(v -> handleSend());
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(36), dp(36));
         sendParams.leftMargin = dp(8);
         sendParams.gravity = Gravity.CENTER_VERTICAL;
         composerContainer.addView(sendButton, sendParams);
+
+        inputView.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateSendButtonState();
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        updateSendButtonState();
 
         blockedNoticeView = new TextView(this);
         blockedNoticeView.setVisibility(View.GONE);
@@ -414,8 +435,8 @@ public class NativeChatActivity extends AppCompatActivity {
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             Insets statusInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars());
             Insets navigationInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
-            Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
-            int bottomInset = Math.max(navigationInsets.bottom, imeInsets.bottom);
+            boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            int navBottomInset = Math.max(navigationInsets.bottom, dp(6));
 
             headerContainer.setPadding(
                     dp(12),
@@ -428,14 +449,14 @@ public class NativeChatActivity extends AppCompatActivity {
                     dp(14),
                     dp(10),
                     dp(14),
-                    dp(10) + Math.max(bottomInset, dp(6))
+                    dp(10) + navBottomInset
             );
 
             messageScrollView.setPadding(
                     messageScrollView.getPaddingLeft(),
                     messageScrollView.getPaddingTop(),
                     messageScrollView.getPaddingRight(),
-                    Math.max(bottomInset, dp(6))
+                    navBottomInset
             );
 
             if (sheetPanel != null) {
@@ -447,7 +468,7 @@ public class NativeChatActivity extends AppCompatActivity {
                 );
             }
 
-            if (insets.isVisible(WindowInsetsCompat.Type.ime())) {
+            if (imeVisible) {
                 scrollToBottom(false);
             }
 
@@ -717,7 +738,18 @@ public class NativeChatActivity extends AppCompatActivity {
         String text = inputView.getText() == null ? "" : inputView.getText().toString().trim();
         if (text.isEmpty()) return;
         inputView.setText("");
+        updateSendButtonState();
         NativeChatBridge.emitSendMessage(text);
+    }
+
+    private void updateSendButtonState() {
+        if (sendButton == null || inputView == null) return;
+        String text = inputView.getText() == null ? "" : inputView.getText().toString().trim();
+        boolean canSend = !text.isEmpty();
+        sendButton.setEnabled(canSend);
+        sendButton.setBackground(makeCircleDrawable(canSend ? COLOR_BRAND : Color.rgb(196, 208, 216)));
+        sendButton.setColorFilter(canSend ? Color.WHITE : Color.rgb(120, 141, 154));
+        sendButton.setAlpha(canSend ? 1f : 0.85f);
     }
 
     private void showBlockedNotice() {
