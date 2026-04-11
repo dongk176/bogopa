@@ -324,9 +324,11 @@ function ChatContainer() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isNativeChatRuntime = Capacitor.isNativePlatform();
-  const isIosRuntime = isNativeChatRuntime && Capacitor.getPlatform() === "ios";
+  const nativePlatform = isNativeChatRuntime ? Capacitor.getPlatform() : "";
+  const isSupportedNativeChatRuntime =
+    isNativeChatRuntime && (nativePlatform === "ios" || nativePlatform === "android");
   const [nativeChatFailed, setNativeChatFailed] = useState(false);
-  const shouldUseNativeChatScreen = isIosRuntime && !nativeChatFailed;
+  const shouldUseNativeChatScreen = isSupportedNativeChatRuntime && !nativeChatFailed;
   const chatId = searchParams.get("id");
   const [runtime, setRuntime] = useState<PersonaRuntime | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
