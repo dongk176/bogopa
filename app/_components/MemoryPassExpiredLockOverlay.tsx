@@ -19,7 +19,7 @@ export default function MemoryPassExpiredLockOverlay({
   onClose,
   returnTo = "/",
   title = "기억 패스가 만료되었어요",
-  description = "이 기억은 잠금 상태입니다. 구독하기를 누르면 다시 사용할 수 있어요.",
+  description = "이 기억은 잠금 상태입니다.\n구독하면 바로 다시 대화할 수 있어요.",
   onSubscribed,
 }: MemoryPassExpiredLockOverlayProps) {
   const router = useRouter();
