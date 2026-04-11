@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
-import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
 
 type MemoryPassExpiredLockOverlayProps = {
@@ -26,7 +25,31 @@ export default function MemoryPassExpiredLockOverlay({
   const router = useRouter();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  useOverlayScrollLock(open);
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return;
+
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = {
+      htmlOverflow: html.style.overflow,
+      htmlOverscroll: html.style.overscrollBehavior,
+      bodyOverflow: body.style.overflow,
+      bodyOverscroll: body.style.overscrollBehavior,
+    };
+
+    html.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+
+    return () => {
+      html.style.overflow = prev.htmlOverflow;
+      html.style.overscrollBehavior = prev.htmlOverscroll;
+      body.style.overflow = prev.bodyOverflow;
+      body.style.overscrollBehavior = prev.bodyOverscroll;
+    };
+  }, [open]);
 
   const handleSubscribe = async () => {
     if (isPurchasing) return;
@@ -63,7 +86,7 @@ export default function MemoryPassExpiredLockOverlay({
     <div className="fixed inset-0 z-[190] grid place-items-center bg-black/45 px-4 backdrop-blur-[1px]">
       <section className="w-full max-w-sm rounded-[2rem] bg-white p-7 text-center shadow-2xl animate-fade-in">
         <h3 className="font-headline text-xl font-bold text-[#2f342e]">{title}</h3>
-        <p className="mt-3 break-keep text-sm leading-relaxed text-[#5d605a]">{description}</p>
+        <p className="mt-3 whitespace-pre-line break-keep text-sm leading-relaxed text-[#5d605a]">{description}</p>
         {notice ? <p className="mt-3 break-keep text-xs font-semibold text-[#b42318]">{notice}</p> : null}
         <div className="mt-7 grid grid-cols-2 gap-3">
           <button
@@ -86,4 +109,3 @@ export default function MemoryPassExpiredLockOverlay({
     </div>
   );
 }
-

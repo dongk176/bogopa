@@ -266,7 +266,7 @@ export default function ChatListPage() {
                 onClose={() => setLockedPersonaName("")}
                 returnTo="/chat/list"
                 title="기억 패스가 만료되었어요"
-                description={`${lockedPersonaName || "이 기억"}과의 대화는 잠금 상태입니다. 구독하면 바로 다시 열려요.`}
+                description={`"${lockedPersonaName || "이름"}"의 대화는 현재 잠금 상태입니다.\n구독하면 바로 다시 이용할 수 있어요.`}
                 onSubscribed={() => {
                     if (typeof window !== "undefined") {
                         window.location.reload();
