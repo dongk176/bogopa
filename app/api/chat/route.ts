@@ -17,6 +17,7 @@ import {
   normalizeConversationTension,
 } from "@/lib/persona/conversationTension";
 import { logAnalyticsEventSafe } from "@/lib/server/analytics";
+import { getPersonaLockStatus } from "@/lib/server/persona-lock";
 
 export const runtime = "nodejs";
 
@@ -958,6 +959,21 @@ export async function POST(request: NextRequest) {
 
     if (!sessionUser?.id) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    if (runtimeData.personaId) {
+      const lockStatus = await getPersonaLockStatus(sessionUser.id);
+      if (lockStatus.lockedPersonaIds.includes(String(runtimeData.personaId).trim())) {
+        return NextResponse.json(
+          {
+            error: "기억 패스가 만료되어 이 기억과의 대화는 잠금 상태입니다. 구독 후 다시 이용할 수 있어요.",
+            code: "MEMORY_PASS_EXPIRED_LOCKED_PERSONA",
+            requiresSubscription: true,
+            primaryPersonaId: lockStatus.primaryPersonaId,
+          },
+          { status: 403 },
+        );
+      }
     }
 
     let chatSessionId: string | null = null;

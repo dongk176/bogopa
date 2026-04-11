@@ -418,7 +418,7 @@ export default async function Home() {
       <Navigation />
 
       <HomeAppOnly initialIsNativeApp={initialIsNativeApp}>
-        <header className="fixed left-0 top-0 z-20 w-full bg-[#242926] pt-[env(safe-area-inset-top)] lg:hidden">
+        <header className="fixed left-0 top-0 z-20 w-full bg-[#242926] pt-[var(--native-safe-top)] lg:hidden">
           <div className="flex h-16 items-center justify-center">
             <div className="flex items-center gap-3">
               <img src="/logo/bogopa%20logo.png" alt="Logo" className="h-9 w-9 object-contain shadow-sm" />
@@ -429,9 +429,9 @@ export default async function Home() {
       </HomeAppOnly>
 
       <main
-        className={`home-main overflow-hidden pt-[max(env(safe-area-inset-top),3.5rem)] md:pt-14 lg:pt-20 lg:pl-64 ${
-          initialIsNativeApp ? "pb-0 md:pb-0" : "pb-28 md:pb-20"
-        }`}
+        className={`home-main overflow-hidden ${
+          initialIsNativeApp ? "pt-[calc(4.7rem+var(--native-safe-top))] md:pt-14" : "pt-[max(env(safe-area-inset-top),3.5rem)] md:pt-14"
+        } lg:pt-20 lg:pl-64 ${initialIsNativeApp ? "pb-0 md:pb-0" : "pb-28 md:pb-20"}`}
       >
         <HomeWebOnly initialIsNativeApp={initialIsNativeApp}>
           <div className="lg:hidden">

@@ -21,6 +21,7 @@ import MemoryBalanceBadge from "@/app/_components/MemoryBalanceBadge";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 import { getConversationTensionGuide } from "@/lib/persona/conversationTension";
+import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
 
 type ChatMessage = {
   id: string;
@@ -38,6 +39,7 @@ type StoredChatState = {
   personaId: string;
   personaName?: string;
   avatarUrl?: string;
+  isLocked?: boolean;
   runtime?: PersonaRuntime | null;
   messages: ChatMessage[];
   lastMessage?: string;
@@ -361,6 +363,7 @@ function ChatContainer() {
   const [nativePersonaOverrides, setNativePersonaOverrides] = useState<NativeChatPersona[] | null>(null);
   const [typingBlockedNotice, setTypingBlockedNotice] = useState("");
   const [memoryStorePrompt, setMemoryStorePrompt] = useState<MemoryStorePrompt | null>(null);
+  const [lockedPersonaName, setLockedPersonaName] = useState("");
   const [chatDebug, setChatDebug] = useState<ChatDebugPayload | null>(null);
   const { guardCreateStart, modalNode, isChecking } = useMemoryCreateGuard();
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -617,6 +620,7 @@ function ChatContainer() {
               personaId: p.persona_id,
               personaName: p.name,
               avatarUrl: p.avatar_url,
+              isLocked: Boolean(p.is_locked),
               runtime: p.runtime || null,
               messages: p.last_message_content ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }] : [],
               lastMessage: p.last_message_content || "",
@@ -895,6 +899,11 @@ function ChatContainer() {
   async function submitUserText(rawText: string) {
     const trimmed = rawText.slice(0, USER_INPUT_CHAR_LIMIT).trim();
     if (!trimmed || !runtime) return;
+    const activeChat = savedChats.find((chat) => chat.personaId === runtime.personaId);
+    if (activeChat?.isLocked) {
+      setLockedPersonaName(runtime.displayName || activeChat.personaName || "이 기억");
+      return;
+    }
     if (isTyping) {
       showTypingBlockedNotice();
       return;
@@ -960,6 +969,18 @@ function ChatContainer() {
       let nextBalanceFromServer: number | null = null;
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { code?: string };
+        if (response.status === 403 && body.code === "MEMORY_PASS_EXPIRED_LOCKED_PERSONA") {
+          setMessages(previousMessages);
+          if (!shouldUseNativeChatScreen) {
+            setInput(trimmed);
+          }
+          if (typeof previousBalance === "number") {
+            memoryBalanceRef.current = previousBalance;
+            setMemoryBalance(previousBalance);
+          }
+          setLockedPersonaName(runtime.displayName || "이 기억");
+          return;
+        }
         if (response.status === 402 || body.code === "MEMORY_INSUFFICIENT") {
           setMessages(previousMessages);
           if (!shouldUseNativeChatScreen) {
@@ -1219,6 +1240,18 @@ function ChatContainer() {
             </section>
           </div>
         ) : null}
+        <MemoryPassExpiredLockOverlay
+          open={Boolean(lockedPersonaName)}
+          onClose={() => setLockedPersonaName("")}
+          returnTo={runtime ? `/chat?id=${runtime.personaId}` : "/chat/list"}
+          title="기억 패스가 만료되었어요"
+          description={`${lockedPersonaName || "이 기억"}과의 대화는 잠금 상태입니다. 구독하면 바로 다시 열려요.`}
+          onSubscribed={() => {
+            if (typeof window !== "undefined") {
+              window.location.reload();
+            }
+          }}
+        />
         {modalNode}
       </div>
     );
@@ -1500,6 +1533,19 @@ function ChatContainer() {
           </section>
         </div>
       ) : null}
+
+      <MemoryPassExpiredLockOverlay
+        open={Boolean(lockedPersonaName)}
+        onClose={() => setLockedPersonaName("")}
+        returnTo={runtime ? `/chat?id=${runtime.personaId}` : "/chat/list"}
+        title="기억 패스가 만료되었어요"
+        description={`${lockedPersonaName || "이 기억"}과의 대화는 잠금 상태입니다. 구독하면 바로 다시 열려요.`}
+        onSubscribed={() => {
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+        }}
+      />
 
       <PersonaMemorySheet
         open={isPersonaSheetOpen}

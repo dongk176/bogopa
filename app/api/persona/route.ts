@@ -7,6 +7,7 @@ import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import { consumeMemory, getOrCreateMemoryPassStatus } from "@/lib/server/memory-pass";
 import { inferAvatarStorage, resolveAvatarUrlFromStorage } from "@/lib/avatar-storage";
 import { logAnalyticsEventSafe } from "@/lib/server/analytics";
+import { buildPersonaLockStatusFromRows, getPersonaLockStatus } from "@/lib/server/persona-lock";
 
 function trimList(values: string[] | undefined, maxCount: number, maxChars: number) {
     return (values || [])
@@ -225,6 +226,16 @@ export async function GET(request: NextRequest) {
 
     try {
         const personas = await getPersonasForUser(sessionUser.id);
+        const memoryPass = await getOrCreateMemoryPassStatus(sessionUser.id);
+        const lockStatus = buildPersonaLockStatusFromRows({
+            isSubscribed: memoryPass.isSubscribed,
+            rows: personas.map((persona: any) => ({
+                personaId: String(persona.persona_id || "").trim(),
+                createdAt: persona.created_at,
+                updatedAt: persona.updated_at,
+            })),
+        });
+
         const normalizedPersonas = personas.map((persona: any) => {
             const inferredPersonaAvatar = inferAvatarStorage({
                 avatarSource: persona.avatar_source,
@@ -261,10 +272,20 @@ export async function GET(request: NextRequest) {
                 avatar_source: inferredPersonaAvatar.avatarSource,
                 avatar_key: inferredPersonaAvatar.avatarKey,
                 runtime,
+                is_locked: lockStatus.lockedPersonaIds.includes(String(persona.persona_id || "").trim()),
+                is_primary_unlocked: lockStatus.primaryPersonaId === String(persona.persona_id || "").trim(),
             };
         });
 
-        return NextResponse.json({ ok: true, personas: normalizedPersonas });
+        return NextResponse.json({
+            ok: true,
+            personas: normalizedPersonas,
+            lock: {
+                isLockModeActive: lockStatus.isLockModeActive,
+                primaryPersonaId: lockStatus.primaryPersonaId,
+                lockedPersonaIds: lockStatus.lockedPersonaIds,
+            },
+        });
     } catch (error) {
         console.error("[api-persona] failed to fetch personas", error);
         return NextResponse.json({ error: "페르소나 목록을 불러오지 못했습니다." }, { status: 500 });
@@ -306,6 +327,18 @@ export async function PATCH(request: NextRequest) {
         const existing = await getPersonaById(personaId, sessionUser.id);
         if (!existing) {
             return NextResponse.json({ error: "존재하지 않는 페르소나입니다." }, { status: 404 });
+        }
+        const lockStatus = await getPersonaLockStatus(sessionUser.id, { isSubscribed: memoryPass.isSubscribed });
+        if (lockStatus.lockedPersonaIds.includes(String(personaId).trim())) {
+            return NextResponse.json(
+                {
+                    error: "기억 패스가 만료되어 이 기억은 잠금 상태입니다. 구독 후 다시 수정할 수 있어요.",
+                    code: "MEMORY_PASS_EXPIRED_LOCKED_PERSONA",
+                    requiresSubscription: true,
+                    primaryPersonaId: lockStatus.primaryPersonaId,
+                },
+                { status: 403 },
+            );
         }
 
         const limitedRuntime = applyRuntimePlanLimits(runtime, {

@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { PersonaAnalysis, PersonaRuntime, PrimaryGoal } from "@/types/persona";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
+import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
 import {
     CONVERSATION_TENSION_OPTIONS,
     normalizeConversationTension,
@@ -16,6 +17,8 @@ type Persona = {
     persona_id: string;
     name: string;
     avatar_url: string | null;
+    is_locked?: boolean;
+    is_primary_unlocked?: boolean;
     created_at?: string;
     updated_at: string;
     last_message_content: string | null;
@@ -327,6 +330,7 @@ export default function PersonaPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [limits, setLimits] = useState<PlanLimits>(FREE_PLAN_LIMITS);
     const [isSubscribed, setIsSubscribed] = useState(false);
+    const [lockedPersonaName, setLockedPersonaName] = useState("");
     const [isNativeAppRuntime, setIsNativeAppRuntime] = useState(false);
     const [isDetailHandleDragging, setIsDetailHandleDragging] = useState(false);
     const detailSwipeStartYRef = useRef<number | null>(null);
@@ -566,6 +570,10 @@ export default function PersonaPage() {
     }, [session, router]);
 
     const handleOpenDetail = (persona: Persona) => {
+        if (persona.is_locked) {
+            setLockedPersonaName(persona.name || "이 기억");
+            return;
+        }
         setSelectedPersona(persona);
         setIsEditing(false);
         setIsEditInputFocused(false);
@@ -699,6 +707,10 @@ export default function PersonaPage() {
                 }),
             });
             const data = (await res.json().catch(() => ({}))) as { ok?: boolean; code?: string };
+            if (res.status === 403 && data?.code === "MEMORY_PASS_EXPIRED_LOCKED_PERSONA") {
+                setLockedPersonaName(selectedPersona.name || "이 기억");
+                return;
+            }
             if (res.status === 402 || res.status === 403 || data?.code === "PREMIUM_REQUIRED") {
                 goToPayment();
                 return;
@@ -935,6 +947,11 @@ export default function PersonaPage() {
                                                 <span className="mt-2 block text-xs font-medium text-[#2f342e]">
                                                     {new Date(persona.updated_at).toLocaleDateString()}
                                                 </span>
+                                                {persona.is_locked ? (
+                                                    <span className="mt-2 inline-flex rounded-full bg-[#f2f4f7] px-2 py-1 text-[10px] font-extrabold text-[#344054]">
+                                                        잠금
+                                                    </span>
+                                                ) : null}
                                             </div>
                                             <div className="no-brand-border mt-4 border-t border-[#d6ddd8] pt-4">
                                                 <div className="flex items-center justify-between">
@@ -1312,6 +1329,19 @@ export default function PersonaPage() {
                     </div>
                 </div>
             )}
+
+            <MemoryPassExpiredLockOverlay
+                open={Boolean(lockedPersonaName)}
+                onClose={() => setLockedPersonaName("")}
+                returnTo="/persona"
+                title="기억 패스가 만료되었어요"
+                description={`${lockedPersonaName || "이 기억"}은 잠금 상태입니다. 구독하면 수정과 대화를 다시 이용할 수 있어요.`}
+                onSubscribed={() => {
+                    if (typeof window !== "undefined") {
+                        window.location.reload();
+                    }
+                }}
+            />
             {modalNode}
         </div>
     );

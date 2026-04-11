@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import LoginModal from "@/app/_components/LoginModal";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
+import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
 
 type PersonaCard = {
   persona_id: string;
@@ -13,6 +14,7 @@ type PersonaCard = {
   avatar_url: string | null;
   created_at?: string;
   updated_at?: string;
+  is_locked?: boolean;
 };
 
 type LetterQuotaPayload = {
@@ -140,6 +142,7 @@ export default function HomeMemoryCarousel() {
   const [isLetterQuotaChecking, setIsLetterQuotaChecking] = useState(false);
   const [letterRemainingCount, setLetterRemainingCount] = useState<number | null>(null);
   const [loginNextPath, setLoginNextPath] = useState("/step-1/start");
+  const [lockedPersonaName, setLockedPersonaName] = useState("");
   const { guardCreateStart, modalNode, isChecking } = useMemoryCreateGuard();
 
   useEffect(() => {
@@ -321,6 +324,11 @@ export default function HomeMemoryCarousel() {
                 <Link
                   key={item.persona_id}
                   href={`/chat?id=${item.persona_id}`}
+                  onClick={(event) => {
+                    if (!item.is_locked) return;
+                    event.preventDefault();
+                    setLockedPersonaName(item.name || "이 기억");
+                  }}
                   className="flex shrink-0 flex-col items-center justify-between rounded-2xl bg-[#303733]/95 px-3 pt-3 pb-0 text-center"
                   style={{
                     width: `${MEMORY_BUTTON_SIZE}px`,
@@ -338,6 +346,11 @@ export default function HomeMemoryCarousel() {
                     )}
                   </div>
                   <p className="mt-2 translate-y-1 line-clamp-2 min-h-[2rem] text-sm font-bold leading-4 text-[#f0f5f2]">{item.name || "이름 없음"}</p>
+                  {item.is_locked ? (
+                    <span className="mb-2 inline-flex rounded-full bg-[#f2f4f7] px-2 py-0.5 text-[10px] font-extrabold text-[#344054]">
+                      잠금
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}
@@ -539,6 +552,18 @@ export default function HomeMemoryCarousel() {
           </div>
         </div>
       ) : null}
+      <MemoryPassExpiredLockOverlay
+        open={Boolean(lockedPersonaName)}
+        onClose={() => setLockedPersonaName("")}
+        returnTo="/"
+        title="기억 패스가 만료되었어요"
+        description={`${lockedPersonaName || "이 기억"}과의 대화는 잠금 상태입니다. 구독하면 바로 다시 열려요.`}
+        onSubscribed={() => {
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+        }}
+      />
     </section>
   );
 }

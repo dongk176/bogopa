@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navigation from "@/app/_components/Navigation";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
+import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
 
 type ChatMessage = {
     id: string;
@@ -17,6 +18,7 @@ type StoredChatState = {
     personaId: string;
     personaName?: string;
     avatarUrl?: string;
+    isLocked?: boolean;
     messages: ChatMessage[];
     updatedAt: string;
 };
@@ -25,6 +27,7 @@ export default function ChatListPage() {
     const router = useRouter();
     const [savedChats, setSavedChats] = useState<StoredChatState[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [lockedPersonaName, setLockedPersonaName] = useState("");
 
     // Review states
     const [showReviewModal, setShowReviewModal] = useState(false);
@@ -50,6 +53,7 @@ export default function ChatListPage() {
                             personaId: p.persona_id,
                             personaName: p.name,
                             avatarUrl: p.avatar_url,
+                            isLocked: Boolean(p.is_locked),
                             messages: p.last_message_content
                                 ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }]
                                 : [],
@@ -140,6 +144,11 @@ export default function ChatListPage() {
                             >
                                 <Link
                                     href={`/chat?id=${chat.personaId}`}
+                                    onClick={(event) => {
+                                        if (!chat.isLocked) return;
+                                        event.preventDefault();
+                                        setLockedPersonaName(chat.personaName || "이 기억");
+                                    }}
                                     className="flex min-w-0 flex-1 items-center gap-4"
                                 >
                                     <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-black/5">
@@ -161,6 +170,11 @@ export default function ChatListPage() {
                                         </p>
                                     </div>
                                 </Link>
+                                {chat.isLocked ? (
+                                    <span className="ml-3 shrink-0 rounded-full bg-[#f2f4f7] px-2 py-1 text-[10px] font-extrabold text-[#344054]">
+                                        잠금
+                                    </span>
+                                ) : null}
                             </div>
                         ))
                     )}
@@ -247,6 +261,18 @@ export default function ChatListPage() {
                     </section>
                 </div>
             ) : null}
+            <MemoryPassExpiredLockOverlay
+                open={Boolean(lockedPersonaName)}
+                onClose={() => setLockedPersonaName("")}
+                returnTo="/chat/list"
+                title="기억 패스가 만료되었어요"
+                description={`${lockedPersonaName || "이 기억"}과의 대화는 잠금 상태입니다. 구독하면 바로 다시 열려요.`}
+                onSubscribed={() => {
+                    if (typeof window !== "undefined") {
+                        window.location.reload();
+                    }
+                }}
+            />
             {modalNode}
         </div>
     );
