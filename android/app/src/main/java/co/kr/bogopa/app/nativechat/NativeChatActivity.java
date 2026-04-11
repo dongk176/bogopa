@@ -3,6 +3,7 @@ package co.kr.bogopa.app.nativechat;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -448,8 +449,24 @@ public class NativeChatActivity extends AppCompatActivity {
             Insets navigationInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
             Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
             boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
-            int imeOffset = Math.max(0, imeInsets.bottom - navigationInsets.bottom);
+            int imeOffsetFromInsets = Math.max(0, imeInsets.bottom - navigationInsets.bottom);
+            Rect visibleFrame = new Rect();
+            view.getWindowVisibleDisplayFrame(visibleFrame);
+            int occludedByKeyboard = Math.max(0, view.getHeight() - visibleFrame.bottom);
+            int imeOffset = imeVisible ? Math.max(imeOffsetFromInsets, occludedByKeyboard) : 0;
+            if (imeVisible) {
+                // On some Android keyboards (notably Samsung), the accessory strip
+                // can overlap the composer even when IME insets are tiny under adjustResize.
+                // Keep a minimum lift while keyboard is visible.
+                int minImeLift = dp(42);
+                if (imeOffset < minImeLift) {
+                    imeOffset = minImeLift;
+                } else {
+                    imeOffset += dp(4);
+                }
+            }
             int navBottomInset = Math.max(navigationInsets.bottom, dp(6));
+            int composerBottomInset = imeVisible ? dp(6) : navBottomInset;
 
             headerContainer.setPadding(
                     dp(12),
@@ -462,15 +479,22 @@ public class NativeChatActivity extends AppCompatActivity {
                     dp(14),
                     dp(10),
                     dp(14),
-                    dp(10) + navBottomInset
+                    dp(10) + composerBottomInset
             );
-            composerContainer.setTranslationY(-imeOffset);
+            ViewGroup.LayoutParams composerRawParams = composerContainer.getLayoutParams();
+            if (composerRawParams instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams composerParams = (LinearLayout.LayoutParams) composerRawParams;
+                if (composerParams.bottomMargin != imeOffset) {
+                    composerParams.bottomMargin = imeOffset;
+                    composerContainer.setLayoutParams(composerParams);
+                }
+            }
 
             messageScrollView.setPadding(
                     messageScrollView.getPaddingLeft(),
                     messageScrollView.getPaddingTop(),
                     messageScrollView.getPaddingRight(),
-                    navBottomInset + dp(6)
+                    dp(6)
             );
 
             if (sheetPanel != null) {
