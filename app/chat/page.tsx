@@ -932,6 +932,39 @@ function ChatContainer() {
     }
   }
 
+  async function resolvePersonaLockState(personaId: string) {
+    const normalizedPersonaId = String(personaId || "").trim();
+    if (!normalizedPersonaId) {
+      return { isLocked: false, personaName: "이 기억" };
+    }
+
+    const cached = savedChatsRef.current.find((chat) => chat.personaId === normalizedPersonaId);
+    if (cached?.isLocked) {
+      return { isLocked: true, personaName: cached.personaName || "이 기억" };
+    }
+
+    try {
+      const response = await fetch("/api/persona", { cache: "no-store" });
+      if (response.ok) {
+        const payload = await response.json().catch(() => ({} as any));
+        if (payload?.ok && Array.isArray(payload.personas)) {
+          const matched = payload.personas.find(
+            (p: any) => String(p?.persona_id ?? p?.personaId ?? "").trim() === normalizedPersonaId,
+          );
+          if (matched) {
+            const isLocked = Boolean(matched?.is_locked ?? matched?.isLocked);
+            const personaName = String(matched?.name ?? matched?.personaName ?? cached?.personaName ?? "이 기억").trim() || "이 기억";
+            return { isLocked, personaName };
+          }
+        }
+      }
+    } catch {
+      // Ignore and fallback to cached state.
+    }
+
+    return { isLocked: Boolean(cached?.isLocked), personaName: cached?.personaName || "이 기억" };
+  }
+
   async function submitUserText(rawText: string) {
     const trimmed = rawText.slice(0, USER_INPUT_CHAR_LIMIT).trim();
     if (!trimmed || !runtime) return;
@@ -1124,19 +1157,21 @@ function ChatContainer() {
         selectPersonaListener = await NativeChat.addListener("selectPersona", ({ personaId }) => {
           const targetId = typeof personaId === "string" ? personaId.trim() : "";
           if (!targetId || targetId === runtime.personaId) return;
-          const targetChat = savedChatsRef.current.find((chat) => chat.personaId === targetId);
-          if (targetChat?.isLocked) {
+          void (async () => {
+            const lock = await resolvePersonaLockState(targetId);
+            if (lock.isLocked) {
+              setIsChatListOpen(false);
+              setLockedPersonaName(lock.personaName || "이 기억");
+              suppressNextNativeCloseRouteRef.current = true;
+              void NativeChat.dismiss().catch(() => {
+                suppressNextNativeCloseRouteRef.current = false;
+              });
+              return;
+            }
+            keepNativeChatOnNextCleanupRef.current = true;
             setIsChatListOpen(false);
-            setLockedPersonaName(targetChat.personaName || "이 기억");
-            suppressNextNativeCloseRouteRef.current = true;
-            void NativeChat.dismiss().catch(() => {
-              suppressNextNativeCloseRouteRef.current = false;
-            });
-            return;
-          }
-          keepNativeChatOnNextCleanupRef.current = true;
-          setIsChatListOpen(false);
-          router.replace(`/chat?id=${encodeURIComponent(targetId)}`);
+            router.replace(`/chat?id=${encodeURIComponent(targetId)}`);
+          })();
         });
         createMemoryListener = await NativeChat.addListener("createMemory", () => {
           startCreateMemoryFromChatRef.current();
@@ -1643,13 +1678,16 @@ function ChatContainer() {
                 <button
                   key={chat.personaId}
                   onClick={() => {
-                    if (chat.isLocked) {
+                    void (async () => {
+                      const lock = await resolvePersonaLockState(chat.personaId);
+                      if (lock.isLocked) {
+                        setIsChatListOpen(false);
+                        setLockedPersonaName(lock.personaName || "이 기억");
+                        return;
+                      }
                       setIsChatListOpen(false);
-                      setLockedPersonaName(chat.personaName || "이 기억");
-                      return;
-                    }
-                    setIsChatListOpen(false);
-                    router.push(`/chat?id=${chat.personaId}`);
+                      router.push(`/chat?id=${chat.personaId}`);
+                    })();
                   }}
                   className={`flex w-full items-center gap-4 rounded-2xl p-4 transition-all active:scale-[0.98] ${chatId === chat.personaId ? "bg-white/10 ring-1 ring-white/10" : "hover:bg-white/5"}`}
                 >
