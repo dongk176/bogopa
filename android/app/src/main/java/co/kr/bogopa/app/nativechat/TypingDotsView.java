@@ -36,6 +36,9 @@ final class TypingDotsView extends LinearLayout {
         super(context);
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER);
+        setClipChildren(false);
+        setClipToPadding(false);
+        setPadding(0, dp(2), 0, dp(1));
 
         int dotSize = dp(6);
         int spacing = dp(4);

@@ -15,10 +15,12 @@ import android.text.Editable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
@@ -250,6 +252,12 @@ public class NativeChatActivity extends AppCompatActivity {
         messageScrollView.setFillViewport(true);
         messageScrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         messageScrollView.setVerticalScrollBarEnabled(false);
+        messageScrollView.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                dismissKeyboard();
+            }
+            return false;
+        });
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -260,6 +268,8 @@ public class NativeChatActivity extends AppCompatActivity {
         messageStack = new LinearLayout(this);
         messageStack.setOrientation(LinearLayout.VERTICAL);
         messageStack.setPadding(dp(12), dp(16), dp(12), dp(18));
+        messageStack.setClickable(true);
+        messageStack.setOnClickListener(v -> dismissKeyboard());
         messageScrollView.addView(messageStack, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -454,13 +464,20 @@ public class NativeChatActivity extends AppCompatActivity {
                     dp(14),
                     dp(10) + navBottomInset
             );
-            composerContainer.setTranslationY(-imeOffset);
+            ViewGroup.LayoutParams composerRawParams = composerContainer.getLayoutParams();
+            if (composerRawParams instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams composerParams = (LinearLayout.LayoutParams) composerRawParams;
+                if (composerParams.bottomMargin != imeOffset) {
+                    composerParams.bottomMargin = imeOffset;
+                    composerContainer.setLayoutParams(composerParams);
+                }
+            }
 
             messageScrollView.setPadding(
                     messageScrollView.getPaddingLeft(),
                     messageScrollView.getPaddingTop(),
                     messageScrollView.getPaddingRight(),
-                    navBottomInset + (imeOffset > 0 ? imeOffset + dp(10) : dp(6))
+                    navBottomInset + dp(6)
             );
 
             if (sheetPanel != null) {
@@ -526,7 +543,7 @@ public class NativeChatActivity extends AppCompatActivity {
             messageStack.addView(makeTypingRow());
         }
 
-        scrollToBottom(false);
+        scrollToBottom(true);
     }
 
     private View makeMessageRow(@NonNull NativeChatState.Message message) {
@@ -615,6 +632,8 @@ public class NativeChatActivity extends AppCompatActivity {
         bubble.setGravity(Gravity.CENTER);
         bubble.setPadding(dp(12), dp(10), dp(12), dp(10));
         bubble.setBackground(makeRoundedRectDrawable(COLOR_ASSISTANT_BUBBLE, dp(16), false));
+        bubble.setClipToPadding(false);
+        bubble.setClipChildren(false);
 
         TypingDotsView dotsView = new TypingDotsView(this);
         bubble.addView(dotsView);
@@ -745,6 +764,7 @@ public class NativeChatActivity extends AppCompatActivity {
         inputView.setText("");
         updateSendButtonState();
         NativeChatBridge.emitSendMessage(text);
+        scrollToBottom(true);
     }
 
     private void updateSendButtonState() {
@@ -768,6 +788,15 @@ public class NativeChatActivity extends AppCompatActivity {
                         blockedNoticeView.setVisibility(View.GONE)
                 ).start()
         ).start();
+    }
+
+    private void dismissKeyboard() {
+        if (inputView == null) return;
+        inputView.clearFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(inputView.getWindowToken(), 0);
+        }
     }
 
     private void showPersonaSheet() {
