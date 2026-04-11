@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Manrope, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/app/_components/AuthProvider";
+import ClientDiagnosticsReporter from "@/app/_components/ClientDiagnosticsReporter";
 import StepRouteScrollTop from "@/app/_components/StepRouteScrollTop";
 import OnboardingDraftScopeGuard from "@/app/_components/OnboardingDraftScopeGuard";
 import RouteTransitionShell from "@/app/_components/RouteTransitionShell";
@@ -49,6 +50,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-white text-[#2f342e]">
         <AuthProvider>
+          <ClientDiagnosticsReporter />
           <StepRouteScrollTop />
           <OnboardingDraftScopeGuard />
           <RouteTransitionShell>{children}</RouteTransitionShell>

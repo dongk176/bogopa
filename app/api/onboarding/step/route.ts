@@ -9,12 +9,6 @@ type StepBody = {
   data?: unknown;
 };
 
-function getClientIp(request: NextRequest) {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() || null;
-  return request.headers.get("x-real-ip")?.trim() || null;
-}
-
 const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS bogopa.onboarding_steps (
   id BIGSERIAL PRIMARY KEY,
@@ -55,6 +49,14 @@ async function ensureOnboardingTable() {
           END IF;
         END $$;
       `);
+
+      // Privacy minimization: remove legacy consent_ip fields that are no longer used.
+      await pool.query(`
+        UPDATE bogopa.onboarding_steps
+        SET data = (data #- '{consent_ip}') #- '{consent,consent_ip}'
+        WHERE (data ? 'consent_ip')
+           OR ((data ? 'consent') AND ((data->'consent') ? 'consent_ip'));
+      `);
     })().catch((error) => {
       ensureOnboardingTablePromise = null;
       throw error;
@@ -89,7 +91,6 @@ export async function POST(request: NextRequest) {
     await ensureOnboardingTable();
 
     const now = new Date().toISOString();
-    const clientIp = getClientIp(request);
     let dataToSave = body.data ?? {};
 
     if (step === 3 && body.data && typeof body.data === "object" && !Array.isArray(body.data)) {
@@ -102,7 +103,6 @@ export async function POST(request: NextRequest) {
       dataToSave = {
         ...raw,
         consent_timestamp: (raw.consent_timestamp as string | undefined) || (consentRaw?.consent_timestamp as string | undefined) || undefined,
-        consent_ip: raw.consent_ip ?? null,
         is_raw_data_deleted: Boolean(raw.is_raw_data_deleted),
       };
 
@@ -116,7 +116,6 @@ export async function POST(request: NextRequest) {
             consent_timestamp: nextConsentTimestamp,
           },
           consent_timestamp: nextConsentTimestamp,
-          consent_ip: clientIp,
         };
       }
 

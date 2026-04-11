@@ -7,6 +7,10 @@ import { signOut, useSession } from "next-auth/react";
 import Navigation from "@/app/_components/Navigation";
 import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import { getEmailDisplay } from "@/lib/display-email";
+import {
+  AI_DATA_TRANSFER_CONSENT_VERSION,
+  AI_DATA_TRANSFER_PROVIDER_NAME,
+} from "@/lib/ai-consent";
 
 type ProfilePayload = {
   ok?: boolean;
@@ -17,6 +21,19 @@ type ProfilePayload = {
     gender?: string | null;
     mbti?: string | null;
     interests?: string[];
+    aiDataTransferConsented?: boolean;
+    aiDataTransferConsentedAt?: string | null;
+    aiDataTransferConsentVersion?: string | null;
+  };
+  error?: string;
+};
+
+type AiConsentPayload = {
+  ok?: boolean;
+  consent?: {
+    consented?: boolean;
+    consentedAt?: string | null;
+    consentVersion?: string | null;
   };
   error?: string;
 };
@@ -76,6 +93,12 @@ export default function AccountSettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [isAiConsentGranted, setIsAiConsentGranted] = useState(false);
+  const [aiConsentAt, setAiConsentAt] = useState<string | null>(null);
+  const [aiConsentVersion, setAiConsentVersion] = useState<string | null>(null);
+  const [isAiConsentSaving, setIsAiConsentSaving] = useState(false);
+  const [aiConsentError, setAiConsentError] = useState("");
+  const [isWithdrawConsentModalOpen, setIsWithdrawConsentModalOpen] = useState(false);
 
   useNativeSwipeBack(() => {
     router.push("/profile");
@@ -98,6 +121,9 @@ export default function AccountSettingsPage() {
         if (cancelled) return;
         if (response.ok && payload.ok) {
           setProvider(payload.profile?.provider || null);
+          setIsAiConsentGranted(Boolean(payload.profile?.aiDataTransferConsented));
+          setAiConsentAt(payload.profile?.aiDataTransferConsentedAt || null);
+          setAiConsentVersion(payload.profile?.aiDataTransferConsentVersion || null);
         }
       } catch {
         if (!cancelled) setProvider(null);
@@ -111,6 +137,32 @@ export default function AccountSettingsPage() {
       cancelled = true;
     };
   }, [status]);
+
+  const upsertAiConsent = async (agreed: boolean) => {
+    if (isAiConsentSaving) return;
+    setIsAiConsentSaving(true);
+    setAiConsentError("");
+
+    try {
+      const response = await fetch("/api/user/ai-consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agreed }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as AiConsentPayload;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "동의 상태 저장에 실패했습니다.");
+      }
+      const consented = Boolean(payload.consent?.consented);
+      setIsAiConsentGranted(consented);
+      setAiConsentAt(payload.consent?.consentedAt || null);
+      setAiConsentVersion(payload.consent?.consentVersion || null);
+    } catch (error) {
+      setAiConsentError(error instanceof Error ? error.message : "동의 상태 저장 중 오류가 발생했습니다.");
+    } finally {
+      setIsAiConsentSaving(false);
+    }
+  };
 
   const canSubmitDelete = deleteConfirmText.trim() === REQUIRED_WITHDRAW_TEXT && !isDeletingAccount;
 
@@ -214,6 +266,53 @@ export default function AccountSettingsPage() {
             <SettingLink href="/legal/privacy" title="개인정보 처리방침" description="개인정보 수집·이용 및 보호 정책을 확인합니다." />
           </section>
 
+          <section className="mt-4 rounded-2xl border border-white/10 bg-[#303733] px-5 py-5">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-[#3e5560]">AI 데이터 전송 동의</p>
+            <p className="mt-2 text-sm font-bold text-[#f0f5f2]">
+              상태: {isAiConsentGranted ? "동의함" : "동의 안 함"}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-[#c7d6dd]">
+              대화 기능 제공을 위해 입력한 메시지/맥락 일부가 {AI_DATA_TRANSFER_PROVIDER_NAME}로 전송됩니다.
+            </p>
+            <p className="mt-1 text-[11px] text-[#9fb2bc]">
+              {isAiConsentGranted
+                ? `동의 버전: ${aiConsentVersion || AI_DATA_TRANSFER_CONSENT_VERSION}${aiConsentAt ? ` · 동의 시각: ${new Date(aiConsentAt).toLocaleString("ko-KR")}` : ""}`
+                : "동의를 철회하면 AI 대화/편지 생성 기능이 즉시 제한됩니다."}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {isAiConsentGranted ? (
+                <button
+                  type="button"
+                  onClick={() => setIsWithdrawConsentModalOpen(true)}
+                  disabled={isAiConsentSaving}
+                  className="rounded-xl border border-[#c9a4a2] bg-white px-3 py-2 text-xs font-bold text-[#9f403d] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isAiConsentSaving ? "처리 중..." : "동의 철회"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void upsertAiConsent(true);
+                  }}
+                  disabled={isAiConsentSaving}
+                  className="rounded-xl bg-[#3e5560] px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isAiConsentSaving ? "처리 중..." : "다시 동의"}
+                </button>
+              )}
+              <Link
+                href="/legal/privacy"
+                className="rounded-xl border border-[#b6c4cb] bg-white px-3 py-2 text-xs font-semibold text-[#2f342e]"
+              >
+                정책 보기
+              </Link>
+            </div>
+            {aiConsentError ? (
+              <p className="mt-3 text-xs font-bold text-[#ffb4af]">{aiConsentError}</p>
+            ) : null}
+          </section>
+
           <section className="mt-8">
             <button
               type="button"
@@ -270,6 +369,50 @@ export default function AccountSettingsPage() {
                 className="rounded-xl bg-[#9f403d] py-3 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {isDeletingAccount ? "탈퇴 처리 중..." : "최종 탈퇴"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isWithdrawConsentModalOpen ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-5 backdrop-blur-sm"
+          onClick={() => {
+            if (isAiConsentSaving) return;
+            setIsWithdrawConsentModalOpen(false);
+          }}
+        >
+          <section
+            className="w-full max-w-md rounded-[2rem] border border-[#d3dbe0] bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="font-headline text-xl font-bold text-[#2f342e]">AI 데이터 전송 동의 철회</h3>
+            <p className="mt-3 text-sm leading-relaxed text-[#4f5b63]">
+              동의를 철회하면 AI 대화와 편지 생성이 즉시 제한됩니다.
+              <br />
+              다시 이용하려면 설정에서 재동의가 필요합니다.
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setIsWithdrawConsentModalOpen(false)}
+                disabled={isAiConsentSaving}
+                className="rounded-xl border border-[#c8d1d7] bg-white py-3 text-sm font-bold text-[#2f342e] hover:bg-[#f3f6f8] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void upsertAiConsent(false);
+                  setIsWithdrawConsentModalOpen(false);
+                }}
+                disabled={isAiConsentSaving}
+                className="rounded-xl bg-[#9f403d] py-3 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {isAiConsentSaving ? "처리 중..." : "철회하기"}
               </button>
             </div>
           </section>

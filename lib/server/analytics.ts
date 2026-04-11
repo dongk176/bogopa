@@ -26,6 +26,9 @@ CREATE INDEX IF NOT EXISTS idx_analytics_events_props
 `;
 
 export const ALLOWED_ANALYTICS_EVENT_NAMES = [
+  "app_open",
+  "app_performance",
+  "app_error",
   "session_start",
   "message_sent",
   "message_received",

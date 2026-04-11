@@ -22,6 +22,11 @@ import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 import { getConversationTensionGuide } from "@/lib/persona/conversationTension";
 import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
+import {
+  AI_DATA_TRANSFER_CONSENT_VERSION,
+  AI_DATA_TRANSFER_PROVIDER_NAME,
+  AI_DATA_TRANSFER_SUMMARY,
+} from "@/lib/ai-consent";
 
 type ChatMessage = {
   id: string;
@@ -117,6 +122,16 @@ type MemoryStorePrompt = {
   title: string;
   message: string;
   returnTo: string;
+};
+
+type AiConsentResponse = {
+  ok?: boolean;
+  consent?: {
+    consented?: boolean;
+    consentedAt?: string | null;
+    consentVersion?: string | null;
+  };
+  error?: string;
 };
 
 const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
@@ -276,6 +291,62 @@ function DebugSection({ title, body }: { title: string; body: string }) {
   );
 }
 
+function AiConsentModal({
+  open,
+  error,
+  isSubmitting,
+  onConfirm,
+  onLater,
+}: {
+  open: boolean;
+  error: string;
+  isSubmitting: boolean;
+  onConfirm: () => void;
+  onLater: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/55 px-6 backdrop-blur-sm">
+      <section className="w-full max-w-sm rounded-[2rem] bg-white p-7 text-center shadow-2xl">
+        <h3 className="font-headline text-xl font-bold text-[#2f342e]">AI 데이터 전송 동의가 필요해요</h3>
+        <p className="mt-3 text-sm leading-relaxed text-[#4f5b63]">
+          대화 기능 제공을 위해 입력한 메시지와 대화 맥락 일부가 {AI_DATA_TRANSFER_PROVIDER_NAME}로 전송됩니다.
+        </p>
+        <div className="mt-4 rounded-xl border border-[#d7e0e6] bg-[#f7fbfd] px-4 py-3 text-left text-xs leading-relaxed text-[#42535c]">
+          <p>전송 항목:</p>
+          <ul className="mt-1 list-disc pl-4">
+            {AI_DATA_TRANSFER_SUMMARY.dataTypes.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <p className="mt-2">목적: {AI_DATA_TRANSFER_SUMMARY.purpose}</p>
+          <p className="mt-1">동의 버전: {AI_DATA_TRANSFER_CONSENT_VERSION}</p>
+        </div>
+        {error ? <p className="mt-3 text-xs font-bold text-[#b42318]">{error}</p> : null}
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={onLater}
+            disabled={isSubmitting}
+            className="rounded-xl border border-[#c8d1d7] bg-white py-3 text-sm font-bold text-[#2f342e] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            나중에
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isSubmitting}
+            className="rounded-xl bg-[#3e5560] py-3 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {isSubmitting ? "처리 중..." : "동의하고 시작"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 async function fetchFirstGreeting(runtime: PersonaRuntime, alias: string) {
   const styleSummary =
     getConversationTensionGuide((runtime as any)?.style?.politeness || "") ||
@@ -293,9 +364,18 @@ async function fetchFirstGreeting(runtime: PersonaRuntime, alias: string) {
     }),
   });
 
-  if (!response.ok) return "";
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { code?: string };
+    return {
+      greeting: "",
+      requiresConsent: response.status === 403 && payload.code === "AI_DATA_SHARING_CONSENT_REQUIRED",
+    };
+  }
   const payload = (await response.json()) as { greeting?: string };
-  return payload.greeting?.trim() || "";
+  return {
+    greeting: payload.greeting?.trim() || "",
+    requiresConsent: false,
+  };
 }
 
 function normalizeAddressAlias(value: string) {
@@ -317,9 +397,13 @@ function ChatContainer() {
   const isNativeChatRuntime = Capacitor.isNativePlatform();
   const isIosRuntime = isNativeChatRuntime && Capacitor.getPlatform() === "ios";
   const [nativeChatFailed, setNativeChatFailed] = useState(false);
-  const shouldUseNativeChatScreen = isIosRuntime && !nativeChatFailed;
+  const [hasAiDataConsent, setHasAiDataConsent] = useState<boolean | null>(null);
+  const [isAiConsentModalOpen, setIsAiConsentModalOpen] = useState(false);
+  const [isAiConsentSubmitting, setIsAiConsentSubmitting] = useState(false);
+  const [aiConsentError, setAiConsentError] = useState("");
+  const shouldUseNativeChatScreen = isIosRuntime && !nativeChatFailed && hasAiDataConsent !== false;
   const chatId = searchParams.get("id");
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const [runtime, setRuntime] = useState<PersonaRuntime | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -342,7 +426,7 @@ function ChatContainer() {
 
   useEffect(() => {
     if (!isUnlimitedChatActive || !unlimitedChatExpiresAt) return;
-    
+
     const interval = setInterval(() => {
       const expirationDate = new Date(unlimitedChatExpiresAt).getTime();
       if (Date.now() > expirationDate) {
@@ -351,7 +435,7 @@ function ChatContainer() {
         setShowExpiredPrompt(true);
       }
     }, 10000);
-    
+
     return () => clearInterval(interval);
   }, [isUnlimitedChatActive, unlimitedChatExpiresAt]);
   const [isChatListOpen, setIsChatListOpen] = useState(false);
@@ -446,10 +530,10 @@ function ChatContainer() {
         if (result?.confirmed) {
           try {
             await Keyboard.hide();
-          } catch {}
+          } catch { }
           try {
             await Keyboard.setResizeMode({ mode: KeyboardResize.None });
-          } catch {}
+          } catch { }
           if (typeof document !== "undefined") {
             document.documentElement.style.setProperty("--bogopa-keyboard-height", "0px");
           }
@@ -466,9 +550,9 @@ function ChatContainer() {
 
   useEffect(() => {
     if (!isNativeChatRuntime) return;
-    void Keyboard.setResizeMode({ mode: KeyboardResize.Native }).catch(() => {});
+    void Keyboard.setResizeMode({ mode: KeyboardResize.Native }).catch(() => { });
     return () => {
-      void Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => {});
+      void Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => { });
     };
   }, [isNativeChatRuntime]);
 
@@ -479,14 +563,32 @@ function ChatContainer() {
     setIsTyping(true);
 
     let first = "";
+    let consentRequired = false;
     try {
-      first = await fetchFirstGreeting(targetRuntime, preferredAlias);
+      const firstAttempt = await fetchFirstGreeting(targetRuntime, preferredAlias);
+      first = firstAttempt.greeting;
+      if (firstAttempt.requiresConsent) {
+        consentRequired = true;
+        setHasAiDataConsent(false);
+        setIsAiConsentModalOpen(true);
+      }
       if (!first) {
         await sleep(120);
-        first = await fetchFirstGreeting(targetRuntime, preferredAlias);
+        const secondAttempt = await fetchFirstGreeting(targetRuntime, preferredAlias);
+        first = secondAttempt.greeting;
+        if (secondAttempt.requiresConsent) {
+          consentRequired = true;
+          setHasAiDataConsent(false);
+          setIsAiConsentModalOpen(true);
+        }
       }
     } catch (error) {
       console.error("[chat] first greeting generation failed", error);
+    }
+
+    if (consentRequired) {
+      setIsTyping(false);
+      return;
     }
 
     if (!first) {
@@ -533,6 +635,68 @@ function ChatContainer() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (sessionStatus !== "authenticated") {
+      setHasAiDataConsent(null);
+      setIsAiConsentModalOpen(false);
+      setAiConsentError("");
+      return;
+    }
+
+    let cancelled = false;
+    const loadConsent = async () => {
+      try {
+        const response = await fetch("/api/user/ai-consent", { cache: "no-store" });
+        const payload = (await response.json().catch(() => ({}))) as AiConsentResponse;
+        if (cancelled) return;
+        if (!response.ok || !payload.ok) {
+          setHasAiDataConsent(null);
+          return;
+        }
+        const consented = Boolean(payload.consent?.consented);
+        setHasAiDataConsent(consented);
+        setIsAiConsentModalOpen(!consented);
+      } catch {
+        if (!cancelled) {
+          setHasAiDataConsent(null);
+        }
+      }
+    };
+
+    void loadConsent();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionStatus]);
+
+  async function updateAiConsent(agreed: boolean) {
+    if (isAiConsentSubmitting) return;
+    setIsAiConsentSubmitting(true);
+    setAiConsentError("");
+
+    try {
+      const response = await fetch("/api/user/ai-consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agreed }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as AiConsentResponse;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "동의 상태를 저장하지 못했습니다.");
+      }
+      const consented = Boolean(payload.consent?.consented);
+      setHasAiDataConsent(consented);
+      setIsAiConsentModalOpen(!consented);
+      if (!consented) {
+        router.push("/chat/list");
+      }
+    } catch (error) {
+      setAiConsentError(error instanceof Error ? error.message : "동의 처리 중 오류가 발생했습니다.");
+    } finally {
+      setIsAiConsentSubmitting(false);
+    }
+  }
 
   useEffect(() => {
     if (!shouldUseNativeChatScreen) {
@@ -812,11 +976,11 @@ function ChatContainer() {
       nativePersonaOverrides && nativePersonaOverrides.length > 0
         ? nativePersonaOverrides
         : savedChats.map((chat) => ({
-            personaId: chat.personaId,
-            personaName: chat.personaName || "기억",
-            avatarUrl: toAbsoluteAvatarUrl(chat.avatarUrl),
-            lastMessage: chat.lastMessage || "",
-          }));
+          personaId: chat.personaId,
+          personaName: chat.personaName || "기억",
+          avatarUrl: toAbsoluteAvatarUrl(chat.avatarUrl),
+          lastMessage: chat.lastMessage || "",
+        }));
 
     const deduped: NativeChatPersona[] = [];
     const seenPersonaIds = new Set<string>();
@@ -904,6 +1068,11 @@ function ChatContainer() {
       setLockedPersonaName(runtime.displayName || activeChat.personaName || "이 기억");
       return;
     }
+    if (hasAiDataConsent === false) {
+      setAiConsentError("");
+      setIsAiConsentModalOpen(true);
+      return;
+    }
     if (isTyping) {
       showTypingBlockedNotice();
       return;
@@ -968,7 +1137,21 @@ function ChatContainer() {
       let replyText = "";
       let nextBalanceFromServer: number | null = null;
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { code?: string };
+        const body = (await response.json().catch(() => ({}))) as { code?: string; error?: string };
+        if (response.status === 403 && body.code === "AI_DATA_SHARING_CONSENT_REQUIRED") {
+          setMessages(previousMessages);
+          if (!shouldUseNativeChatScreen) {
+            setInput(trimmed);
+          }
+          if (typeof previousBalance === "number") {
+            memoryBalanceRef.current = previousBalance;
+            setMemoryBalance(previousBalance);
+          }
+          setHasAiDataConsent(false);
+          setAiConsentError(body.error || "");
+          setIsAiConsentModalOpen(true);
+          return;
+        }
         if (response.status === 403 && body.code === "MEMORY_PASS_EXPIRED_LOCKED_PERSONA") {
           setMessages(previousMessages);
           if (!shouldUseNativeChatScreen) {
@@ -1131,7 +1314,7 @@ function ChatContainer() {
       if (keepNativeChatOnNextCleanupRef.current) {
         keepNativeChatOnNextCleanupRef.current = false;
       } else {
-        void NativeChat.dismiss().catch(() => {});
+        void NativeChat.dismiss().catch(() => { });
       }
     };
   }, [shouldUseNativeChatScreen, isLoaded, runtime?.personaId, router]);
@@ -1204,7 +1387,7 @@ function ChatContainer() {
           </div>
         </main>
       </div>
-      );
+    );
   }
 
   if (shouldUseNativeChatScreen) {
@@ -1252,6 +1435,15 @@ function ChatContainer() {
             }
           }}
         />
+        <AiConsentModal
+          open={isAiConsentModalOpen}
+          error={aiConsentError}
+          isSubmitting={isAiConsentSubmitting}
+          onLater={() => router.push("/chat/list")}
+          onConfirm={() => {
+            void updateAiConsent(true);
+          }}
+        />
         {modalNode}
       </div>
     );
@@ -1280,44 +1472,44 @@ function ChatContainer() {
   return (
     <div className="flex h-dvh overflow-hidden bg-[#faf9f5] font-body text-[#2f342e]">
       <Navigation hideMobileBottomNav={shouldHideMobileBottomNav} />
-      
+
       <main className={`relative flex min-h-0 flex-1 flex-col min-w-0 overflow-hidden xl:pr-[27rem] ${chatLayoutPaddingClass}`}>
         {/* Mobile Chat Header (Specific to this chat) */}
         <header className="chat-header-divider fixed top-0 left-0 right-0 z-30 w-full bg-white pt-[var(--native-safe-top)] lg:hidden">
           <div className="flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => router.push("/chat/list")}
-              className="mr-1 rounded-xl p-1 text-[#3e5560] hover:bg-[#f4f8fa]"
-            >
-              <ArrowLeftIcon />
-            </button>
-            <button
-              onClick={() => setIsChatListOpen(true)}
-              className="flex items-center gap-3 active:scale-95 transition-transform"
-            >
-              <div className="h-9 w-9 overflow-hidden rounded-xl bg-black/5">
-                {showAvatarImage ? (
-                  <img src={avatarUrl || ""} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
-                    <UserAvatarIcon />
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <p className="font-headline text-base font-bold text-[#2f342e]">{personaName}</p>
-                <ChevronDownIcon className="h-4 w-4 text-[#3e5560]" />
-              </div>
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <MemoryBalanceBadge
-              memoryBalance={memoryBalance}
-              isAnimating={isMemoryBadgeAnimating}
-              showBorder={false}
-            />
-          </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => router.push("/chat/list")}
+                className="mr-1 rounded-xl p-1 text-[#3e5560] hover:bg-[#f4f8fa]"
+              >
+                <ArrowLeftIcon />
+              </button>
+              <button
+                onClick={() => setIsChatListOpen(true)}
+                className="flex items-center gap-3 active:scale-95 transition-transform"
+              >
+                <div className="h-9 w-9 overflow-hidden rounded-xl bg-black/5">
+                  {showAvatarImage ? (
+                    <img src={avatarUrl || ""} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
+                      <UserAvatarIcon />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-headline text-base font-bold text-[#2f342e]">{personaName}</p>
+                  <ChevronDownIcon className="h-4 w-4 text-[#3e5560]" />
+                </div>
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <MemoryBalanceBadge
+                memoryBalance={memoryBalance}
+                isAnimating={isMemoryBadgeAnimating}
+                showBorder={false}
+              />
+            </div>
           </div>
         </header>
 
@@ -1568,14 +1760,13 @@ function ChatContainer() {
               onTouchCancel={handleChatListSwipeEnd}
             >
               <div
-                className={`h-1 rounded-full transition-all ${
-                  isChatListHandleDragging ? "w-16 bg-white/35" : "w-12 bg-white/10"
-                }`}
+                className={`h-1 rounded-full transition-all ${isChatListHandleDragging ? "w-16 bg-white/35" : "w-12 bg-white/10"
+                  }`}
               />
             </div>
-            
+
             <h3 className="mb-6 font-headline text-xl font-bold text-[#f0f5f2] px-2 text-center">대화 상대 바꾸기</h3>
-            
+
             <div className="overflow-y-auto max-h-[360px] space-y-2 px-1 hide-scrollbar">
               {savedChats.map((chat) => (
                 <button
@@ -1611,20 +1802,29 @@ function ChatContainer() {
                 </button>
               ))}
             </div>
-            
+
             <button
-               onClick={startCreateMemoryFromChat}
-               disabled={isChecking}
-               className="mt-6 flex items-center justify-center gap-2 rounded-2xl border-2 border-[#3e5560] py-4 text-sm font-bold text-[#111111] active:bg-black/5 disabled:cursor-not-allowed disabled:opacity-70"
+              onClick={startCreateMemoryFromChat}
+              disabled={isChecking}
+              className="mt-6 flex items-center justify-center gap-2 rounded-2xl border-2 border-[#3e5560] py-4 text-sm font-bold text-[#111111] active:bg-black/5 disabled:cursor-not-allowed disabled:opacity-70"
             >
-               <span>새로운 기억 만들기</span>
-               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-               </svg>
+              <span>새로운 기억 만들기</span>
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
             </button>
           </div>
         </div>
       )}
+      <AiConsentModal
+        open={isAiConsentModalOpen}
+        error={aiConsentError}
+        isSubmitting={isAiConsentSubmitting}
+        onLater={() => router.push("/chat/list")}
+        onConfirm={() => {
+          void updateAiConsent(true);
+        }}
+      />
       {modalNode}
     </div>
   );

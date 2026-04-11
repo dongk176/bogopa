@@ -19,6 +19,8 @@ import {
   pickRandomLetterPurpose,
 } from "@/lib/server/letters";
 import { getOrCreateMemoryPassStatus } from "@/lib/server/memory-pass";
+import { getUserAiDataConsent } from "@/lib/server/user-profile";
+import { AI_DATA_TRANSFER_PROVIDER_NAME } from "@/lib/ai-consent";
 
 export const runtime = "nodejs";
 
@@ -167,6 +169,19 @@ export async function POST(request: NextRequest) {
   }
   if (!hasOpenAIKey()) {
     return NextResponse.json({ error: "OPENAI_API_KEY가 설정되지 않았습니다." }, { status: 500 });
+  }
+
+  const aiConsent = await getUserAiDataConsent(sessionUser.id);
+  if (!aiConsent.consented) {
+    return NextResponse.json(
+      {
+        error: `AI 편지 생성을 위해 ${AI_DATA_TRANSFER_PROVIDER_NAME} 데이터 전송 동의가 필요합니다.`,
+        code: "AI_DATA_SHARING_CONSENT_REQUIRED",
+        provider: AI_DATA_TRANSFER_PROVIDER_NAME,
+        requiresConsent: true,
+      },
+      { status: 403 },
+    );
   }
 
   const body = (await request.json().catch(() => ({}))) as CreateLetterBody;

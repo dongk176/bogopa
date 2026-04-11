@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getUserProfile, saveUserProfile } from "@/lib/server/user-profile";
+import { getUserAiDataConsent, getUserProfile, saveUserProfile } from "@/lib/server/user-profile";
 import { INTEREST_LABEL_SET, MAX_INTEREST_SELECTION, MBTI_OPTIONS } from "@/lib/user-profile/options";
 
 type ProfileSaveBody = {
@@ -10,6 +10,8 @@ type ProfileSaveBody = {
   gender?: string;
   mbti?: string;
   interests?: string[];
+  aiDataTransferConsentAgreed?: boolean;
+  aiDataTransferConsentVersion?: string;
 };
 
 const MBTI_SET = new Set<string>(MBTI_OPTIONS);
@@ -80,6 +82,9 @@ export async function POST(request: Request) {
       })
     : [];
   const dedupedInterests = Array.from(new Set(interests));
+  const aiDataTransferConsentAgreed = body.aiDataTransferConsentAgreed === true;
+  const aiDataTransferConsentVersion =
+    typeof body.aiDataTransferConsentVersion === "string" ? body.aiDataTransferConsentVersion.trim() : "";
 
   if (!name || name.length > 30) {
     return NextResponse.json({ error: "이름은 1~30자로 입력해주세요." }, { status: 400 });
@@ -110,6 +115,14 @@ export async function POST(request: Request) {
   }
 
   try {
+    const existingConsent = await getUserAiDataConsent(sessionUser.id);
+    if (!aiDataTransferConsentAgreed && !existingConsent.consented) {
+      return NextResponse.json(
+        { error: "AI 제3자(OpenAI) 데이터 전송 동의가 필요합니다." },
+        { status: 400 },
+      );
+    }
+
     await saveUserProfile({
       userId: sessionUser.id,
       name,
@@ -118,6 +131,13 @@ export async function POST(request: Request) {
       mbti,
       interests: dedupedInterests,
       provider: typeof sessionUser.provider === "string" ? sessionUser.provider : null,
+      aiDataTransferConsent: aiDataTransferConsentAgreed
+        ? {
+            agreed: true,
+            version: aiDataTransferConsentVersion || null,
+            source: "signup",
+          }
+        : undefined,
     });
 
     const profile = await getUserProfile(sessionUser.id);

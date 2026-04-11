@@ -18,6 +18,8 @@ import {
 } from "@/lib/persona/conversationTension";
 import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 import { getPersonaLockStatus } from "@/lib/server/persona-lock";
+import { getUserAiDataConsent } from "@/lib/server/user-profile";
+import { AI_DATA_TRANSFER_PROVIDER_NAME } from "@/lib/ai-consent";
 
 export const runtime = "nodejs";
 
@@ -251,6 +253,18 @@ function cleanEmptyValues<T>(value: T): T | undefined {
   }
 
   return value;
+}
+
+function buildAiConsentRequiredResponse() {
+  return NextResponse.json(
+    {
+      error: `AI 대화를 위해 ${AI_DATA_TRANSFER_PROVIDER_NAME} 데이터 전송 동의가 필요합니다.`,
+      code: "AI_DATA_SHARING_CONSENT_REQUIRED",
+      provider: AI_DATA_TRANSFER_PROVIDER_NAME,
+      requiresConsent: true,
+    },
+    { status: 403 },
+  );
 }
 
 function normalizeLabel<T extends readonly string[]>(value: string | undefined, allowed: T, fallback: T[number]): T[number] {
@@ -862,9 +876,18 @@ export async function POST(request: NextRequest) {
   const action: ChatAction = body.action === "first_greeting" ? "first_greeting" : "reply";
 
   try {
-    const client = createOpenAIClient();
     const session = await getServerSession(authOptions);
     const sessionUser = session?.user as any;
+    if (!sessionUser?.id) {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    const aiConsent = await getUserAiDataConsent(sessionUser.id);
+    if (!aiConsent.consented) {
+      return buildAiConsentRequiredResponse();
+    }
+
+    const client = createOpenAIClient();
 
     if (action === "first_greeting") {
       const alias = normalizeAddressAlias((body.alias || (runtimeData as any)?.addressing?.callsUserAs?.[0] || "너").trim()) || "너";
@@ -955,10 +978,6 @@ export async function POST(request: NextRequest) {
     const lastUserMessage = [...history].reverse().find((item) => item.role === "user");
     if (!lastUserMessage) {
       return NextResponse.json({ error: "사용자 메시지가 필요합니다." }, { status: 400 });
-    }
-
-    if (!sessionUser?.id) {
-      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
     if (runtimeData.personaId) {

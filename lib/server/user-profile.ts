@@ -10,6 +10,10 @@ export type UserProfile = {
   gender: "male" | "female" | "other" | null;
   mbti: string | null;
   interests: string[];
+  aiDataTransferConsented: boolean;
+  aiDataTransferConsentedAt: string | null;
+  aiDataTransferConsentVersion: string | null;
+  aiDataTransferConsentSource: string | null;
   profileCompleted: boolean;
 };
 
@@ -18,6 +22,13 @@ export type UserAuthSnapshot = {
   name: string;
   email: string | null;
   image: string | null;
+};
+
+export type UserAiDataConsent = {
+  consented: boolean;
+  consentedAt: string | null;
+  consentVersion: string | null;
+  consentSource: string | null;
 };
 
 function normalizeImageUrl(url: string | null | undefined) {
@@ -43,6 +54,10 @@ CREATE TABLE IF NOT EXISTS bogopa."users" (
   "gender" VARCHAR(16),
   "mbti" VARCHAR(4),
   "interests" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "ai_data_transfer_consented" BOOLEAN NOT NULL DEFAULT FALSE,
+  "ai_data_transfer_consented_at" TIMESTAMPTZ,
+  "ai_data_transfer_consent_version" VARCHAR(32),
+  "ai_data_transfer_consent_source" VARCHAR(64),
   "admin" BOOLEAN NOT NULL DEFAULT FALSE,
   "profile_completed" BOOLEAN NOT NULL DEFAULT FALSE,
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -68,6 +83,10 @@ export async function ensureUsersTable() {
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "gender" VARCHAR(16);`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "mbti" VARCHAR(4);`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "interests" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "ai_data_transfer_consented" BOOLEAN NOT NULL DEFAULT FALSE;`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "ai_data_transfer_consented_at" TIMESTAMPTZ;`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "ai_data_transfer_consent_version" VARCHAR(32);`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "ai_data_transfer_consent_source" VARCHAR(64);`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "admin" BOOLEAN NOT NULL DEFAULT FALSE;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "profile_completed" BOOLEAN NOT NULL DEFAULT FALSE;`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa."users" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
@@ -203,6 +222,10 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
       "gender",
       "mbti",
       "interests",
+      "ai_data_transfer_consented",
+      "ai_data_transfer_consented_at",
+      "ai_data_transfer_consent_version",
+      "ai_data_transfer_consent_source",
       "profile_completed"
     FROM bogopa."users"
     WHERE "id" = $1
@@ -220,6 +243,10 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
       gender: null,
       mbti: null,
       interests: [],
+      aiDataTransferConsented: false,
+      aiDataTransferConsentedAt: null,
+      aiDataTransferConsentVersion: null,
+      aiDataTransferConsentSource: null,
       profileCompleted: false,
     };
   }
@@ -242,6 +269,18 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
   const interests = Array.isArray(row.interests)
     ? row.interests.filter((item: unknown) => typeof item === "string")
     : [];
+  const aiDataTransferConsented = Boolean(row.ai_data_transfer_consented);
+  const aiDataTransferConsentedAt = row.ai_data_transfer_consented_at
+    ? new Date(row.ai_data_transfer_consented_at).toISOString()
+    : null;
+  const aiDataTransferConsentVersion =
+    typeof row.ai_data_transfer_consent_version === "string" && row.ai_data_transfer_consent_version.trim()
+      ? row.ai_data_transfer_consent_version.trim()
+      : null;
+  const aiDataTransferConsentSource =
+    typeof row.ai_data_transfer_consent_source === "string" && row.ai_data_transfer_consent_source.trim()
+      ? row.ai_data_transfer_consent_source.trim()
+      : null;
   const hasRequiredProfileFields = Boolean(birthDate && gender && mbti && interests.length > 0);
 
   return {
@@ -252,6 +291,10 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     gender,
     mbti,
     interests,
+    aiDataTransferConsented,
+    aiDataTransferConsentedAt,
+    aiDataTransferConsentVersion,
+    aiDataTransferConsentSource,
     profileCompleted: hasRequiredProfileFields,
   };
 }
@@ -315,6 +358,11 @@ export async function saveUserProfile(input: {
   mbti: string;
   interests: string[];
   provider?: string | null;
+  aiDataTransferConsent?: {
+    agreed: boolean;
+    version?: string | null;
+    source?: string | null;
+  };
 }) {
   await ensureUsersTable();
   const pool = getDbPool();
@@ -365,4 +413,91 @@ export async function saveUserProfile(input: {
     `,
     [input.userId, input.name, provider, input.birthDate, input.gender, input.mbti, input.interests],
   );
+
+  if (input.aiDataTransferConsent?.agreed) {
+    await setUserAiDataConsent({
+      userId: input.userId,
+      agreed: true,
+      version: input.aiDataTransferConsent.version || null,
+      source: input.aiDataTransferConsent.source || "signup",
+    });
+  }
+}
+
+export async function getUserAiDataConsent(userId: string): Promise<UserAiDataConsent> {
+  await ensureUsersTable();
+  const pool = getDbPool();
+
+  const res = await pool.query(
+    `
+    SELECT
+      COALESCE("ai_data_transfer_consented", FALSE) AS consented,
+      "ai_data_transfer_consented_at" AS consented_at,
+      "ai_data_transfer_consent_version" AS consent_version,
+      "ai_data_transfer_consent_source" AS consent_source
+    FROM bogopa."users"
+    WHERE "id" = $1
+    LIMIT 1
+    `,
+    [userId],
+  );
+
+  const row = res.rows[0];
+  if (!row) {
+    return {
+      consented: false,
+      consentedAt: null,
+      consentVersion: null,
+      consentSource: null,
+    };
+  }
+
+  return {
+    consented: Boolean(row.consented),
+    consentedAt: row.consented_at ? new Date(row.consented_at).toISOString() : null,
+    consentVersion:
+      typeof row.consent_version === "string" && row.consent_version.trim() ? row.consent_version.trim() : null,
+    consentSource:
+      typeof row.consent_source === "string" && row.consent_source.trim() ? row.consent_source.trim() : null,
+  };
+}
+
+export async function setUserAiDataConsent(input: {
+  userId: string;
+  agreed: boolean;
+  version?: string | null;
+  source?: string | null;
+}) {
+  await ensureUsersTable();
+  const pool = getDbPool();
+
+  await pool.query(
+    `
+    INSERT INTO bogopa."users" (
+      "id",
+      "ai_data_transfer_consented",
+      "ai_data_transfer_consented_at",
+      "ai_data_transfer_consent_version",
+      "ai_data_transfer_consent_source",
+      "updated_at"
+    )
+    VALUES (
+      $1,
+      $2,
+      CASE WHEN $2 THEN NOW() ELSE NULL END,
+      CASE WHEN $2 THEN NULLIF($3, '') ELSE NULL END,
+      NULLIF($4, ''),
+      CURRENT_TIMESTAMP
+    )
+    ON CONFLICT ("id") DO UPDATE
+    SET "ai_data_transfer_consented" = EXCLUDED.ai_data_transfer_consented,
+        "ai_data_transfer_consented_at" = EXCLUDED.ai_data_transfer_consented_at,
+        "ai_data_transfer_consent_version" = EXCLUDED.ai_data_transfer_consent_version,
+        "ai_data_transfer_consent_source" = EXCLUDED.ai_data_transfer_consent_source,
+        "updated_at" = CURRENT_TIMESTAMP;
+    `,
+    [input.userId, input.agreed, input.version || "", input.source || "settings"],
+  );
+
+  return getUserAiDataConsent(input.userId);
 }

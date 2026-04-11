@@ -55,6 +55,35 @@ type RevenueSummary = {
   monthlyKrw: number;
 };
 
+type DiagnosticsSummary = {
+  appOpenCount: number;
+  appErrorCount: number;
+  runtimeErrorCount: number;
+  unhandledRejectionCount: number;
+  performanceSampleCount: number;
+  avgAppLoadMs: number;
+  p95AppLoadMs: number;
+  avgLcpMs: number;
+  p95LcpMs: number;
+  avgCls: number;
+};
+
+type DiagnosticsByPathRow = {
+  path: string;
+  opens: number;
+  errors: number;
+  errorRatePct: number;
+  avgAppLoadMs: number;
+  avgLcpMs: number;
+};
+
+type DiagnosticsErrorTrendRow = {
+  hourKst: number;
+  opens: number;
+  errors: number;
+  errorRatePct: number;
+};
+
 type AdminDashboardPayload = {
   days: number;
   generatedAt: string;
@@ -62,6 +91,9 @@ type AdminDashboardPayload = {
   today: TopSnapshot;
   previousDay: TopSnapshot;
   responseTrend: ResponseTrendRow[];
+  diagnosticsSummary: DiagnosticsSummary;
+  diagnosticsByPath: DiagnosticsByPathRow[];
+  diagnosticsErrorTrend: DiagnosticsErrorTrendRow[];
   revenue: RevenueSummary;
 };
 
@@ -247,6 +279,18 @@ export default function AdminPage() {
     dropoffAfterAiTurnPct: 0,
   };
   const revenue = payload?.revenue || { dailyKrw: 0, weeklyKrw: 0, monthlyKrw: 0 };
+  const diagnostics = payload?.diagnosticsSummary || {
+    appOpenCount: 0,
+    appErrorCount: 0,
+    runtimeErrorCount: 0,
+    unhandledRejectionCount: 0,
+    performanceSampleCount: 0,
+    avgAppLoadMs: 0,
+    p95AppLoadMs: 0,
+    avgLcpMs: 0,
+    p95LcpMs: 0,
+    avgCls: 0,
+  };
 
   const trafficData = useMemo(
     () =>
@@ -268,6 +312,19 @@ export default function AdminPage() {
     [payload?.responseTrend],
   );
 
+  const diagnosticsErrorTrend = useMemo(
+    () =>
+      (payload?.diagnosticsErrorTrend || []).map((row) => ({
+        hour: `${String(row.hourKst).padStart(2, "0")}:00`,
+        opens: row.opens,
+        errors: row.errors,
+        errorRatePct: row.errorRatePct,
+      })),
+    [payload?.diagnosticsErrorTrend],
+  );
+
+  const diagnosticsByPath = payload?.diagnosticsByPath || [];
+
   const longSessionPie = useMemo(
     () => [
       { name: "10턴+", value: summary.longSessionRatioPct, color: COLORS.primary },
@@ -278,6 +335,10 @@ export default function AdminPage() {
 
   const avgTurnsProgress = clamp((summary.avgTurnsPerSession / 20) * 100, 0, 100);
   const retryDanger = summary.retryRatePct > 5;
+  const diagnosticsErrorRate = diagnostics.appOpenCount > 0
+    ? (diagnostics.appErrorCount / diagnostics.appOpenCount) * 100
+    : 0;
+  const diagnosticsErrorDanger = diagnosticsErrorRate > 2;
 
   return (
     <div className="min-h-screen bg-[#faf9f5]">
@@ -520,6 +581,138 @@ export default function AdminPage() {
                       <dd className="font-bold text-[#2b4652]">{summary.p95ResponseTimeMs.toFixed(0)} ms</dd>
                     </div>
                   </dl>
+                </article>
+              </div>
+            </SectionShell>
+
+            <SectionShell
+              title="5. App Diagnostics & Runtime Health"
+              description="앱 실행 성능(FCP/LCP/CLS)과 런타임 오류 추세"
+            >
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                <article className="rounded-2xl border border-[#d6ddd8] bg-white p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-[#4a626d]">진단 요약</h3>
+                    <InfoHint text="app_open/app_performance/app_error 이벤트 기준" />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">앱 실행 수</dt>
+                      <dd className="font-bold text-[#2b4652]">{formatNumber(diagnostics.appOpenCount)}</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">오류 수</dt>
+                      <dd className="font-bold text-[#2b4652]">{formatNumber(diagnostics.appErrorCount)}</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">런타임 에러</dt>
+                      <dd className="font-bold text-[#2b4652]">{formatNumber(diagnostics.runtimeErrorCount)}</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">Promise 에러</dt>
+                      <dd className="font-bold text-[#2b4652]">{formatNumber(diagnostics.unhandledRejectionCount)}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[#dce8ee]">
+                    <div
+                      className={`${diagnosticsErrorDanger ? "bg-[#d8645a]" : "bg-[#2f8f69]"} h-full rounded-full`}
+                      style={{ width: `${clamp(diagnosticsErrorRate, 0, 100)}%` }}
+                    />
+                  </div>
+                  <p className={`mt-2 text-xs font-semibold ${diagnosticsErrorDanger ? "text-[#b63333]" : "text-[#1f8b5b]"}`}>
+                    오류율 {formatPct(diagnosticsErrorRate)} {diagnosticsErrorDanger ? "(주의)" : "(정상)"}
+                  </p>
+                </article>
+
+                <article className="rounded-2xl border border-[#d6ddd8] bg-white p-4 xl:col-span-2">
+                  <div className="mb-3 flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-[#4a626d]">시간대별 앱 오류율</h3>
+                    <InfoHint text="KST 기준, app_open 대비 app_error 비율" />
+                  </div>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={diagnosticsErrorTrend} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5ece8" />
+                        <XAxis dataKey="hour" tick={{ fill: COLORS.ink, fontSize: 11 }} interval={1} />
+                        <YAxis yAxisId="left" tick={{ fill: COLORS.ink, fontSize: 11 }} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fill: COLORS.ink, fontSize: 11 }} />
+                        <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#d6ddd8", fontSize: 12 }} />
+                        <Bar yAxisId="left" dataKey="opens" fill="#d7e3ea" radius={[8, 8, 0, 0]} name="실행 수" />
+                        <Line yAxisId="right" type="monotone" dataKey="errorRatePct" stroke="#d8645a" strokeWidth={2.5} dot={false} name="오류율(%)" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </article>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <article className="rounded-2xl border border-[#d6ddd8] bg-white p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-[#4a626d]">앱 성능 요약</h3>
+                    <InfoHint text="app_performance 이벤트 기반 평균/P95" />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">샘플 수</dt>
+                      <dd className="font-bold text-[#2b4652]">{formatNumber(diagnostics.performanceSampleCount)}</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">평균 AppLoad</dt>
+                      <dd className="font-bold text-[#2b4652]">{diagnostics.avgAppLoadMs.toFixed(0)} ms</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">P95 AppLoad</dt>
+                      <dd className="font-bold text-[#2b4652]">{diagnostics.p95AppLoadMs.toFixed(0)} ms</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">평균 LCP</dt>
+                      <dd className="font-bold text-[#2b4652]">{diagnostics.avgLcpMs.toFixed(0)} ms</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">P95 LCP</dt>
+                      <dd className="font-bold text-[#2b4652]">{diagnostics.p95LcpMs.toFixed(0)} ms</dd>
+                    </div>
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2">
+                      <dt className="text-xs font-semibold text-[#6d8390]">평균 CLS</dt>
+                      <dd className="font-bold text-[#2b4652]">{diagnostics.avgCls.toFixed(4)}</dd>
+                    </div>
+                  </dl>
+                </article>
+
+                <article className="rounded-2xl border border-[#d6ddd8] bg-white p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-[#4a626d]">경로별 진단 상위</h3>
+                    <InfoHint text="실행 수 기준 상위 경로의 오류율과 성능" />
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#e2e9ed] text-left text-xs text-[#6d8390]">
+                          <th className="px-2 py-2 font-semibold">경로</th>
+                          <th className="px-2 py-2 font-semibold text-right">실행</th>
+                          <th className="px-2 py-2 font-semibold text-right">오류</th>
+                          <th className="px-2 py-2 font-semibold text-right">오류율</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {diagnosticsByPath.map((row) => (
+                          <tr key={row.path} className="border-b border-[#eef3f7]">
+                            <td className="max-w-[220px] truncate px-2 py-2 text-[#2f342e]" title={row.path}>{row.path}</td>
+                            <td className="px-2 py-2 text-right text-[#2f342e]">{formatNumber(row.opens)}</td>
+                            <td className="px-2 py-2 text-right text-[#2f342e]">{formatNumber(row.errors)}</td>
+                            <td className="px-2 py-2 text-right text-[#2f342e]">{formatPct(row.errorRatePct)}</td>
+                          </tr>
+                        ))}
+                        {diagnosticsByPath.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-2 py-4 text-center text-xs text-[#7b919b]">
+                              아직 진단 데이터가 없습니다.
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
                 </article>
               </div>
             </SectionShell>
