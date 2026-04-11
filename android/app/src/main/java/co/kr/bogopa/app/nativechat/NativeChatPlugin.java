@@ -143,4 +143,11 @@ public class NativeChatPlugin extends Plugin {
     void emitCreateMemory() {
         notifyListeners("createMemory", new JSObject());
     }
+
+    void emitSubscribeMemoryPass(String personaId, String personaName) {
+        JSObject data = new JSObject();
+        data.put("personaId", personaId == null ? "" : personaId);
+        data.put("personaName", personaName == null ? "" : personaName);
+        notifyListeners("subscribeMemoryPass", data);
+    }
 }

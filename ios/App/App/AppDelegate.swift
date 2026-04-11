@@ -435,6 +435,7 @@ private final class NativeChatViewController: UIViewController, UITextFieldDeleg
     var onSendMessage: ((String) -> Void)?
     var onClose: (() -> Void)?
     var onSelectPersona: ((String) -> Void)?
+    var onSubscribeMemoryPass: ((String, String) -> Void)?
     var onCreateMemory: (() -> Void)?
 
     private let brandColor = UIColor(red: 62 / 255, green: 85 / 255, blue: 96 / 255, alpha: 1)
@@ -989,8 +990,46 @@ private final class NativeChatViewController: UIViewController, UITextFieldDeleg
         guard let rawPersonaId = sender.accessibilityIdentifier else { return }
         let personaId = rawPersonaId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !personaId.isEmpty else { return }
+        if let lockedPersona = resolveLockedPersona(for: personaId), lockedPersona.isLocked {
+            showLockedPersonaOverlay(persona: lockedPersona)
+            return
+        }
         hidePersonaSheet()
         onSelectPersona?(personaId)
+    }
+
+    private func resolveLockedPersona(for personaId: String) -> NativeChatPersonaItem? {
+        guard let state = currentState else { return nil }
+        if let matched = state.personas.first(where: {
+            $0.personaId.trimmingCharacters(in: .whitespacesAndNewlines) == personaId
+        }) {
+            return matched
+        }
+
+        let trimmedCurrentId = state.personaId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedCurrentId == personaId {
+            return NativeChatPersonaItem(
+                personaId: trimmedCurrentId,
+                personaName: state.personaName,
+                avatarUrl: state.avatarUrl,
+                lastMessage: "새로운 대화",
+                isLocked: false
+            )
+        }
+
+        return nil
+    }
+
+    private func showLockedPersonaOverlay(persona: NativeChatPersonaItem) {
+        let name = persona.personaName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "이름" : persona.personaName
+        let message = "\"\(name)\"의 대화는 현재 잠금 상태입니다.\n지금 구독하면 바로 다시 대화할 수 있어요."
+        let alert = UIAlertController(title: "기억 패스가 만료되었어요", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "닫기", style: .cancel))
+        alert.addAction(UIAlertAction(title: "구독하기", style: .default, handler: { [weak self] _ in
+            self?.hidePersonaSheet()
+            self?.onSubscribeMemoryPass?(persona.personaId, name)
+        }))
+        present(alert, animated: true)
     }
 
     @objc private func handleCreateMemory() {
@@ -1458,6 +1497,12 @@ public final class NativeChatPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             controller.onSelectPersona = { [weak self] personaId in
                 self?.notifyListeners("selectPersona", data: ["personaId": personaId])
+            }
+            controller.onSubscribeMemoryPass = { [weak self] personaId, personaName in
+                self?.notifyListeners("subscribeMemoryPass", data: [
+                    "personaId": personaId,
+                    "personaName": personaName
+                ])
             }
             controller.onCreateMemory = { [weak self] in
                 self?.notifyListeners("createMemory", data: [:])

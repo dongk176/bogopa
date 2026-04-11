@@ -35,6 +35,11 @@ export type NativeChatSelectPersonaEvent = {
   personaId: string;
 };
 
+export type NativeChatSubscribeMemoryPassEvent = {
+  personaId?: string;
+  personaName?: string;
+};
+
 export type NativeChatConfirmMemoryStoreOptions = {
   title?: string;
   message?: string;
@@ -61,6 +66,10 @@ type NativeChatPlugin = {
   addListener(
     eventName: "selectPersona",
     listenerFunc: (event: NativeChatSelectPersonaEvent) => void,
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: "subscribeMemoryPass",
+    listenerFunc: (event: NativeChatSubscribeMemoryPassEvent) => void,
   ): Promise<PluginListenerHandle>;
   addListener(eventName: "createMemory", listenerFunc: () => void): Promise<PluginListenerHandle>;
 };

@@ -31,6 +31,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -883,6 +884,10 @@ public class NativeChatActivity extends AppCompatActivity {
         row.setLayoutParams(rowParams);
 
         row.setOnClickListener(v -> {
+            if (persona.isLocked) {
+                showLockedPersonaOverlay(persona);
+                return;
+            }
             hidePersonaSheet();
             NativeChatBridge.emitSelectPersona(persona.personaId);
         });
@@ -952,6 +957,23 @@ public class NativeChatActivity extends AppCompatActivity {
         }
 
         return row;
+    }
+
+    private void showLockedPersonaOverlay(@NonNull NativeChatState.Persona persona) {
+        String personaName = (persona.personaName == null || persona.personaName.trim().isEmpty())
+                ? "이름"
+                : persona.personaName.trim();
+        String message = "\"" + personaName + "\"의 대화는 현재 잠금 상태입니다.\n지금 구독하면 바로 다시 대화할 수 있어요.";
+
+        new AlertDialog.Builder(this)
+                .setTitle("기억 패스가 만료되었어요")
+                .setMessage(message)
+                .setNegativeButton("닫기", null)
+                .setPositiveButton("구독하기", (dialog, which) -> {
+                    hidePersonaSheet();
+                    NativeChatBridge.emitSubscribeMemoryPass(persona.personaId, personaName);
+                })
+                .show();
     }
 
     private void scrollToBottom(boolean animated) {

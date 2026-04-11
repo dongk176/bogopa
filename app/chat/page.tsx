@@ -21,6 +21,7 @@ import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 import { getConversationTensionGuide } from "@/lib/persona/conversationTension";
 import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
+import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
 
 type ChatMessage = {
   id: string;
@@ -965,6 +966,81 @@ function ChatContainer() {
     return { isLocked: Boolean(cached?.isLocked), personaName: cached?.personaName || "이 기억" };
   }
 
+  async function refreshPersonasForChat() {
+    const response = await fetch("/api/persona", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json().catch(() => ({} as any));
+    if (!data?.ok || !Array.isArray(data.personas)) return;
+
+    const dbChats: StoredChatState[] = data.personas.map((p: any) => {
+      const lastActivity =
+        p.session_updated_at && new Date(p.session_updated_at) > new Date(p.updated_at)
+          ? p.session_updated_at
+          : p.updated_at;
+      return {
+        personaId: p.persona_id,
+        personaName: p.name,
+        avatarUrl: p.avatar_url,
+        isLocked: Boolean(p.is_locked),
+        runtime: p.runtime || null,
+        messages: p.last_message_content
+          ? [{ id: "last", role: "assistant", content: p.last_message_content, createdAt: p.updated_at }]
+          : [],
+        lastMessage: p.last_message_content || "",
+        updatedAt: lastActivity,
+      };
+    });
+    dbChats.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+    setSavedChats(dbChats);
+
+    const mappedNative: NativeChatPersona[] = data.personas
+      .map((persona: any) => {
+        const personaId = String(persona?.persona_id ?? persona?.personaId ?? "").trim();
+        if (!personaId) return null;
+        return {
+          personaId,
+          personaName: String(persona?.name ?? persona?.personaName ?? "기억").trim() || "기억",
+          avatarUrl: toAbsoluteAvatarUrl(persona?.avatar_url ?? persona?.avatarUrl),
+          lastMessage: String(persona?.last_message_content ?? persona?.lastMessage ?? "").trim(),
+          isLocked: Boolean(persona?.is_locked ?? persona?.isLocked),
+        } as NativeChatPersona;
+      })
+      .filter(Boolean) as NativeChatPersona[];
+    setNativePersonaOverrides(mappedNative);
+  }
+
+  async function handleNativeMemoryPassSubscribe(personaName?: string) {
+    try {
+      await purchaseIapProduct("memory_pass_monthly");
+      await refreshPersonasForChat();
+      const balanceResponse = await fetch("/api/memory-pass", { cache: "no-store" });
+      if (balanceResponse.ok) {
+        const balancePayload = await balanceResponse.json().catch(() => ({} as any));
+        if (typeof balancePayload?.memoryBalance === "number") {
+          memoryBalanceRef.current = Number(balancePayload.memoryBalance);
+          setMemoryBalance(Number(balancePayload.memoryBalance));
+        }
+      }
+    } catch (error) {
+      const message = isMemoryPassOwnershipConflictError(error)
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : "결제를 진행하지 못했습니다.";
+      await NativeChat.confirmMemoryStore({
+        title: "결제를 진행하지 못했어요",
+        message,
+        confirmText: "확인",
+        cancelText: "닫기",
+      }).catch(() => {
+        // no-op
+      });
+      if (personaName) {
+        setLockedPersonaName(personaName);
+      }
+    }
+  }
+
   async function submitUserText(rawText: string) {
     const trimmed = rawText.slice(0, USER_INPUT_CHAR_LIMIT).trim();
     if (!trimmed || !runtime) return;
@@ -1138,6 +1214,7 @@ function ChatContainer() {
     let sendListener: { remove: () => Promise<void> } | null = null;
     let closeListener: { remove: () => Promise<void> } | null = null;
     let selectPersonaListener: { remove: () => Promise<void> } | null = null;
+    let subscribeMemoryPassListener: { remove: () => Promise<void> } | null = null;
     let createMemoryListener: { remove: () => Promise<void> } | null = null;
 
     const openNativeChat = async () => {
@@ -1160,18 +1237,26 @@ function ChatContainer() {
           void (async () => {
             const lock = await resolvePersonaLockState(targetId);
             if (lock.isLocked) {
-              setIsChatListOpen(false);
-              setLockedPersonaName(lock.personaName || "이 기억");
-              suppressNextNativeCloseRouteRef.current = true;
-              void NativeChat.dismiss().catch(() => {
-                suppressNextNativeCloseRouteRef.current = false;
-              });
+              const confirmResult = await NativeChat.confirmMemoryStore({
+                title: "기억 패스가 만료되었어요",
+                message: `"${lock.personaName || "이름"}"의 대화는 현재 잠금 상태입니다.\n지금 구독하면 바로 다시 대화할 수 있어요.`,
+                confirmText: "구독하기",
+                cancelText: "닫기",
+              }).catch(() => ({ confirmed: false }));
+              if (confirmResult?.confirmed) {
+                await handleNativeMemoryPassSubscribe(lock.personaName || "이 기억");
+              }
               return;
             }
             keepNativeChatOnNextCleanupRef.current = true;
             setIsChatListOpen(false);
             router.replace(`/chat?id=${encodeURIComponent(targetId)}`);
           })();
+        });
+        subscribeMemoryPassListener = await NativeChat.addListener("subscribeMemoryPass", ({ personaName }) => {
+          void handleNativeMemoryPassSubscribe(
+            typeof personaName === "string" && personaName.trim() ? personaName.trim() : "이 기억",
+          );
         });
         createMemoryListener = await NativeChat.addListener("createMemory", () => {
           startCreateMemoryFromChatRef.current();
@@ -1222,6 +1307,9 @@ function ChatContainer() {
       }
       if (selectPersonaListener) {
         void selectPersonaListener.remove();
+      }
+      if (subscribeMemoryPassListener) {
+        void subscribeMemoryPassListener.remove();
       }
       if (createMemoryListener) {
         void createMemoryListener.remove();
@@ -1681,7 +1769,6 @@ function ChatContainer() {
                     void (async () => {
                       const lock = await resolvePersonaLockState(chat.personaId);
                       if (lock.isLocked) {
-                        setIsChatListOpen(false);
                         setLockedPersonaName(lock.personaName || "이 기억");
                         return;
                       }

@@ -96,6 +96,13 @@ final class NativeChatBridge {
         }
     }
 
+    static void emitSubscribeMemoryPass(String personaId, String personaName) {
+        NativeChatPlugin plugin = getPlugin();
+        if (plugin != null) {
+            plugin.emitSubscribeMemoryPass(personaId, personaName);
+        }
+    }
+
     private static NativeChatPlugin getPlugin() {
         synchronized (LOCK) {
             return pluginRef.get();
