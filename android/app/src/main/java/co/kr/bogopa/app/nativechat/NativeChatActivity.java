@@ -89,11 +89,13 @@ public class NativeChatActivity extends AppCompatActivity {
     private String currentAvatarUrl;
     private Bitmap currentAvatarBitmap;
     private boolean shouldEmitCloseOnDestroy = true;
+    private int lastRenderedMessageCount = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        // Handle keyboard movement ourselves with IME insets to avoid double-resize gaps.
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
 
         FrameLayout root = buildLayout();
         setContentView(root);
@@ -161,6 +163,12 @@ public class NativeChatActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
+        headerContainer.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                dismissKeyboard();
+            }
+            return false;
+        });
 
         ImageButton backButton = new ImageButton(this);
         backButton.setImageResource(androidx.appcompat.R.drawable.abc_ic_ab_back_material);
@@ -450,6 +458,7 @@ public class NativeChatActivity extends AppCompatActivity {
             boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
             int imeOffset = Math.max(0, imeInsets.bottom - navigationInsets.bottom);
             int navBottomInset = Math.max(navigationInsets.bottom, dp(6));
+            int composerBottomInset = imeVisible ? dp(6) : navBottomInset;
 
             headerContainer.setPadding(
                     dp(12),
@@ -462,7 +471,7 @@ public class NativeChatActivity extends AppCompatActivity {
                     dp(14),
                     dp(10),
                     dp(14),
-                    dp(10) + navBottomInset
+                    dp(10) + composerBottomInset
             );
             ViewGroup.LayoutParams composerRawParams = composerContainer.getLayoutParams();
             if (composerRawParams instanceof LinearLayout.LayoutParams) {
@@ -477,7 +486,7 @@ public class NativeChatActivity extends AppCompatActivity {
                     messageScrollView.getPaddingLeft(),
                     messageScrollView.getPaddingTop(),
                     messageScrollView.getPaddingRight(),
-                    navBottomInset + dp(6)
+                    composerBottomInset + dp(6)
             );
 
             if (sheetPanel != null) {
@@ -543,7 +552,14 @@ public class NativeChatActivity extends AppCompatActivity {
             messageStack.addView(makeTypingRow());
         }
 
-        scrollToBottom(true);
+        boolean hasNewMessage = state.messages.size() != lastRenderedMessageCount;
+        lastRenderedMessageCount = state.messages.size();
+        if (hasNewMessage || state.isTyping) {
+            scrollToBottom(true);
+            messageScrollView.postDelayed(() -> scrollToBottom(true), 90);
+        } else {
+            scrollToBottom(false);
+        }
     }
 
     private View makeMessageRow(@NonNull NativeChatState.Message message) {
