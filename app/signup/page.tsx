@@ -642,25 +642,6 @@ function SignupContent() {
                     </div>
                   </div>
 
-                  <div className="space-y-3 rounded-2xl border border-[#5e6863]/40 bg-[#232825] px-4 py-4">
-                    <label className="flex cursor-pointer items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={aiDataTransferConsentAgreed}
-                        onChange={(event) => setAiDataTransferConsentAgreed(event.target.checked)}
-                        className="mt-0.5 h-4 w-4 rounded border border-[#7d9085] bg-[#f4f4ef] text-[#3e5560] accent-[#3e5560]"
-                      />
-                      <span className="text-sm leading-relaxed text-[#f0f5f2]">
-                        (필수) 대화 기능 제공을 위해 입력한 메시지 및 대화 맥락 일부가{" "}
-                        <span className="font-semibold">{AI_DATA_TRANSFER_PROVIDER_NAME}</span>로 전송되는 것에 동의합니다.
-                        <br />
-                        <Link href="/legal/privacy?back=%2Fsignup" className="font-semibold text-[#9ec0d1] underline underline-offset-2">
-                          개인정보 처리방침에서 상세 보기
-                        </Link>
-                      </span>
-                    </label>
-                  </div>
-
                   <div className="space-y-3">
                     <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="signupBirthDate">
                       생년월일
@@ -805,6 +786,29 @@ function SignupContent() {
                         );
                       })}
                     </div>
+                  </div>
+
+                  <div
+                    className="space-y-3 rounded-2xl border border-[#d7ddd8] bg-[#f4f4ef] px-4 py-4 text-[#2f342e]"
+                    style={{ colorScheme: "light" }}
+                  >
+                    <label className="flex cursor-pointer items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={aiDataTransferConsentAgreed}
+                        onChange={(event) => setAiDataTransferConsentAgreed(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border border-[#8ca19c] bg-white text-[#3e5560] accent-[#3e5560]"
+                        style={{ colorScheme: "light" }}
+                      />
+                      <span className="text-sm leading-relaxed text-[#2f342e]">
+                        (필수) 대화 기능 제공을 위해 입력한 메시지 및 대화 맥락 일부가{" "}
+                        <span className="font-semibold">{AI_DATA_TRANSFER_PROVIDER_NAME}</span>로 전송되는 것에 동의합니다.
+                        <br />
+                        <Link href="/legal/privacy?back=%2Fsignup" className="font-semibold text-[#3e5560] underline underline-offset-2">
+                          개인정보 처리방침에서 상세 보기
+                        </Link>
+                      </span>
+                    </label>
                   </div>
 
                   <div className="fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-[60] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 space-y-2">
