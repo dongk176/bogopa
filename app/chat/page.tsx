@@ -401,6 +401,12 @@ function ChatContainer() {
   const chatListSwipeStartYRef = useRef<number | null>(null);
   const chatListSwipeLastYRef = useRef<number | null>(null);
   const keepNativeChatOnNextCleanupRef = useRef(false);
+  const suppressNextNativeCloseRouteRef = useRef(false);
+  const savedChatsRef = useRef<StoredChatState[]>([]);
+
+  useEffect(() => {
+    savedChatsRef.current = savedChats;
+  }, [savedChats]);
 
   function triggerMemorySpendAnimation() {
     setIsMemoryBadgeAnimating(true);
@@ -594,6 +600,7 @@ function ChatContainer() {
             avatarUrl: toAbsoluteAvatarUrl(persona?.avatar_url ?? persona?.avatarUrl),
             lastMessage:
               String(persona?.last_message_content ?? persona?.lastMessage ?? "").trim(),
+            isLocked: Boolean(persona?.is_locked ?? persona?.isLocked),
           });
         }
 
@@ -842,6 +849,7 @@ function ChatContainer() {
           personaName: chat.personaName || "기억",
           avatarUrl: toAbsoluteAvatarUrl(chat.avatarUrl),
           lastMessage: chat.lastMessage || "",
+          isLocked: Boolean(chat.isLocked),
         }));
 
     const deduped: NativeChatPersona[] = [];
@@ -855,6 +863,7 @@ function ChatContainer() {
         personaName: String(persona.personaName || "기억").trim() || "기억",
         avatarUrl: toAbsoluteAvatarUrl(persona.avatarUrl),
         lastMessage: String(persona.lastMessage || ""),
+        isLocked: Boolean(persona.isLocked),
       });
     }
 
@@ -866,6 +875,7 @@ function ChatContainer() {
           personaName: runtime.displayName || "기억",
           avatarUrl: nativeAvatarUrl,
           lastMessage: "",
+          isLocked: false,
         });
       }
     }
@@ -1105,11 +1115,25 @@ function ChatContainer() {
           setNativeQueuedText(trimmed);
         });
         closeListener = await NativeChat.addListener("close", () => {
+          if (suppressNextNativeCloseRouteRef.current) {
+            suppressNextNativeCloseRouteRef.current = false;
+            return;
+          }
           router.push("/chat/list");
         });
         selectPersonaListener = await NativeChat.addListener("selectPersona", ({ personaId }) => {
           const targetId = typeof personaId === "string" ? personaId.trim() : "";
           if (!targetId || targetId === runtime.personaId) return;
+          const targetChat = savedChatsRef.current.find((chat) => chat.personaId === targetId);
+          if (targetChat?.isLocked) {
+            setIsChatListOpen(false);
+            setLockedPersonaName(targetChat.personaName || "이 기억");
+            suppressNextNativeCloseRouteRef.current = true;
+            void NativeChat.dismiss().catch(() => {
+              suppressNextNativeCloseRouteRef.current = false;
+            });
+            return;
+          }
           keepNativeChatOnNextCleanupRef.current = true;
           setIsChatListOpen(false);
           router.replace(`/chat?id=${encodeURIComponent(targetId)}`);
@@ -1619,6 +1643,11 @@ function ChatContainer() {
                 <button
                   key={chat.personaId}
                   onClick={() => {
+                    if (chat.isLocked) {
+                      setIsChatListOpen(false);
+                      setLockedPersonaName(chat.personaName || "이 기억");
+                      return;
+                    }
                     setIsChatListOpen(false);
                     router.push(`/chat?id=${chat.personaId}`);
                   }}
@@ -1638,7 +1667,14 @@ function ChatContainer() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1 text-left">
-                    <p className={`truncate text-base font-bold text-[#f0f5f2] ${chatId === chat.personaId ? "text-white" : ""}`}>{chat.personaName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`truncate text-base font-bold text-[#f0f5f2] ${chatId === chat.personaId ? "text-white" : ""}`}>{chat.personaName}</p>
+                      {chat.isLocked ? (
+                        <span className="rounded-full border border-[#f6b5ba]/60 bg-[#5a2a2f] px-2 py-0.5 text-[10px] font-semibold text-[#ffd7db]">
+                          잠금
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="truncate text-xs text-[#5d605a] mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
                       {chat.lastMessage || "새로운 대화"}
                     </p>

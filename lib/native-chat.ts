@@ -14,6 +14,7 @@ export type NativeChatPersona = {
   personaName: string;
   avatarUrl?: string;
   lastMessage?: string;
+  isLocked?: boolean;
 };
 
 export type NativeChatStatePayload = {

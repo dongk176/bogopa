@@ -852,7 +852,8 @@ public class NativeChatActivity extends AppCompatActivity {
                     currentId,
                     currentState.personaName,
                     currentState.avatarUrl,
-                    "새로운 대화"
+                    "새로운 대화",
+                    false
             ));
         }
 
@@ -922,10 +923,32 @@ public class NativeChatActivity extends AppCompatActivity {
         subtitleParams.topMargin = dp(3);
         textCol.addView(lastMessageView, subtitleParams);
 
+        LinearLayout trailingCol = new LinearLayout(this);
+        trailingCol.setOrientation(LinearLayout.VERTICAL);
+        trailingCol.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        row.addView(trailingCol, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+
+        if (persona.isLocked) {
+            TextView lockChip = new TextView(this);
+            lockChip.setText("잠금");
+            lockChip.setTextColor(Color.rgb(126, 27, 36));
+            lockChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            lockChip.setTypeface(Typeface.DEFAULT);
+            lockChip.setPadding(dp(8), dp(4), dp(8), dp(4));
+            lockChip.setBackground(makeRoundedRectDrawable(Color.rgb(252, 229, 232), dp(999), false));
+            trailingCol.addView(lockChip);
+        }
+
         if (isActive) {
             View activeDot = new View(this);
             activeDot.setBackground(makeCircleDrawable(COLOR_BRAND));
-            row.addView(activeDot, new LinearLayout.LayoutParams(dp(8), dp(8)));
+            LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
+            dotParams.gravity = Gravity.END;
+            dotParams.topMargin = persona.isLocked ? dp(8) : 0;
+            trailingCol.addView(activeDot, dotParams);
         }
 
         return row;

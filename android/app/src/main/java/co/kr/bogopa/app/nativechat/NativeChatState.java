@@ -31,12 +31,14 @@ final class NativeChatState {
         final String personaName;
         final String avatarUrl;
         final String lastMessage;
+        final boolean isLocked;
 
-        Persona(String personaId, String personaName, String avatarUrl, String lastMessage) {
+        Persona(String personaId, String personaName, String avatarUrl, String lastMessage, boolean isLocked) {
             this.personaId = personaId;
             this.personaName = personaName;
             this.avatarUrl = avatarUrl;
             this.lastMessage = lastMessage;
+            this.isLocked = isLocked;
         }
     }
 
@@ -136,7 +138,8 @@ final class NativeChatState {
                     personaId,
                     personaName,
                     normalizeNullableString(object.optString("avatarUrl", null)),
-                    object.optString("lastMessage", "")
+                    object.optString("lastMessage", ""),
+                    object.optBoolean("isLocked", false)
             ));
         }
 

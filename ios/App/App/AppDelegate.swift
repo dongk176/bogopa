@@ -178,12 +178,14 @@ private struct NativeChatPersonaItem {
     let personaName: String
     let avatarUrl: String?
     let lastMessage: String
+    let isLocked: Bool
 
-    init(personaId: String, personaName: String, avatarUrl: String?, lastMessage: String) {
+    init(personaId: String, personaName: String, avatarUrl: String?, lastMessage: String, isLocked: Bool) {
         self.personaId = personaId
         self.personaName = personaName
         self.avatarUrl = avatarUrl
         self.lastMessage = lastMessage
+        self.isLocked = isLocked
     }
 
     init?(dictionary: [String: Any]) {
@@ -198,6 +200,7 @@ private struct NativeChatPersonaItem {
         self.personaName = personaName
         self.avatarUrl = dictionary["avatarUrl"] as? String
         self.lastMessage = (dictionary["lastMessage"] as? String) ?? ""
+        self.isLocked = (dictionary["isLocked"] as? Bool) ?? false
     }
 }
 
@@ -885,7 +888,8 @@ private final class NativeChatViewController: UIViewController, UITextFieldDeleg
                     personaId: trimmedCurrentId,
                     personaName: state.personaName,
                     avatarUrl: state.avatarUrl,
-                    lastMessage: "새로운 대화"
+                    lastMessage: "새로운 대화",
+                    isLocked: false
                 ),
                 at: 0
             )
@@ -925,6 +929,18 @@ private final class NativeChatViewController: UIViewController, UITextFieldDeleg
         nameLabel.textColor = textColor
         button.addSubview(nameLabel)
 
+        let lockChip = UILabel()
+        lockChip.translatesAutoresizingMaskIntoConstraints = false
+        lockChip.text = "잠금"
+        lockChip.font = UIFont.systemFont(ofSize: 10, weight: .semibold)
+        lockChip.textColor = UIColor(red: 126 / 255, green: 27 / 255, blue: 36 / 255, alpha: 1)
+        lockChip.backgroundColor = UIColor(red: 252 / 255, green: 229 / 255, blue: 232 / 255, alpha: 1)
+        lockChip.layer.cornerRadius = 10
+        lockChip.layer.masksToBounds = true
+        lockChip.textAlignment = .center
+        lockChip.isHidden = !persona.isLocked
+        button.addSubview(lockChip)
+
         let messageLabel = UILabel()
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         messageLabel.text = persona.lastMessage.isEmpty ? "새로운 대화" : persona.lastMessage
@@ -948,7 +964,12 @@ private final class NativeChatViewController: UIViewController, UITextFieldDeleg
 
             nameLabel.topAnchor.constraint(equalTo: button.topAnchor, constant: 16),
             nameLabel.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: 12),
-            nameLabel.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -14),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: lockChip.leadingAnchor, constant: -8),
+
+            lockChip.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+            lockChip.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -14),
+            lockChip.heightAnchor.constraint(equalToConstant: 20),
+            lockChip.widthAnchor.constraint(greaterThanOrEqualToConstant: 34),
 
             messageLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
             messageLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
