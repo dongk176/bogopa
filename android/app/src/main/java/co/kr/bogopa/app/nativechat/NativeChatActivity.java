@@ -198,17 +198,20 @@ public class NativeChatActivity extends AppCompatActivity {
 
         titleView = new TextView(this);
         titleView.setTextColor(COLOR_TEXT);
-        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        titleView.setTypeface(Typeface.DEFAULT);
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         titleView.setSingleLine(true);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         titleView.setText("기억");
         titleRow.addView(titleView);
 
-        ImageView chevron = new ImageView(this);
-        chevron.setImageResource(android.R.drawable.arrow_down_float);
-        chevron.setColorFilter(COLOR_BRAND);
-        LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(dp(16), dp(16));
+        TextView chevron = new TextView(this);
+        chevron.setText("⌄");
+        chevron.setTextColor(COLOR_BRAND);
+        chevron.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        chevron.setTypeface(Typeface.DEFAULT);
+        chevron.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(dp(14), dp(14));
         chevronParams.leftMargin = dp(2);
         titleRow.addView(chevron, chevronParams);
 
@@ -221,11 +224,12 @@ public class NativeChatActivity extends AppCompatActivity {
         memoryBadgeBg.setCornerRadius(dp(13));
         memoryBadgeView.setBackground(memoryBadgeBg);
 
-        TextView memoryIcon = new TextView(this);
-        memoryIcon.setText("◌");
-        memoryIcon.setTextColor(COLOR_BRAND);
-        memoryIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        memoryBadgeView.addView(memoryIcon);
+        ImageView memoryIcon = new ImageView(this);
+        memoryIcon.setImageResource(android.R.drawable.ic_menu_recent_history);
+        memoryIcon.setColorFilter(COLOR_BRAND);
+        LinearLayout.LayoutParams memoryIconParams = new LinearLayout.LayoutParams(dp(16), dp(16));
+        memoryIconParams.gravity = Gravity.CENTER_VERTICAL;
+        memoryBadgeView.addView(memoryIcon, memoryIconParams);
 
         memoryValueView = new TextView(this);
         memoryValueView.setTextColor(COLOR_BRAND);
@@ -283,10 +287,12 @@ public class NativeChatActivity extends AppCompatActivity {
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         inputView.setTypeface(Typeface.DEFAULT);
         inputView.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        inputView.setMaxLines(1);
-        inputView.setSingleLine(true);
+        inputView.setMinLines(1);
+        inputView.setMaxLines(4);
+        inputView.setSingleLine(false);
+        inputView.setHorizontallyScrolling(false);
         inputView.setImeOptions(EditorInfo.IME_ACTION_SEND);
-        inputView.setPadding(dp(16), dp(12), dp(56), dp(12));
+        inputView.setPadding(dp(16), dp(12), dp(16), dp(12));
         inputView.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEND ||
                     (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
@@ -305,9 +311,10 @@ public class NativeChatActivity extends AppCompatActivity {
         sendButton.setColorFilter(Color.WHITE);
         sendButton.setImageResource(android.R.drawable.ic_menu_send);
         sendButton.setOnClickListener(v -> handleSend());
-        FrameLayout.LayoutParams sendParams = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.END | Gravity.CENTER_VERTICAL);
-        sendParams.rightMargin = dp(8);
-        inputWrap.addView(sendButton, sendParams);
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(dp(36), dp(36));
+        sendParams.leftMargin = dp(8);
+        sendParams.gravity = Gravity.CENTER_VERTICAL;
+        composerContainer.addView(sendButton, sendParams);
 
         blockedNoticeView = new TextView(this);
         blockedNoticeView.setVisibility(View.GONE);
@@ -412,19 +419,28 @@ public class NativeChatActivity extends AppCompatActivity {
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             Insets statusInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars());
             Insets navigationInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
+            int bottomInset = Math.max(navigationInsets.bottom, imeInsets.bottom);
 
             headerContainer.setPadding(
-                    headerContainer.getPaddingLeft(),
+                    dp(12),
                     dp(4) + statusInsets.top,
-                    headerContainer.getPaddingRight(),
+                    dp(12),
                     dp(8)
             );
 
             composerContainer.setPadding(
-                    composerContainer.getPaddingLeft(),
+                    dp(14),
                     dp(10),
-                    composerContainer.getPaddingRight(),
-                    dp(10) + Math.max(navigationInsets.bottom, dp(6))
+                    dp(14),
+                    dp(10) + Math.max(bottomInset, dp(6))
+            );
+
+            messageScrollView.setPadding(
+                    messageScrollView.getPaddingLeft(),
+                    messageScrollView.getPaddingTop(),
+                    messageScrollView.getPaddingRight(),
+                    Math.max(bottomInset, dp(6))
             );
 
             if (sheetPanel != null) {
@@ -434,6 +450,10 @@ public class NativeChatActivity extends AppCompatActivity {
                         sheetPanel.getPaddingRight(),
                         dp(16) + Math.max(navigationInsets.bottom, dp(8))
                 );
+            }
+
+            if (insets.isVisible(WindowInsetsCompat.Type.ime())) {
+                scrollToBottom(false);
             }
 
             return insets;
@@ -466,7 +486,7 @@ public class NativeChatActivity extends AppCompatActivity {
             TextView dateView = new TextView(this);
             dateView.setTextColor(COLOR_TEXT);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            dateView.setTypeface(Typeface.DEFAULT_BOLD);
+            dateView.setTypeface(Typeface.DEFAULT);
             dateView.setText(formatDateLabel(state.messages.get(0).createdAt));
             dateView.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(
@@ -504,7 +524,7 @@ public class NativeChatActivity extends AppCompatActivity {
         bubble.setText(message.content);
         bubble.setTextColor(isUser ? Color.rgb(44, 58, 70) : COLOR_TEXT);
         bubble.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        bubble.setTypeface(Typeface.DEFAULT, isUser ? Typeface.BOLD : Typeface.NORMAL);
+        bubble.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
         bubble.setLineSpacing(0f, 1.22f);
         bubble.setPadding(dp(14), dp(12), dp(14), dp(12));
         bubble.setBackground(makeBubbleBackground(isUser));
@@ -597,6 +617,7 @@ public class NativeChatActivity extends AppCompatActivity {
         bg.setColor(COLOR_FALLBACK_BG);
         bg.setCornerRadius(circle ? sizePx / 2f : dp(10));
         imageView.setBackground(bg);
+        imageView.setClipToOutline(true);
 
         if (bitmap != null) {
             imageView.setImageBitmap(bitmap);
@@ -636,6 +657,7 @@ public class NativeChatActivity extends AppCompatActivity {
     }
 
     private void applyHeaderAvatar() {
+        headerAvatarView.setClipToOutline(true);
         if (currentAvatarBitmap != null) {
             headerAvatarView.setImageBitmap(currentAvatarBitmap);
             headerAvatarView.clearColorFilter();

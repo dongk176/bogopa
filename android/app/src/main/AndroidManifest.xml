@@ -34,7 +34,8 @@
             android:name=".nativechat.NativeChatActivity"
             android:exported="false"
             android:launchMode="singleTop"
-            android:theme="@style/AppTheme.NoActionBarLaunch" />
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:theme="@style/AppTheme.NoActionBar" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
