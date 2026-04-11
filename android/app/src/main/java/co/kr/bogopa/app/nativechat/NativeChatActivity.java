@@ -46,6 +46,8 @@ import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import co.kr.bogopa.app.R;
+
 public class NativeChatActivity extends AppCompatActivity {
     private static final int COLOR_BRAND = Color.rgb(62, 85, 96);
     private static final int COLOR_TEXT = Color.rgb(47, 52, 46);
@@ -205,14 +207,12 @@ public class NativeChatActivity extends AppCompatActivity {
         titleView.setText("기억");
         titleRow.addView(titleView);
 
-        TextView chevron = new TextView(this);
-        chevron.setText("⌄");
-        chevron.setTextColor(COLOR_BRAND);
-        chevron.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        chevron.setTypeface(Typeface.DEFAULT);
-        chevron.setGravity(Gravity.CENTER);
+        ImageView chevron = new ImageView(this);
+        chevron.setImageResource(R.drawable.ic_chevron_down_small);
+        chevron.setColorFilter(COLOR_BRAND);
         LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(dp(14), dp(14));
-        chevronParams.leftMargin = dp(2);
+        chevronParams.leftMargin = dp(3);
+        chevronParams.gravity = Gravity.CENTER_VERTICAL;
         titleRow.addView(chevron, chevronParams);
 
         memoryBadgeView = new LinearLayout(this);
@@ -225,9 +225,9 @@ public class NativeChatActivity extends AppCompatActivity {
         memoryBadgeView.setBackground(memoryBadgeBg);
 
         ImageView memoryIcon = new ImageView(this);
-        memoryIcon.setImageResource(android.R.drawable.ic_menu_recent_history);
+        memoryIcon.setImageResource(R.drawable.ic_memory_balance);
         memoryIcon.setColorFilter(COLOR_BRAND);
-        LinearLayout.LayoutParams memoryIconParams = new LinearLayout.LayoutParams(dp(16), dp(16));
+        LinearLayout.LayoutParams memoryIconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
         memoryIconParams.gravity = Gravity.CENTER_VERTICAL;
         memoryBadgeView.addView(memoryIcon, memoryIconParams);
 
@@ -271,14 +271,6 @@ public class NativeChatActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        FrameLayout inputWrap = new FrameLayout(this);
-        LinearLayout.LayoutParams inputWrapParams = new LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-        );
-        composerContainer.addView(inputWrap, inputWrapParams);
-
         inputView = new EditText(this);
         inputView.setBackground(makeComposerBackground());
         inputView.setHint("메시지를 입력하세요.");
@@ -288,10 +280,11 @@ public class NativeChatActivity extends AppCompatActivity {
         inputView.setTypeface(Typeface.DEFAULT);
         inputView.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         inputView.setMinLines(1);
-        inputView.setMaxLines(4);
+        inputView.setMaxLines(5);
         inputView.setSingleLine(false);
         inputView.setHorizontallyScrolling(false);
         inputView.setImeOptions(EditorInfo.IME_ACTION_SEND);
+        inputView.setGravity(Gravity.TOP | Gravity.START);
         inputView.setPadding(dp(16), dp(12), dp(16), dp(12));
         inputView.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEND ||
@@ -301,10 +294,12 @@ public class NativeChatActivity extends AppCompatActivity {
             }
             return false;
         });
-        inputWrap.addView(inputView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+        );
+        composerContainer.addView(inputView, inputParams);
 
         ImageButton sendButton = new ImageButton(this);
         sendButton.setBackground(makeCircleDrawable(COLOR_BRAND));
@@ -367,7 +362,7 @@ public class NativeChatActivity extends AppCompatActivity {
         sheetTitle.setText("대화 상대 바꾸기");
         sheetTitle.setTextColor(COLOR_TEXT);
         sheetTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        sheetTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        sheetTitle.setTypeface(Typeface.DEFAULT);
         sheetTitle.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams sheetTitleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -397,7 +392,7 @@ public class NativeChatActivity extends AppCompatActivity {
         createMemoryButton.setText("새로운 기억 만들기");
         createMemoryButton.setTextColor(Color.rgb(17, 17, 17));
         createMemoryButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        createMemoryButton.setTypeface(Typeface.DEFAULT_BOLD);
+        createMemoryButton.setTypeface(Typeface.DEFAULT);
         createMemoryButton.setGravity(Gravity.CENTER);
         createMemoryButton.setPadding(0, dp(14), 0, dp(14));
         createMemoryButton.setBackground(makeBorderedButtonBackground());
@@ -528,6 +523,9 @@ public class NativeChatActivity extends AppCompatActivity {
         bubble.setLineSpacing(0f, 1.22f);
         bubble.setPadding(dp(14), dp(12), dp(14), dp(12));
         bubble.setBackground(makeBubbleBackground(isUser));
+        bubble.setSingleLine(false);
+        bubble.setHorizontallyScrolling(false);
+        bubble.setMinWidth(dp(42));
         bubble.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.68f));
 
         TextView timeLabel = new TextView(this);
@@ -542,13 +540,21 @@ public class NativeChatActivity extends AppCompatActivity {
         );
         timeParams.topMargin = dp(6);
 
-        column.addView(bubble);
+        LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        bubbleParams.gravity = isUser ? Gravity.END : Gravity.START;
+        column.addView(bubble, bubbleParams);
         column.addView(timeLabel, timeParams);
 
         if (isUser) {
-            View spacer = new View(this);
-            row.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1f));
-            row.addView(column);
+            LinearLayout.LayoutParams columnParams = new LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f
+            );
+            row.addView(column, columnParams);
         } else {
             View avatar = makeAvatarView(dp(32), true, currentAvatarBitmap, currentAvatarUrl);
             LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(dp(32), dp(32));
@@ -556,14 +562,12 @@ public class NativeChatActivity extends AppCompatActivity {
             row.addView(avatar, avatarParams);
 
             LinearLayout.LayoutParams columnParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    0,
                     ViewGroup.LayoutParams.WRAP_CONTENT
             );
+            columnParams.weight = 1f;
             columnParams.leftMargin = dp(8);
             row.addView(column, columnParams);
-
-            View spacer = new View(this);
-            row.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1f));
         }
 
         return row;
@@ -815,7 +819,7 @@ public class NativeChatActivity extends AppCompatActivity {
         TextView nameView = new TextView(this);
         nameView.setText(persona.personaName);
         nameView.setTextColor(COLOR_TEXT);
-        nameView.setTypeface(Typeface.DEFAULT_BOLD);
+        nameView.setTypeface(Typeface.DEFAULT);
         nameView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         nameView.setSingleLine(true);
         nameView.setEllipsize(TextUtils.TruncateAt.END);
