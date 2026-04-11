@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { FormEvent, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
@@ -22,11 +21,6 @@ import useNativeSwipeBack from "@/app/_components/useNativeSwipeBack";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 import { getConversationTensionGuide } from "@/lib/persona/conversationTension";
 import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
-import {
-  AI_DATA_TRANSFER_CONSENT_VERSION,
-  AI_DATA_TRANSFER_PROVIDER_NAME,
-  AI_DATA_TRANSFER_SUMMARY,
-} from "@/lib/ai-consent";
 
 type ChatMessage = {
   id: string;
@@ -122,16 +116,6 @@ type MemoryStorePrompt = {
   title: string;
   message: string;
   returnTo: string;
-};
-
-type AiConsentResponse = {
-  ok?: boolean;
-  consent?: {
-    consented?: boolean;
-    consentedAt?: string | null;
-    consentVersion?: string | null;
-  };
-  error?: string;
 };
 
 const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
@@ -291,61 +275,6 @@ function DebugSection({ title, body }: { title: string; body: string }) {
   );
 }
 
-function AiConsentModal({
-  open,
-  error,
-  isSubmitting,
-  onConfirm,
-  onLater,
-}: {
-  open: boolean;
-  error: string;
-  isSubmitting: boolean;
-  onConfirm: () => void;
-  onLater: () => void;
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/55 px-6 backdrop-blur-sm">
-      <section className="w-full max-w-sm rounded-[2rem] bg-white p-7 text-center shadow-2xl">
-        <h3 className="font-headline text-xl font-bold text-[#2f342e]">AI 데이터 전송 동의가 필요해요</h3>
-        <p className="mt-3 text-sm leading-relaxed text-[#4f5b63]">
-          대화 기능 제공을 위해 입력한 메시지와 대화 맥락 일부가 {AI_DATA_TRANSFER_PROVIDER_NAME}로 전송됩니다.
-        </p>
-        <div className="mt-4 rounded-xl border border-[#d7e0e6] bg-[#f7fbfd] px-4 py-3 text-left text-xs leading-relaxed text-[#42535c]">
-          <p>전송 항목:</p>
-          <ul className="mt-1 list-disc pl-4">
-            {AI_DATA_TRANSFER_SUMMARY.dataTypes.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-          <p className="mt-2">목적: {AI_DATA_TRANSFER_SUMMARY.purpose}</p>
-          <p className="mt-1">동의 버전: {AI_DATA_TRANSFER_CONSENT_VERSION}</p>
-        </div>
-        {error ? <p className="mt-3 text-xs font-bold text-[#b42318]">{error}</p> : null}
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={onLater}
-            disabled={isSubmitting}
-            className="rounded-xl border border-[#c8d1d7] bg-white py-3 text-sm font-bold text-[#2f342e] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            나중에
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isSubmitting}
-            className="rounded-xl bg-[#3e5560] py-3 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {isSubmitting ? "처리 중..." : "동의하고 시작"}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
 
 async function fetchFirstGreeting(runtime: PersonaRuntime, alias: string) {
   const styleSummary =
@@ -397,13 +326,8 @@ function ChatContainer() {
   const isNativeChatRuntime = Capacitor.isNativePlatform();
   const isIosRuntime = isNativeChatRuntime && Capacitor.getPlatform() === "ios";
   const [nativeChatFailed, setNativeChatFailed] = useState(false);
-  const [hasAiDataConsent, setHasAiDataConsent] = useState<boolean | null>(null);
-  const [isAiConsentModalOpen, setIsAiConsentModalOpen] = useState(false);
-  const [isAiConsentSubmitting, setIsAiConsentSubmitting] = useState(false);
-  const [aiConsentError, setAiConsentError] = useState("");
-  const shouldUseNativeChatScreen = isIosRuntime && !nativeChatFailed && hasAiDataConsent !== false;
+  const shouldUseNativeChatScreen = isIosRuntime && !nativeChatFailed;
   const chatId = searchParams.get("id");
-  const { data: session, status: sessionStatus } = useSession();
   const [runtime, setRuntime] = useState<PersonaRuntime | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -569,8 +493,6 @@ function ChatContainer() {
       first = firstAttempt.greeting;
       if (firstAttempt.requiresConsent) {
         consentRequired = true;
-        setHasAiDataConsent(false);
-        setIsAiConsentModalOpen(true);
       }
       if (!first) {
         await sleep(120);
@@ -578,8 +500,6 @@ function ChatContainer() {
         first = secondAttempt.greeting;
         if (secondAttempt.requiresConsent) {
           consentRequired = true;
-          setHasAiDataConsent(false);
-          setIsAiConsentModalOpen(true);
         }
       }
     } catch (error) {
@@ -587,6 +507,8 @@ function ChatContainer() {
     }
 
     if (consentRequired) {
+      const returnTo = runtime?.personaId ? `/chat?id=${runtime.personaId}` : "/chat/list";
+      router.push(`/signup?returnTo=${encodeURIComponent(returnTo)}`);
       setIsTyping(false);
       return;
     }
@@ -635,68 +557,6 @@ function ChatContainer() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (sessionStatus !== "authenticated") {
-      setHasAiDataConsent(null);
-      setIsAiConsentModalOpen(false);
-      setAiConsentError("");
-      return;
-    }
-
-    let cancelled = false;
-    const loadConsent = async () => {
-      try {
-        const response = await fetch("/api/user/ai-consent", { cache: "no-store" });
-        const payload = (await response.json().catch(() => ({}))) as AiConsentResponse;
-        if (cancelled) return;
-        if (!response.ok || !payload.ok) {
-          setHasAiDataConsent(null);
-          return;
-        }
-        const consented = Boolean(payload.consent?.consented);
-        setHasAiDataConsent(consented);
-        setIsAiConsentModalOpen(!consented);
-      } catch {
-        if (!cancelled) {
-          setHasAiDataConsent(null);
-        }
-      }
-    };
-
-    void loadConsent();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionStatus]);
-
-  async function updateAiConsent(agreed: boolean) {
-    if (isAiConsentSubmitting) return;
-    setIsAiConsentSubmitting(true);
-    setAiConsentError("");
-
-    try {
-      const response = await fetch("/api/user/ai-consent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agreed }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as AiConsentResponse;
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "동의 상태를 저장하지 못했습니다.");
-      }
-      const consented = Boolean(payload.consent?.consented);
-      setHasAiDataConsent(consented);
-      setIsAiConsentModalOpen(!consented);
-      if (!consented) {
-        router.push("/chat/list");
-      }
-    } catch (error) {
-      setAiConsentError(error instanceof Error ? error.message : "동의 처리 중 오류가 발생했습니다.");
-    } finally {
-      setIsAiConsentSubmitting(false);
-    }
-  }
 
   useEffect(() => {
     if (!shouldUseNativeChatScreen) {
@@ -1068,11 +928,6 @@ function ChatContainer() {
       setLockedPersonaName(runtime.displayName || activeChat.personaName || "이 기억");
       return;
     }
-    if (hasAiDataConsent === false) {
-      setAiConsentError("");
-      setIsAiConsentModalOpen(true);
-      return;
-    }
     if (isTyping) {
       showTypingBlockedNotice();
       return;
@@ -1147,9 +1002,8 @@ function ChatContainer() {
             memoryBalanceRef.current = previousBalance;
             setMemoryBalance(previousBalance);
           }
-          setHasAiDataConsent(false);
-          setAiConsentError(body.error || "");
-          setIsAiConsentModalOpen(true);
+          const returnTo = runtime?.personaId ? `/chat?id=${runtime.personaId}` : "/chat/list";
+          router.push(`/signup?returnTo=${encodeURIComponent(returnTo)}`);
           return;
         }
         if (response.status === 403 && body.code === "MEMORY_PASS_EXPIRED_LOCKED_PERSONA") {
@@ -1433,15 +1287,6 @@ function ChatContainer() {
             if (typeof window !== "undefined") {
               window.location.reload();
             }
-          }}
-        />
-        <AiConsentModal
-          open={isAiConsentModalOpen}
-          error={aiConsentError}
-          isSubmitting={isAiConsentSubmitting}
-          onLater={() => router.push("/chat/list")}
-          onConfirm={() => {
-            void updateAiConsent(true);
           }}
         />
         {modalNode}
@@ -1816,15 +1661,6 @@ function ChatContainer() {
           </div>
         </div>
       )}
-      <AiConsentModal
-        open={isAiConsentModalOpen}
-        error={aiConsentError}
-        isSubmitting={isAiConsentSubmitting}
-        onLater={() => router.push("/chat/list")}
-        onConfirm={() => {
-          void updateAiConsent(true);
-        }}
-      />
       {modalNode}
     </div>
   );
