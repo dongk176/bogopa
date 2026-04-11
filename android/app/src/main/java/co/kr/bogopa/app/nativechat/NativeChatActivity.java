@@ -464,14 +464,7 @@ public class NativeChatActivity extends AppCompatActivity {
                     dp(14),
                     dp(10) + navBottomInset
             );
-            ViewGroup.LayoutParams composerRawParams = composerContainer.getLayoutParams();
-            if (composerRawParams instanceof LinearLayout.LayoutParams) {
-                LinearLayout.LayoutParams composerParams = (LinearLayout.LayoutParams) composerRawParams;
-                if (composerParams.bottomMargin != imeOffset) {
-                    composerParams.bottomMargin = imeOffset;
-                    composerContainer.setLayoutParams(composerParams);
-                }
-            }
+            composerContainer.setTranslationY(-imeOffset);
 
             messageScrollView.setPadding(
                     messageScrollView.getPaddingLeft(),
@@ -917,7 +910,12 @@ public class NativeChatActivity extends AppCompatActivity {
     private void scrollToBottom(boolean animated) {
         if (messageScrollView == null) return;
         messageScrollView.post(() -> {
-            int target = Math.max(0, messageStack.getHeight() - messageScrollView.getHeight());
+            View child = messageScrollView.getChildAt(0);
+            if (child == null) return;
+            int target = Math.max(
+                    0,
+                    child.getBottom() + messageScrollView.getPaddingBottom() - messageScrollView.getHeight()
+            );
             if (animated) {
                 messageScrollView.smoothScrollTo(0, target);
             } else {
