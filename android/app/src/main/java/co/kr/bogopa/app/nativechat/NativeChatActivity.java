@@ -81,6 +81,7 @@ public class NativeChatActivity extends AppCompatActivity {
     private LinearLayout sheetPanel;
     private LinearLayout sheetList;
     private boolean isSheetVisible = false;
+    private int lastImeOffset = 0;
 
     private NativeChatState currentState;
     private String currentAvatarUrl;
@@ -435,7 +436,9 @@ public class NativeChatActivity extends AppCompatActivity {
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             Insets statusInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars());
             Insets navigationInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
             boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            int imeOffset = Math.max(0, imeInsets.bottom - navigationInsets.bottom);
             int navBottomInset = Math.max(navigationInsets.bottom, dp(6));
 
             headerContainer.setPadding(
@@ -451,12 +454,13 @@ public class NativeChatActivity extends AppCompatActivity {
                     dp(14),
                     dp(10) + navBottomInset
             );
+            composerContainer.setTranslationY(-imeOffset);
 
             messageScrollView.setPadding(
                     messageScrollView.getPaddingLeft(),
                     messageScrollView.getPaddingTop(),
                     messageScrollView.getPaddingRight(),
-                    navBottomInset
+                    navBottomInset + (imeOffset > 0 ? imeOffset + dp(10) : dp(6))
             );
 
             if (sheetPanel != null) {
@@ -468,9 +472,10 @@ public class NativeChatActivity extends AppCompatActivity {
                 );
             }
 
-            if (imeVisible) {
-                scrollToBottom(false);
+            if (imeVisible || lastImeOffset != imeOffset) {
+                scrollToBottom(true);
             }
+            lastImeOffset = imeOffset;
 
             return insets;
         });
