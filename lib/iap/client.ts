@@ -1,4 +1,4 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { IapPlatform, IapProductKey } from "@/lib/iap/catalog";
 
 type CatalogItem = {
@@ -28,6 +28,12 @@ type NativeIapPlugin = {
 const NATIVE_IAP_PLUGIN_CANDIDATES = ["NativeIap", "NativeIAP", "BogopaIap"] as const;
 const MEMORY_PASS_OWNERSHIP_CONFLICT_CODE = "IAP_MEMORY_PASS_OWNERSHIP_CONFLICT";
 
+const REGISTERED_NATIVE_IAP_PLUGINS = {
+  NativeIap: registerPlugin<NativeIapPlugin>("NativeIap"),
+  NativeIAP: registerPlugin<NativeIapPlugin>("NativeIAP"),
+  BogopaIap: registerPlugin<NativeIapPlugin>("BogopaIap"),
+} as const;
+
 export class MemoryPassOwnershipConflictError extends Error {
   readonly code = MEMORY_PASS_OWNERSHIP_CONFLICT_CODE;
   constructor(message: string) {
@@ -55,6 +61,12 @@ function resolveRuntimePlatform(): IapPlatform {
 }
 
 function getNativeIapPlugin(): NativeIapPlugin | null {
+  for (const key of NATIVE_IAP_PLUGIN_CANDIDATES) {
+    if (!Capacitor.isPluginAvailable(key)) continue;
+    const candidate = REGISTERED_NATIVE_IAP_PLUGINS[key];
+    if (candidate && typeof candidate.purchase === "function") return candidate;
+  }
+
   if (typeof window === "undefined") return null;
   const pluginMap = ((window as any).Capacitor?.Plugins ?? {}) as Record<string, unknown>;
   for (const key of NATIVE_IAP_PLUGIN_CANDIDATES) {
