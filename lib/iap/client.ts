@@ -62,18 +62,11 @@ function resolveRuntimePlatform(): IapPlatform {
 
 function getNativeIapPlugin(): NativeIapPlugin | null {
   for (const key of NATIVE_IAP_PLUGIN_CANDIDATES) {
+    // Only trust plugins the native bridge reports as available.
+    // Otherwise, registerPlugin() proxy can throw "plugin is not implemented".
     if (!Capacitor.isPluginAvailable(key)) continue;
     const candidate = REGISTERED_NATIVE_IAP_PLUGINS[key];
     if (candidate && typeof candidate.purchase === "function") return candidate;
-  }
-
-  if (typeof window === "undefined") return null;
-  const pluginMap = ((window as any).Capacitor?.Plugins ?? {}) as Record<string, unknown>;
-  for (const key of NATIVE_IAP_PLUGIN_CANDIDATES) {
-    const candidate = pluginMap[key] as NativeIapPlugin | undefined;
-    if (candidate && typeof candidate.purchase === "function") {
-      return candidate;
-    }
   }
   return null;
 }
