@@ -118,6 +118,29 @@ async function verifyWithStore(
       return verified;
     } catch (error) {
       const message = error instanceof Error ? error.message : "GOOGLE_PLAY_VERIFY_UNKNOWN";
+      const normalized = message.toUpperCase();
+      const isApiDisabled =
+        normalized.includes("SERVICE_DISABLED") ||
+        normalized.includes("ANDROIDPUBLISHER.GOOGLEAPIS.COM");
+      if (isApiDisabled) {
+        return {
+          ok: false,
+          code: "GOOGLE_PLAY_API_DISABLED",
+          message:
+            "Google Play 개발자 API가 비활성화되어 결제 검증에 실패했습니다. Console에서 Android Publisher API를 활성화한 뒤 다시 시도해 주세요.",
+        };
+      }
+      const isPermissionDenied =
+        normalized.includes("PERMISSION_DENIED") ||
+        normalized.includes("THE CURRENT USER HAS INSUFFICIENT PERMISSIONS");
+      if (isPermissionDenied) {
+        return {
+          ok: false,
+          code: "GOOGLE_PLAY_PERMISSION_DENIED",
+          message:
+            "Google Play 서비스 계정 권한이 부족해 결제 검증에 실패했습니다. Play Console > 사용자 및 권한에서 권한을 다시 확인해 주세요.",
+        };
+      }
       if (message.startsWith("GOOGLE_PLAY_PRODUCT_NOT_PURCHASED")) {
         return {
           ok: false,
