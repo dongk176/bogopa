@@ -5,6 +5,10 @@ import { findIapProductByStoreId, IapPlatform } from "@/lib/iap/catalog";
 import { applyVerifiedIapPurchase } from "@/lib/server/iap";
 import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 import {
+  applyVerifiedGooglePlayPurchase,
+  markGooglePurchasePostProcessStatus,
+} from "@/lib/server/google-iap";
+import {
   acknowledgeGooglePlaySubscription,
   consumeGooglePlayProduct,
   verifyGooglePlayProductPurchase,
@@ -78,6 +82,19 @@ type VerifyWithStoreResult =
       code: string;
       message: string;
     };
+
+function statusForStoreVerifyFailure(code: string) {
+  if (code === "ANDROID_PURCHASE_TOKEN_REQUIRED") return 400;
+  if (code === "GOOGLE_PLAY_PRODUCT_NOT_PURCHASED") return 409;
+  if (code === "GOOGLE_PLAY_SUBSCRIPTION_NOT_ACTIVE") return 409;
+  if (code === "SUBSCRIPTION_NATIVE_VERIFICATION_REQUIRED") return 409;
+  if (code === "GOOGLE_PLAY_API_DISABLED") return 500;
+  if (code === "GOOGLE_PLAY_PERMISSION_DENIED") return 500;
+  if (code === "GOOGLE_PLAY_NOT_CONFIGURED") return 500;
+  if (code === "GOOGLE_PLAY_VERIFY_FAILED") return 500;
+  if (code === "STORE_VERIFY_NOT_CONFIGURED") return 500;
+  return 500;
+}
 
 async function verifyWithStore(
   input: VerifyPurchaseBody,
@@ -228,7 +245,10 @@ export async function POST(request: Request) {
   try {
     const verified = await verifyWithStore(body, { productKey: product.key, productId });
     if (!verified.ok) {
-      return NextResponse.json({ error: verified.message, code: verified.code }, { status: 501 });
+      return NextResponse.json(
+        { error: verified.message, code: verified.code },
+        { status: statusForStoreVerifyFailure(verified.code) },
+      );
     }
 
     const verifiedTransactionId = normalizeNonEmpty(verified.transactionId);
@@ -248,17 +268,31 @@ export async function POST(request: Request) {
       signature: normalizeNonEmpty(body.signature),
     };
 
-    const applied = await applyVerifiedIapPurchase({
-      userId: sessionUser.id,
-      platform,
-      productId,
-      transactionId: resolvedTransactionId,
-      originalTransactionId: resolvedOriginalTransactionId,
-      purchasedAt: resolvedPurchasedAt,
-      rawPayload: resolvedRawPayload,
-    });
+    // Android and iOS persist purchase sources separately to prevent cross-platform coupling.
+    const applied =
+      platform === "android"
+        ? await applyVerifiedGooglePlayPurchase({
+            userId: sessionUser.id,
+            productId,
+            productKey: product.key,
+            transactionId: resolvedTransactionId,
+            originalTransactionId: resolvedOriginalTransactionId,
+            purchaseToken: resolvedPurchaseToken,
+            purchasedAt: resolvedPurchasedAt,
+            rawPayload: resolvedRawPayload,
+            acknowledgementStatus: product.key === "memory_pass_monthly" ? "pending" : "not_required",
+          })
+        : await applyVerifiedIapPurchase({
+            userId: sessionUser.id,
+            platform,
+            productId,
+            transactionId: resolvedTransactionId,
+            originalTransactionId: resolvedOriginalTransactionId,
+            purchasedAt: resolvedPurchasedAt,
+            rawPayload: resolvedRawPayload,
+          });
 
-    if (product.key === "memory_pass_monthly" && !applied.isSubscribed) {
+    if (platform === "ios" && product.key === "memory_pass_monthly" && !applied.isSubscribed) {
       return NextResponse.json(
         {
           error: "유효한 구독 결제 내역을 확인하지 못했습니다. 스토어 결제를 다시 진행해 주세요.",
@@ -278,13 +312,27 @@ export async function POST(request: Request) {
             productId,
             purchaseToken: resolvedPurchaseToken,
           });
+          await markGooglePurchasePostProcessStatus({
+            transactionId: resolvedTransactionId,
+            acknowledgeStatus: "acknowledged",
+          });
         } else if (product.type === "consumable") {
           await consumeGooglePlayProduct({
             productId,
             purchaseToken: resolvedPurchaseToken,
           });
+          await markGooglePurchasePostProcessStatus({
+            transactionId: resolvedTransactionId,
+            consumeStatus: "consumed",
+          });
         }
       } catch (postError) {
+        await markGooglePurchasePostProcessStatus({
+          transactionId: resolvedTransactionId,
+          acknowledgeStatus: product.key === "memory_pass_monthly" ? "failed" : undefined,
+          consumeStatus: product.type === "consumable" ? "failed" : undefined,
+          postprocessNote: postError instanceof Error ? postError.message : String(postError),
+        });
         console.warn("[api-iap-verify] android post process failed", {
           productKey: product.key,
           productId,

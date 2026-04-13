@@ -135,6 +135,27 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
   let isSubscribed = false;
   let syncedFromApple = false;
   let appleTableAvailable = false;
+  let hasIosMemoryPassPurchase = false;
+
+  try {
+    const iosPurchaseRes = await pool.query(
+      `
+      SELECT EXISTS(
+        SELECT 1
+        FROM bogopa.user_iap_purchases
+        WHERE user_id = $1
+          AND product_key = 'memory_pass_monthly'
+          AND platform = 'ios'
+      ) AS has_ios_purchase
+      `,
+      [userId],
+    );
+    hasIosMemoryPassPurchase = Boolean(iosPurchaseRes.rows[0]?.has_ios_purchase);
+  } catch (error: any) {
+    if (error?.code !== "42P01") {
+      throw error;
+    }
+  }
 
   try {
     const memoryPassProduct = getIapCatalog().find((item) => item.key === "memory_pass_monthly");
@@ -161,19 +182,21 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
       [userId, productIds],
     );
     appleTableAvailable = true;
-    const subRow = subscriptionRes.rows[0] as { status?: string; expires_at?: string | Date | null } | undefined;
-    if (subRow) {
-      syncedFromApple = true;
-      const status = String(subRow.status || "").trim().toLowerCase();
-      const expiresAtIso = subRow.expires_at ? new Date(subRow.expires_at).toISOString() : null;
-      const expiresAtMs = expiresAtIso ? new Date(expiresAtIso).getTime() : null;
-      const hasExpiry = typeof expiresAtMs === "number" && Number.isFinite(expiresAtMs);
-      const notExpired = !hasExpiry || (expiresAtMs as number) > Date.now();
-      isSubscribed = status === "active" && notExpired;
-    } else {
-      // apple_subscriptions 테이블이 존재하지만 사용자 구독 행이 없으면 미구독으로 본다.
-      syncedFromApple = true;
-      isSubscribed = false;
+    if (hasIosMemoryPassPurchase) {
+      const subRow = subscriptionRes.rows[0] as { status?: string; expires_at?: string | Date | null } | undefined;
+      if (subRow) {
+        syncedFromApple = true;
+        const status = String(subRow.status || "").trim().toLowerCase();
+        const expiresAtIso = subRow.expires_at ? new Date(subRow.expires_at).toISOString() : null;
+        const expiresAtMs = expiresAtIso ? new Date(expiresAtIso).getTime() : null;
+        const hasExpiry = typeof expiresAtMs === "number" && Number.isFinite(expiresAtMs);
+        const notExpired = !hasExpiry || (expiresAtMs as number) > Date.now();
+        isSubscribed = status === "active" && notExpired;
+      } else {
+        // iOS 구독 구매 이력이 있는데 snapshot이 없으면 미구독으로 본다.
+        syncedFromApple = true;
+        isSubscribed = false;
+      }
     }
   } catch (error: any) {
     if (error?.code !== "42P01") {
@@ -213,6 +236,26 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
   } catch (error: any) {
     if (error?.code !== "42P01") {
       throw error;
+    }
+  }
+  if (!hasPurchasedMemoryPass) {
+    try {
+      const googlePurchasedRes = await pool.query(
+        `
+        SELECT EXISTS(
+          SELECT 1
+          FROM bogopa.google_iap_purchases
+          WHERE user_id = $1
+            AND product_key = 'memory_pass_monthly'
+        ) AS has_purchased
+        `,
+        [userId],
+      );
+      hasPurchasedMemoryPass = Boolean(googlePurchasedRes.rows[0]?.has_purchased);
+    } catch (error: any) {
+      if (error?.code !== "42P01") {
+        throw error;
+      }
     }
   }
   const unlimitedChatExpiresAtRaw = current?.unlimited_chat_expires_at
