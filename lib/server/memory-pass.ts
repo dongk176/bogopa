@@ -204,7 +204,9 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
     }
   }
 
-  if (!syncedFromApple && !appleTableAvailable) {
+  // Apple snapshot is authoritative only when we actually synced from it.
+  // For Android-only users (or any case with no Apple sync), keep local entitlement state.
+  if (!syncedFromApple) {
     isSubscribed = fallbackIsSubscribed;
   }
 
