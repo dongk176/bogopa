@@ -321,6 +321,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "등록되지 않은 상품입니다." }, { status: 400 });
     }
     if (message === "IAP_TRANSACTION_ALREADY_USED") {
+      // Android consumable stale-owned recovery:
+      // If an old token was already tied to another account and left unconsumed,
+      // clean up the token so the user can repurchase immediately.
+      if (platform === "android" && product.type === "consumable") {
+        const stalePurchaseToken = extractAndroidPurchaseToken(body);
+        if (stalePurchaseToken) {
+          try {
+            await consumeGooglePlayProduct({
+              productId,
+              purchaseToken: stalePurchaseToken,
+            });
+            return NextResponse.json(
+              {
+                error: "기존 미소비 구매를 정리했습니다. 다시 한 번 구매해 주세요.",
+                code: "GOOGLE_PLAY_STALE_OWNED_CONSUMED",
+              },
+              { status: 409 },
+            );
+          } catch (consumeError) {
+            console.warn("[api-iap-verify] stale consumable cleanup failed", {
+              platform,
+              productId,
+              purchaseToken: stalePurchaseToken,
+              error: consumeError instanceof Error ? consumeError.message : String(consumeError),
+            });
+          }
+        }
+      }
       return NextResponse.json({ error: "이미 다른 계정에서 사용된 거래입니다." }, { status: 409 });
     }
     if (message === "IAP_SUBSCRIPTION_OWNED_BY_ANOTHER_ACCOUNT") {
