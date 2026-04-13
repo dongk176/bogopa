@@ -509,7 +509,7 @@ function PaymentContent() {
             onClick={handleRestore}
             className="text-sm font-bold text-[#4a626d] underline underline-offset-4 transition-colors hover:text-[#2f342e]"
           >
-            {isRestoring ? "복원 처리 중..." : "App Store 구매 내역 복원"}
+            {isRestoring ? "복원 처리 중..." : "스토어 구매 내역 복원"}
           </button>
         </div>
 

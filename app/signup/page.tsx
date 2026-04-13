@@ -273,6 +273,30 @@ function isAtLeastAge(birthDate: string, minAge: number) {
   return age >= minAge;
 }
 
+function getBirthDateParts(value: string) {
+  const [year = "", month = "", day = ""] = value.split("-");
+  return {
+    year,
+    month,
+    day,
+  };
+}
+
+function getDaysInMonth(year: string, month: string) {
+  const normalizedYear = Number(year);
+  const normalizedMonth = Number(month);
+  if (
+    Number.isFinite(normalizedYear) &&
+    Number.isFinite(normalizedMonth) &&
+    normalizedYear > 0 &&
+    normalizedMonth >= 1 &&
+    normalizedMonth <= 12
+  ) {
+    return new Date(normalizedYear, normalizedMonth, 0).getDate();
+  }
+  return 31;
+}
+
 function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -283,6 +307,7 @@ function SignupContent() {
   const [hasLocalDraft, setHasLocalDraft] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRouteTransitioning, setIsRouteTransitioning] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
 
   const [name, setName] = useState("");
@@ -307,6 +332,30 @@ function SignupContent() {
   const canSubmit = useMemo(() => {
     return mbti.length === 4 && interests.length > 0 && aiDataTransferConsentAgreed;
   }, [mbti, interests, aiDataTransferConsentAgreed]);
+
+  const birthDateParts = useMemo(() => getBirthDateParts(birthDate), [birthDate]);
+  const birthYearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const maxYear = currentYear - 14;
+    const years: string[] = [];
+    for (let year = maxYear; year >= 1930; year -= 1) {
+      years.push(String(year));
+    }
+    return years;
+  }, []);
+  const birthMonthOptions = useMemo(
+    () => Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")),
+    [],
+  );
+  const birthDayOptions = useMemo(() => {
+    const daysInMonth = getDaysInMonth(birthDateParts.year, birthDateParts.month);
+    return Array.from({ length: daysInMonth }, (_, index) => String(index + 1).padStart(2, "0"));
+  }, [birthDateParts.month, birthDateParts.year]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsAndroid(/Android/i.test(window.navigator.userAgent));
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -504,6 +553,27 @@ function SignupContent() {
     }, 1800);
   }
 
+  function updateAndroidBirthDate(part: "year" | "month" | "day", value: string) {
+    const nextParts = {
+      ...birthDateParts,
+      [part]: value,
+    };
+
+    if (part === "year" || part === "month") {
+      const maxDay = getDaysInMonth(nextParts.year, nextParts.month);
+      if (nextParts.day && Number(nextParts.day) > maxDay) {
+        nextParts.day = String(maxDay).padStart(2, "0");
+      }
+    }
+
+    if (!nextParts.year && !nextParts.month && !nextParts.day) {
+      setBirthDate("");
+      return;
+    }
+
+    setBirthDate(`${nextParts.year}-${nextParts.month}-${nextParts.day}`);
+  }
+
   function goNext() {
     if (!canNextStep) {
       setError("이름, 생년월일, 성별을 모두 입력해주세요.");
@@ -646,19 +716,72 @@ function SignupContent() {
                     <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="signupBirthDate">
                       생년월일
                     </label>
-                    <div className="group relative overflow-hidden rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] transition-all duration-300 focus-within:ring-2 focus-within:ring-[#4a626d]/20">
-                      <input
-                        id="signupBirthDate"
-                        name="signupBirthDate"
-                        type="date"
-                        value={birthDate}
-                        onChange={(event) => setBirthDate(event.target.value)}
-                        className="block w-full min-w-0 max-w-full bg-transparent pl-6 pr-14 py-4 text-lg text-[#2f342e] outline-none ring-0 appearance-none [-webkit-appearance:none] [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:pointer-events-none"
-                      />
-                      <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#787c75]">
-                        <CalendarIcon />
+                    {isAndroid ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="relative overflow-hidden rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef]">
+                          <select
+                            id="signupBirthDateYear"
+                            name="signupBirthDateYear"
+                            value={birthDateParts.year}
+                            onChange={(event) => updateAndroidBirthDate("year", event.target.value)}
+                            className="h-14 w-full bg-transparent px-4 text-base font-medium text-[#2f342e] outline-none"
+                          >
+                            <option value="">년</option>
+                            {birthYearOptions.map((year) => (
+                              <option key={`birth-year-${year}`} value={year}>
+                                {year}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="relative overflow-hidden rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef]">
+                          <select
+                            id="signupBirthDateMonth"
+                            name="signupBirthDateMonth"
+                            value={birthDateParts.month}
+                            onChange={(event) => updateAndroidBirthDate("month", event.target.value)}
+                            className="h-14 w-full bg-transparent px-4 text-base font-medium text-[#2f342e] outline-none"
+                          >
+                            <option value="">월</option>
+                            {birthMonthOptions.map((month) => (
+                              <option key={`birth-month-${month}`} value={month}>
+                                {month}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="relative overflow-hidden rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef]">
+                          <select
+                            id="signupBirthDateDay"
+                            name="signupBirthDateDay"
+                            value={birthDateParts.day}
+                            onChange={(event) => updateAndroidBirthDate("day", event.target.value)}
+                            className="h-14 w-full bg-transparent px-4 text-base font-medium text-[#2f342e] outline-none"
+                          >
+                            <option value="">일</option>
+                            {birthDayOptions.map((day) => (
+                              <option key={`birth-day-${day}`} value={day}>
+                                {day}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="group relative overflow-hidden rounded-xl border border-[#afb3ac]/45 bg-[#f4f4ef] transition-all duration-300 focus-within:ring-2 focus-within:ring-[#4a626d]/20">
+                        <input
+                          id="signupBirthDate"
+                          name="signupBirthDate"
+                          type="date"
+                          value={birthDate}
+                          onChange={(event) => setBirthDate(event.target.value)}
+                          className="block w-full min-w-0 max-w-full appearance-none bg-transparent py-4 pl-6 pr-14 text-lg text-[#2f342e] outline-none ring-0 [-webkit-appearance:none] [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0"
+                        />
+                        <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#787c75]">
+                          <CalendarIcon />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-4">

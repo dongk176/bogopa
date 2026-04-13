@@ -470,34 +470,59 @@ export async function setUserAiDataConsent(input: {
 }) {
   await ensureUsersTable();
   const pool = getDbPool();
+  const consentParams = [input.userId, input.agreed, input.version || "", input.source || "settings"];
 
-  await pool.query(
+  const updated = await pool.query(
     `
-    INSERT INTO bogopa."users" (
-      "id",
-      "ai_data_transfer_consented",
-      "ai_data_transfer_consented_at",
-      "ai_data_transfer_consent_version",
-      "ai_data_transfer_consent_source",
-      "updated_at"
-    )
-    VALUES (
-      $1,
-      $2,
-      CASE WHEN $2 THEN NOW() ELSE NULL END,
-      CASE WHEN $2 THEN NULLIF($3, '') ELSE NULL END,
-      NULLIF($4, ''),
-      CURRENT_TIMESTAMP
-    )
-    ON CONFLICT ("id") DO UPDATE
-    SET "ai_data_transfer_consented" = EXCLUDED.ai_data_transfer_consented,
-        "ai_data_transfer_consented_at" = EXCLUDED.ai_data_transfer_consented_at,
-        "ai_data_transfer_consent_version" = EXCLUDED.ai_data_transfer_consent_version,
-        "ai_data_transfer_consent_source" = EXCLUDED.ai_data_transfer_consent_source,
-        "updated_at" = CURRENT_TIMESTAMP;
+    UPDATE bogopa."users"
+    SET "ai_data_transfer_consented" = $2,
+        "ai_data_transfer_consented_at" = CASE WHEN $2 THEN NOW() ELSE NULL END,
+        "ai_data_transfer_consent_version" = CASE WHEN $2 THEN NULLIF($3, '') ELSE NULL END,
+        "ai_data_transfer_consent_source" = NULLIF($4, ''),
+        "updated_at" = CURRENT_TIMESTAMP
+    WHERE "id" = $1
+    RETURNING "id";
     `,
-    [input.userId, input.agreed, input.version || "", input.source || "settings"],
+    consentParams,
   );
+
+  if (!updated.rowCount) {
+    const fallbackName = input.userId.startsWith("local:")
+      ? input.userId.slice("local:".length) || "사용자"
+      : "사용자";
+
+    await pool.query(
+      `
+      INSERT INTO bogopa."users" (
+        "id",
+        "name",
+        "provider",
+        "ai_data_transfer_consented",
+        "ai_data_transfer_consented_at",
+        "ai_data_transfer_consent_version",
+        "ai_data_transfer_consent_source",
+        "updated_at"
+      )
+      VALUES (
+        $1,
+        $5,
+        'unknown',
+        $2,
+        CASE WHEN $2 THEN NOW() ELSE NULL END,
+        CASE WHEN $2 THEN NULLIF($3, '') ELSE NULL END,
+        NULLIF($4, ''),
+        CURRENT_TIMESTAMP
+      )
+      ON CONFLICT ("id") DO UPDATE
+      SET "ai_data_transfer_consented" = EXCLUDED.ai_data_transfer_consented,
+          "ai_data_transfer_consented_at" = EXCLUDED.ai_data_transfer_consented_at,
+          "ai_data_transfer_consent_version" = EXCLUDED.ai_data_transfer_consent_version,
+          "ai_data_transfer_consent_source" = EXCLUDED.ai_data_transfer_consent_source,
+          "updated_at" = CURRENT_TIMESTAMP;
+      `,
+      [consentParams[0], consentParams[1], consentParams[2], consentParams[3], fallbackName],
+    );
+  }
 
   return getUserAiDataConsent(input.userId);
 }
