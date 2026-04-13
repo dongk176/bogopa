@@ -22,11 +22,11 @@ export type IapProduct = {
 const DEFAULT_PRODUCT_IDS: Record<IapProductKey, { ios: string; android: string }> = {
   memory_pass_monthly: {
     ios: "co.kr.bogopa.pass.monthly",
-    android: "co.kr.bogopa.pass.monthly",
+    android: "co.kr.bogopa.pass.m.v2",
   },
   memory_pack_200: {
     ios: "co.kr.bogopa.app.memory.200",
-    android: "co.kr.bogopa.app.memory.200",
+    android: "co.kr.bogopa.app.memory.200.v2",
   },
   memory_pack_1000: {
     ios: "co.kr.bogopa.app.memory.1000",
@@ -40,6 +40,11 @@ const DEFAULT_PRODUCT_IDS: Record<IapProductKey, { ios: string; android: string 
     ios: "co.kr.bogopa.unlimited.24h",
     android: "co.kr.bogopa.unlimited.24h",
   },
+};
+
+const LEGACY_ANDROID_PRODUCT_IDS: Partial<Record<IapProductKey, string[]>> = {
+  memory_pass_monthly: ["co.kr.bogopa.pass.monthly"],
+  memory_pack_200: ["co.kr.bogopa.app.memory.200"],
 };
 
 function readEnvId(name: string, fallback: string) {
@@ -106,7 +111,8 @@ export function findIapProductByStoreId(input: { platform: IapPlatform; productI
     catalog.find((item) =>
       input.platform === "ios"
         ? item.iosProductId === normalizedProductId
-        : item.androidProductId === normalizedProductId,
+        : item.androidProductId === normalizedProductId ||
+          (LEGACY_ANDROID_PRODUCT_IDS[item.key] || []).includes(normalizedProductId),
     ) || null
   );
 }
