@@ -137,7 +137,6 @@ async function preflightMemoryPassOwnership(input: {
   storeProductId: string;
   nativeIap: NativeIapPlugin;
 }) {
-  if (input.platform !== "ios") return;
   if (typeof input.nativeIap.restore !== "function") return;
 
   let restored: NativeIapPurchaseResult[] = [];
@@ -152,14 +151,18 @@ async function preflightMemoryPassOwnership(input: {
   const target = restored.find((item) => {
     const productId = String(item.productId || item.rawPayload?.productId || "").trim();
     if (!productId || productId !== input.storeProductId) return false;
-    return isLikelyActiveSubscriptionPayload(item);
+    if (input.platform === "ios") return isLikelyActiveSubscriptionPayload(item);
+    return true;
   });
   if (!target) return;
 
   const originalTransactionId = String(
     target.originalTransactionId || target.rawPayload?.originalTransactionId || "",
   ).trim();
-  if (!originalTransactionId) return;
+  const purchaseToken = String(target.purchaseToken || target.rawPayload?.purchaseToken || "").trim();
+
+  if (input.platform === "ios" && !originalTransactionId) return;
+  if (input.platform === "android" && !purchaseToken) return;
 
   const response = await fetch("/api/iap/memory-pass/preflight", {
     method: "POST",
@@ -168,13 +171,17 @@ async function preflightMemoryPassOwnership(input: {
       platform: input.platform,
       productId: input.storeProductId,
       originalTransactionId,
+      purchaseToken,
     }),
   });
   const data = await response.json().catch(() => ({}));
 
   if (response.status === 409 || data?.code === "MEMORY_PASS_OWNED_BY_OTHER_ACTIVE") {
     const message = String(
-      data?.error || "현재 Apple 계정의 기억 패스는 다른 보고파 아이디에 연결되어 있습니다.",
+      data?.error ||
+        (input.platform === "android"
+          ? "현재 Google 계정의 기억 패스는 다른 보고파 아이디에 연결되어 있습니다."
+          : "현재 Apple 계정의 기억 패스는 다른 보고파 아이디에 연결되어 있습니다."),
     );
     throw new MemoryPassOwnershipConflictError(message);
   }

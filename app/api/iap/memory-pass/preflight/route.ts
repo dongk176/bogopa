@@ -3,12 +3,14 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { findIapProductByStoreId, IapPlatform } from "@/lib/iap/catalog";
 import { ensureIapTables } from "@/lib/server/iap";
+import { ensureGoogleIapTables } from "@/lib/server/google-iap";
 import { getDbPool } from "@/lib/server/db";
 
 type PreflightBody = {
   platform?: IapPlatform;
   productId?: string;
   originalTransactionId?: string;
+  purchaseToken?: string;
 };
 
 function normalizeNonEmpty(value: unknown) {
@@ -40,13 +42,20 @@ export async function POST(request: Request) {
   const platform = normalizePlatform(body.platform);
   const productId = normalizeNonEmpty(body.productId);
   const originalTransactionId = normalizeNonEmpty(body.originalTransactionId);
+  const purchaseToken = normalizeNonEmpty(body.purchaseToken);
   const userId = normalizeNonEmpty(sessionUser.id);
 
   if (!platform) {
     return NextResponse.json({ error: "platform은 ios 또는 android여야 합니다." }, { status: 400 });
   }
-  if (!productId || !originalTransactionId) {
-    return NextResponse.json({ error: "productId/originalTransactionId가 필요합니다." }, { status: 400 });
+  if (!productId) {
+    return NextResponse.json({ error: "productId가 필요합니다." }, { status: 400 });
+  }
+  if (platform === "ios" && !originalTransactionId) {
+    return NextResponse.json({ error: "originalTransactionId가 필요합니다." }, { status: 400 });
+  }
+  if (platform === "android" && !purchaseToken) {
+    return NextResponse.json({ error: "purchaseToken이 필요합니다." }, { status: 400 });
   }
 
   const product = findIapProductByStoreId({ platform, productId });
@@ -55,24 +64,44 @@ export async function POST(request: Request) {
   }
 
   try {
-    await ensureIapTables();
+    if (platform === "android") {
+      await ensureGoogleIapTables();
+    } else {
+      await ensureIapTables();
+    }
     const pool = getDbPool();
-
-    const subRes = await pool.query(
-      `
-      SELECT
-        s.user_id,
-        s.status,
-        s.expires_at,
-        u.name
-      FROM bogopa.apple_subscriptions s
-      LEFT JOIN bogopa.users u ON u.id = s.user_id
-      WHERE s.original_transaction_id = $1
-      ORDER BY s.updated_at DESC
-      LIMIT 1
-      `,
-      [originalTransactionId],
-    );
+    const subRes =
+      platform === "ios"
+        ? await pool.query(
+            `
+            SELECT
+              s.user_id,
+              s.status,
+              s.expires_at,
+              u.name
+            FROM bogopa.apple_subscriptions s
+            LEFT JOIN bogopa.users u ON u.id = s.user_id
+            WHERE s.original_transaction_id = $1
+            ORDER BY s.updated_at DESC
+            LIMIT 1
+            `,
+            [originalTransactionId],
+          )
+        : await pool.query(
+            `
+            SELECT
+              s.user_id,
+              s.status,
+              s.expires_at,
+              u.name
+            FROM bogopa.google_subscriptions s
+            LEFT JOIN bogopa.users u ON u.id = s.user_id
+            WHERE s.purchase_token = $1
+            ORDER BY s.updated_at DESC
+            LIMIT 1
+            `,
+            [purchaseToken],
+          );
 
     const row = subRes.rows[0] as
       | {
@@ -89,20 +118,25 @@ export async function POST(request: Request) {
 
     const ownerUserId = normalizeNonEmpty(row.user_id);
     const ownerName = normalizeNonEmpty(row.name);
-    const status = normalizeNonEmpty(row.status).toLowerCase();
+    const status = normalizeNonEmpty(row.status);
     const expiresAtMs = row.expires_at ? new Date(row.expires_at).getTime() : null;
     const notExpired = typeof expiresAtMs === "number" ? expiresAtMs > Date.now() : true;
-    const effectivelyActive = status === "active" && notExpired;
+    const effectivelyActive =
+      platform === "ios"
+        ? status.toLowerCase() === "active" && notExpired
+        : new Set(["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD"]).has(status.toUpperCase()) &&
+          notExpired;
 
     if (ownerUserId && ownerUserId !== userId && effectivelyActive) {
       const ownerLabel = maskOwnerLabel(ownerName || ownerUserId);
+      const storeLabel = platform === "android" ? "Google" : "Apple";
       return NextResponse.json(
         {
           ok: false,
           blocked: true,
           code: "MEMORY_PASS_OWNED_BY_OTHER_ACTIVE",
           owner: ownerLabel,
-          error: `이 Apple 계정 구독은 ${ownerLabel}에 연결되어 있어요. 해당 계정으로 로그인해 주세요.`,
+          error: `이 ${storeLabel} 계정 구독은 ${ownerLabel}에 연결되어 있어요. 해당 계정으로 로그인해 주세요.`,
         },
         { status: 409 },
       );
