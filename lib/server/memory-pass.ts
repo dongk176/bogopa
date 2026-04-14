@@ -134,7 +134,7 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
   const memoryBalance = Number(current?.memory_balance || 0);
   let isSubscribed = false;
   let syncedFromApple = false;
-  let appleTableAvailable = false;
+  let syncedFromGoogle = false;
   let hasIosMemoryPassPurchase = false;
 
   try {
@@ -181,7 +181,6 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
       `,
       [userId, productIds],
     );
-    appleTableAvailable = true;
     if (hasIosMemoryPassPurchase) {
       const subRow = subscriptionRes.rows[0] as { status?: string; expires_at?: string | Date | null } | undefined;
       if (subRow) {
@@ -204,9 +203,59 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
     }
   }
 
-  // Apple snapshot is authoritative only when we actually synced from it.
-  // For Android-only users (or any case with no Apple sync), keep local entitlement state.
+  // Apple 구독 이력이 없는 경우 Android 구독 snapshot으로 상태를 보정한다.
   if (!syncedFromApple) {
+    try {
+      const memoryPassProduct = getIapCatalog().find((item) => item.key === "memory_pass_monthly");
+      const androidProductIds = Array.from(
+        new Set(
+          [
+            memoryPassProduct?.androidProductId,
+            // legacy android sku
+            "co.kr.bogopa.pass.monthly",
+          ]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      const googleSubRes = await pool.query(
+        `
+        SELECT status, expires_at
+        FROM bogopa.google_subscriptions
+        WHERE user_id = $1
+          AND (
+            COALESCE(array_length($2::text[], 1), 0) = 0
+            OR store_product_id = ANY($2::text[])
+          )
+        ORDER BY updated_at DESC
+        LIMIT 1
+        `,
+        [userId, androidProductIds],
+      );
+
+      const googleSub = googleSubRes.rows[0] as
+        | { status?: string; expires_at?: string | Date | null }
+        | undefined;
+      if (googleSub) {
+        syncedFromGoogle = true;
+        const status = String(googleSub.status || "").trim().toUpperCase();
+        const expiresAtIso = googleSub.expires_at ? new Date(googleSub.expires_at).toISOString() : null;
+        const expiresAtMs = expiresAtIso ? new Date(expiresAtIso).getTime() : null;
+        const hasExpiry = typeof expiresAtMs === "number" && Number.isFinite(expiresAtMs);
+        const notExpired = !hasExpiry || (expiresAtMs as number) > Date.now();
+        const activeStates = new Set(["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD"]);
+        isSubscribed = activeStates.has(status) && notExpired;
+      }
+    } catch (error: any) {
+      if (error?.code !== "42P01") {
+        throw error;
+      }
+    }
+  }
+
+  // Apple/Google snapshot이 없는 경우에만 로컬 entitlement 상태를 사용한다.
+  if (!syncedFromApple && !syncedFromGoogle) {
     isSubscribed = fallbackIsSubscribed;
   }
 
