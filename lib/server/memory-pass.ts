@@ -244,8 +244,12 @@ export async function getOrCreateMemoryPassStatus(userId: string): Promise<Memor
         const expiresAtMs = expiresAtIso ? new Date(expiresAtIso).getTime() : null;
         const hasExpiry = typeof expiresAtMs === "number" && Number.isFinite(expiresAtMs);
         const notExpired = !hasExpiry || (expiresAtMs as number) > Date.now();
-        const activeStates = new Set(["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD"]);
-        isSubscribed = activeStates.has(status) && notExpired;
+        const entitledStates = new Set([
+          "SUBSCRIPTION_STATE_ACTIVE",
+          "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
+          "SUBSCRIPTION_STATE_CANCELED",
+        ]);
+        isSubscribed = entitledStates.has(status) && notExpired;
       }
     } catch (error: any) {
       if (error?.code !== "42P01") {

@@ -124,7 +124,11 @@ export async function POST(request: Request) {
     const effectivelyActive =
       platform === "ios"
         ? status.toLowerCase() === "active" && notExpired
-        : new Set(["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD"]).has(status.toUpperCase()) &&
+        : new Set([
+            "SUBSCRIPTION_STATE_ACTIVE",
+            "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
+            "SUBSCRIPTION_STATE_CANCELED",
+          ]).has(status.toUpperCase()) &&
           notExpired;
 
     if (ownerUserId && ownerUserId !== userId && effectivelyActive) {

@@ -153,8 +153,15 @@ function inferGoogleSubscriptionSnapshot(rawPayload: Record<string, unknown>) {
 
 function isEffectivelyActiveSubscription(input: { status: string; expiresAt: string | null }) {
   const normalizedStatus = input.status.toUpperCase();
-  const activeStates = new Set(["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD"]);
-  if (!activeStates.has(normalizedStatus)) return false;
+  // Google은 "취소 예약" 상태를 SUBSCRIPTION_STATE_CANCELED로 내리더라도
+  // expires_at 이전에는 실제 사용 권한이 남아있다.
+  // 따라서 만료 전에는 소유권/권한을 유지해야 계정 간 오인 이전을 막을 수 있다.
+  const entitledStates = new Set([
+    "SUBSCRIPTION_STATE_ACTIVE",
+    "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
+    "SUBSCRIPTION_STATE_CANCELED",
+  ]);
+  if (!entitledStates.has(normalizedStatus)) return false;
   if (!input.expiresAt) return true;
   return new Date(input.expiresAt).getTime() > Date.now();
 }
@@ -292,6 +299,7 @@ export async function applyVerifiedGooglePlayPurchase(
   const purchasedAtIso = normalizeOptionalDate(input.purchasedAt);
   const acknowledgementStatus = normalizeNonEmpty(input.acknowledgementStatus) || "not_required";
   const rawPayload = input.rawPayload || {};
+  const linkedPurchaseToken = normalizeNonEmpty((rawPayload as Record<string, unknown>)?.linkedPurchaseToken);
 
   if (!userId) throw new Error("IAP_USER_ID_REQUIRED");
   if (!productId) throw new Error("IAP_PRODUCT_ID_REQUIRED");
@@ -312,14 +320,16 @@ export async function applyVerifiedGooglePlayPurchase(
 
     if (product.key === "memory_pass_monthly") {
       const snapshot = inferGoogleSubscriptionSnapshot(rawPayload);
+      const ownershipTokens = Array.from(new Set([purchaseToken, linkedPurchaseToken].filter(Boolean)));
       const ownerRes = await client.query(
         `
         SELECT user_id, status, expires_at
         FROM bogopa.google_subscriptions
-        WHERE purchase_token = $1
+        WHERE purchase_token = ANY($1::text[])
+        ORDER BY updated_at DESC
         LIMIT 1
         `,
-        [purchaseToken],
+        [ownershipTokens],
       );
       const ownerRow = ownerRes.rows[0] as
         | { user_id?: string | null; status?: string | null; expires_at?: string | Date | null }
