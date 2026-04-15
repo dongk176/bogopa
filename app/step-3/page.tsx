@@ -1202,17 +1202,12 @@ export default function StepThreePage() {
             </ul>
 
             <div className="mt-5 rounded-2xl bg-[#304b5a] px-4 py-3 text-center text-[#f8fbff]">
-              <p className="text-xs font-semibold text-[#f8fbff]/90">{hasPurchasedMemoryPass ? "기억 패스 재구독" : "첫 달 특가"}</p>
+              <p className="text-xs font-semibold text-[#f8fbff]/90">월 구독 요금</p>
               <div className="mt-1 flex items-end justify-center gap-2">
-                {!hasPurchasedMemoryPass && (
-                  <span className="text-sm font-semibold text-[#f8fbff]/65 line-through">6,600원</span>
-                )}
-                <span className="font-headline text-3xl font-extrabold text-[#f8fbff]">
-                  {hasPurchasedMemoryPass ? "6,600원" : "3,300원"}
-                </span>
+                <span className="font-headline text-3xl font-extrabold text-[#f8fbff]">6,600원</span>
               </div>
               <p className="mt-0.5 text-[11px] text-[#f8fbff]/85">
-                {hasPurchasedMemoryPass ? "매월 정기결제" : "첫 달 이후 정상가 적용"}
+                {hasPurchasedMemoryPass ? "매월 자동 갱신" : "첫 달 3,300원, 이후 월 6,600원 자동 갱신"}
               </p>
             </div>
 

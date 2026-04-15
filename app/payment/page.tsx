@@ -60,7 +60,7 @@ function PaymentContent() {
   const [isRestoring, setIsRestoring] = useState(false);
   useOverlayScrollLock(Boolean(ownershipConflictOverlayMessage) || showExtensionOverlay || showPostPurchaseCta);
   const paywallViewLoggedRef = useRef(false);
-  const memoryPassPromoPrice = getIapPriceKrw("memory_pass_monthly");
+  const memoryPassIntroPrice = getIapPriceKrw("memory_pass_monthly");
   const memoryPassMonthlyPrice = MEMORY_PASS_LIST_PRICE_KRW;
 
   const formattedExpiry = unlimitedChatExpiresAt
@@ -345,23 +345,15 @@ function PaymentContent() {
 
               <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
                 <div>
-                  {hasPurchasedMemoryPass ? (
-                    <>
-                      <p className="text-sm font-semibold text-white/90">월 구독 요금</p>
-                      <div className="mt-1 flex items-end gap-3">
-                        <p className="font-headline text-3xl font-bold text-white md:text-4xl">{formatKrw(memoryPassMonthlyPrice)}원</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm font-semibold text-white/90">첫 달 특가</p>
-                      <div className="mt-1 flex items-end gap-3">
-                        <p className="text-lg font-semibold text-white/70 line-through">{formatKrw(memoryPassMonthlyPrice)}원</p>
-                        <p className="font-headline text-3xl font-bold text-white md:text-4xl">{formatKrw(memoryPassPromoPrice)}원</p>
-                      </div>
-                      <p className="mt-1 text-sm text-white/90">첫 달 이후 정상가 적용</p>
-                    </>
-                  )}
+                  <p className="text-sm font-semibold text-white/90">월 구독 요금</p>
+                  <div className="mt-1 flex items-end gap-3">
+                    <p className="font-headline text-3xl font-bold text-white md:text-4xl">{formatKrw(memoryPassMonthlyPrice)}원</p>
+                  </div>
+                  <p className="mt-1 text-sm text-white/90">
+                    {hasPurchasedMemoryPass
+                      ? "매월 자동 갱신"
+                      : `첫 달 ${formatKrw(memoryPassIntroPrice)}원, 이후 월 ${formatKrw(memoryPassMonthlyPrice)}원 자동 갱신`}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -369,7 +361,11 @@ function PaymentContent() {
                   disabled={isPurchasingKey !== null || isSubscribed}
                   className="inline-flex items-center justify-center rounded-xl border border-white/85 bg-white px-8 py-4 text-lg font-bold text-[#3e5560] shadow-xl shadow-black/20 transition-colors hover:bg-[#f3f8fb] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isSubscribed ? "구독중" : isPurchasingKey === "memory_pass_monthly" ? "구매 처리중..." : "구독하기"}
+                  {isSubscribed
+                    ? "구독중"
+                    : isPurchasingKey === "memory_pass_monthly"
+                      ? "구매 처리중..."
+                      : "구독하기"}
                 </button>
               </div>
             </div>
