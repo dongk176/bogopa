@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { PersonaRuntime, PrimaryGoal } from "@/types/persona";
 import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import {
-  CONVERSATION_TENSION_OPTIONS,
-  normalizeConversationTension,
+  getConversationTensionOptionsByRelation,
+  normalizeConversationTensionByRelation,
 } from "@/lib/persona/conversationTension";
 
 type Props = {
@@ -36,7 +36,6 @@ type EditForm = {
 };
 
 const DROPDOWN_OPTIONS = {
-  politeness: [...CONVERSATION_TENSION_OPTIONS],
   empathyStyle: ["감성 공감 우선", "차분한 이성적 위로", "해결책 중심의 조언"],
 };
 
@@ -155,13 +154,14 @@ function CustomDropdown({
 }
 
 function buildInitialEditForm(runtime: PersonaRuntime): EditForm {
+  const relation = runtime.relation || "";
   return {
     name: runtime.displayName || "",
-    relation: runtime.relation || "",
+    relation,
     callsUserAs: runtime.addressing?.callsUserAs?.[0] || "나",
     frequentPhrases: runtime.expressions?.frequentPhrases || [],
     tone: (runtime.style?.tone || []).join(", "),
-    politeness: normalizeConversationTension(runtime.style?.politeness || ""),
+    politeness: normalizeConversationTensionByRelation(runtime.style?.politeness || "", relation),
     sentenceLength: runtime.style?.sentenceLength || "적당한 길이",
     replyTempo: runtime.style?.replyTempo || "적당한 템포",
     empathyStyle: runtime.behavior?.empathyFirst === false ? "차분한 이성적 위로" : "감성 공감 우선",
@@ -359,7 +359,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
             .split(",")
             .map((t) => t.trim())
             .filter(Boolean),
-          politeness: normalizeConversationTension(editForm.politeness),
+          politeness: normalizeConversationTensionByRelation(editForm.politeness, editForm.relation),
           sentenceLength: editForm.sentenceLength,
           replyTempo: editForm.replyTempo,
         },
@@ -514,7 +514,12 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
                           />
                         </div>
                       ) : null}
-                      <CustomDropdown label="대화 텐션" options={DROPDOWN_OPTIONS.politeness} value={editForm.politeness} onChange={(v) => setEditForm({ ...editForm, politeness: v })} />
+                      <CustomDropdown
+                        label="대화 텐션"
+                        options={getConversationTensionOptionsByRelation(editForm.relation)}
+                        value={editForm.politeness}
+                        onChange={(v) => setEditForm({ ...editForm, politeness: v })}
+                      />
                       <CustomDropdown label="공감 방식" options={DROPDOWN_OPTIONS.empathyStyle} value={editForm.empathyStyle} onChange={(v) => setEditForm({ ...editForm, empathyStyle: v })} />
                     </div>
                   ) : (
@@ -527,7 +532,7 @@ export default function PersonaMemorySheet({ open, runtime, avatarUrl, onClose, 
                               ? runtime.customGoalText || GOAL_VALUE_TO_LABEL.custom
                               : toGoalLabel(runtime.goal),
                         },
-                        { label: "대화 텐션", val: normalizeConversationTension(runtime.style?.politeness || "") },
+                        { label: "대화 텐션", val: normalizeConversationTensionByRelation(runtime.style?.politeness || "", runtime.relation || "") },
                         { label: "공감 방식", val: runtime.behavior?.empathyFirst ? "감성 공감 우선" : "차분한 이성적 위로" },
                       ].map((item) => (
                         <div key={item.label} className="space-y-1">

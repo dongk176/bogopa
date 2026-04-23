@@ -14,7 +14,10 @@ import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMobileInputFocus from "@/app/_components/useMobileInputFocus";
 import useOverlayScrollLock from "@/app/_components/useOverlayScrollLock";
 import { isMemoryPassOwnershipConflictError, purchaseIapProduct } from "@/lib/iap/client";
-import { CONVERSATION_TENSION_OPTIONS, normalizeConversationTension } from "@/lib/persona/conversationTension";
+import {
+  getConversationTensionOptionsByRelation,
+  normalizeConversationTensionByRelation,
+} from "@/lib/persona/conversationTension";
 
 const STORAGE_KEY = "bogopa_profile_step4";
 const STEP3_KEY = "bogopa_profile_step3";
@@ -64,7 +67,6 @@ const MEMORY_PLACEHOLDER_EXAMPLES = [
 ];
 
 const DROPDOWN_OPTIONS = {
-  politeness: [...CONVERSATION_TENSION_OPTIONS],
   replyTempo: ["급한 성격", "적당히 차분한 성격", "신중하고 느린 편"],
   empathyStyle: ["감성 공감 우선", "차분한 이성적 위로", "해결책 중심의 조언"],
 };
@@ -593,7 +595,8 @@ export default function StepThreePage() {
       return;
     }
 
-    setRelationLabel(step3.relationship?.trim() || "");
+    const relation = step3.relationship?.trim() || "";
+    setRelationLabel(relation);
     setStep3Nickname(step3.userNickname?.trim() || "너");
     setAvatarUrl(step3.personaImageUrl?.trim() || null);
     setAvatarKey(step3.personaImageKey?.trim() || null);
@@ -609,7 +612,7 @@ export default function StepThreePage() {
     setOverrides({
       frequentPhrases,
       politeness: (fromOverrides.politeness || "").trim()
-        ? normalizeConversationTension(fromOverrides.politeness || "")
+        ? normalizeConversationTensionByRelation(fromOverrides.politeness || "", relation)
         : "",
       replyTempo: (fromOverrides.replyTempo || "").trim(),
       empathyStyle: (fromOverrides.empathyStyle || "").trim(),
@@ -658,6 +661,16 @@ export default function StepThreePage() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [refreshMemoryPassStatus]);
+
+  useEffect(() => {
+    setOverrides((prev) => {
+      const raw = (prev.politeness || "").trim();
+      if (!raw) return prev;
+      const normalized = normalizeConversationTensionByRelation(raw, relationLabel);
+      if (normalized === raw) return prev;
+      return { ...prev, politeness: normalized };
+    });
+  }, [relationLabel]);
 
   useEffect(() => {
     setOverrides((prev) => ({
@@ -732,6 +745,7 @@ export default function StepThreePage() {
 
     const normalized: Step4Overrides = {
       ...overrides,
+      politeness: normalizeConversationTensionByRelation(overrides.politeness, relationLabel),
       frequentPhrases: cleanList(
         overrides.frequentPhrases.map((item) => item.slice(0, planLimits.phraseItemCharMax)),
         planLimits.phraseItemMaxCount,
@@ -1020,7 +1034,7 @@ export default function StepThreePage() {
                     activeDropdown={activeDropdown}
                     onToggle={setActiveDropdown}
                     label="대화 텐션"
-                    options={DROPDOWN_OPTIONS.politeness}
+                    options={getConversationTensionOptionsByRelation(relationLabel)}
                     value={overrides.politeness}
                     onChange={(value) => {
                       setOverrides((prev) => ({ ...prev, politeness: value }));

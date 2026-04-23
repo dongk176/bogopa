@@ -9,8 +9,8 @@ import { FREE_PLAN_LIMITS, PlanLimits } from "@/lib/memory-pass/config";
 import useMemoryCreateGuard from "@/app/_components/useMemoryCreateGuard";
 import MemoryPassExpiredLockOverlay from "@/app/_components/MemoryPassExpiredLockOverlay";
 import {
-    CONVERSATION_TENSION_OPTIONS,
-    normalizeConversationTension,
+    getConversationTensionOptionsByRelation,
+    normalizeConversationTensionByRelation,
 } from "@/lib/persona/conversationTension";
 
 type Persona = {
@@ -46,7 +46,6 @@ type EditSnapshot = {
 };
 
 const DROPDOWN_OPTIONS = {
-    politeness: [...CONVERSATION_TENSION_OPTIONS],
     sentenceLength: ["짧고 간결한 단답", "적당한 길이", "아주 길고 자세하게"],
     replyTempo: ["성격 급한 즉답형", "적당한 템포", "신중하고 느린 편"],
     empathyStyle: ["감성 공감 우선", "차분한 이성적 위로", "해결책 중심의 조언"],
@@ -123,6 +122,7 @@ function isEditSnapshotEqual(a: EditSnapshot | null, b: EditSnapshot | null) {
 function buildSnapshotFromPersona(persona: Persona): EditSnapshot {
     const rt = persona.runtime;
     const al = persona.analysis;
+    const relation = normalizeSnapshotText(rt?.relation || al?.personaInput?.relation || "");
     const resolvedGoal = resolveGoalSelection({
         runtimeGoal: rt?.goal,
         analysisGoal: al?.conversationIntent?.primaryGoal,
@@ -132,11 +132,11 @@ function buildSnapshotFromPersona(persona: Persona): EditSnapshot {
     const resolvedGoalLabel = toGoalLabel(resolvedGoal.goal);
     return {
         name: normalizeSnapshotText(persona.name),
-        relation: normalizeSnapshotText(rt?.relation || al?.personaInput?.relation || ""),
+        relation,
         callsUserAs: normalizeSnapshotText(rt?.addressing?.callsUserAs?.[0] || al?.addressing?.callsUserAs?.[0] || "나"),
         frequentPhrases: normalizeSnapshotList(rt?.expressions?.frequentPhrases || al?.textHabits?.frequentPhrases || []),
         tone: normalizeSnapshotList(rt?.style?.tone || al?.speechStyle?.baseTone || []),
-        politeness: normalizeConversationTension(rt?.style?.politeness || al?.speechStyle?.politeness || ""),
+        politeness: normalizeConversationTensionByRelation(rt?.style?.politeness || al?.speechStyle?.politeness || "", relation),
         sentenceLength: normalizeSnapshotText(rt?.style?.sentenceLength || al?.speechStyle?.sentenceLength || "적당한 길이"),
         replyTempo: normalizeSnapshotText(rt?.style?.replyTempo || al?.speechStyle?.responseTempo || "적당한 템포"),
         empathyStyle: rt?.behavior?.empathyFirst === false ? "차분한 이성적 위로" : "감성 공감 우선",
@@ -152,13 +152,14 @@ function buildSnapshotFromPersona(persona: Persona): EditSnapshot {
 
 function buildSnapshotFromEditForm(editForm: any, avatarUrl: string | null): EditSnapshot {
     const goalLabel = normalizeSnapshotText(editForm?.goal) || GOAL_VALUE_TO_LABEL.casual_talk;
+    const relation = normalizeSnapshotText(editForm?.relation);
     return {
         name: normalizeSnapshotText(editForm?.name),
-        relation: normalizeSnapshotText(editForm?.relation),
+        relation,
         callsUserAs: normalizeSnapshotText(editForm?.callsUserAs),
         frequentPhrases: normalizeSnapshotList(editForm?.frequentPhrases),
         tone: splitToneToList(editForm?.tone),
-        politeness: normalizeConversationTension(normalizeSnapshotText(editForm?.politeness)),
+        politeness: normalizeConversationTensionByRelation(normalizeSnapshotText(editForm?.politeness), relation),
         sentenceLength: normalizeSnapshotText(editForm?.sentenceLength),
         replyTempo: normalizeSnapshotText(editForm?.replyTempo),
         empathyStyle: normalizeSnapshotText(editForm?.empathyStyle),
@@ -598,7 +599,7 @@ export default function PersonaPage() {
             frequentPhrases: rt?.expressions?.frequentPhrases || al?.textHabits?.frequentPhrases || [],
             tone: (rt?.style?.tone || al?.speechStyle?.baseTone || []).join(", "),
 
-            politeness: normalizeConversationTension(rt?.style?.politeness || al?.speechStyle?.politeness || ""),
+            politeness: normalizeConversationTensionByRelation(rt?.style?.politeness || al?.speechStyle?.politeness || "", relation),
             sentenceLength: rt?.style?.sentenceLength || al?.speechStyle?.sentenceLength || "적당한 길이",
             replyTempo: rt?.style?.replyTempo || al?.speechStyle?.responseTempo || "적당한 템포",
             empathyStyle: rt?.behavior?.empathyFirst === false ? "차분한 이성적 위로" : "감성 공감 우선",
@@ -680,7 +681,7 @@ export default function PersonaPage() {
                 style: {
                     ...(selectedPersona.runtime?.style || { tone: [], politeness: "", sentenceLength: "", replyTempo: "", humorStyle: "" }),
                     tone: editForm.tone.split(",").map((t: string) => t.trim()).filter(Boolean),
-                    politeness: normalizeConversationTension(editForm.politeness),
+                    politeness: normalizeConversationTensionByRelation(editForm.politeness, editForm.relation),
                     sentenceLength: editForm.sentenceLength,
                     replyTempo: editForm.replyTempo,
                 },
@@ -1139,7 +1140,12 @@ export default function PersonaPage() {
                                                             />
                                                         </div>
                                                     ) : null}
-                                                    <CustomDropdown label="대화 텐션" options={DROPDOWN_OPTIONS.politeness} value={editForm.politeness} onChange={(v) => setEditForm({ ...editForm, politeness: v })} />
+                                                    <CustomDropdown
+                                                        label="대화 텐션"
+                                                        options={getConversationTensionOptionsByRelation(editForm.relation)}
+                                                        value={editForm.politeness}
+                                                        onChange={(v) => setEditForm({ ...editForm, politeness: v })}
+                                                    />
                                                     <CustomDropdown label="공감 방식" options={DROPDOWN_OPTIONS.empathyStyle} value={editForm.empathyStyle} onChange={(v) => setEditForm({ ...editForm, empathyStyle: v })} />
                                                 </div>
                                             ) : (
@@ -1160,7 +1166,13 @@ export default function PersonaPage() {
                                                                         : toGoalLabel(resolvedGoal.goal),
                                                             };
                                                         })(),
-                                                        { label: '대화 텐션', val: normalizeConversationTension(selectedPersona.runtime?.style?.politeness || "") },
+                                                        {
+                                                            label: "대화 텐션",
+                                                            val: normalizeConversationTensionByRelation(
+                                                                selectedPersona.runtime?.style?.politeness || "",
+                                                                selectedPersona.runtime?.relation || selectedPersona.analysis?.personaInput?.relation || "",
+                                                            ),
+                                                        },
                                                         { label: '공감 방식', val: selectedPersona.runtime?.behavior?.empathyFirst ? "감성 공감 우선" : "차분한 이성적 위로" }
                                                     ].map(item => (
                                                         <div key={item.label} className="space-y-1">

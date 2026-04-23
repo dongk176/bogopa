@@ -225,33 +225,15 @@ function ChevronDownIcon({ className }: { className?: string }) {
 }
 
 function DotTyping() {
-  const [dotCount, setDotCount] = useState(0);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setDotCount((prev) => (prev + 1) % 3);
-    }, 240);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
   return (
-    <div className="flex h-4 items-center justify-center gap-1.5" aria-label="typing-indicator">
-      {[0, 1, 2].map((index) => {
-        const active = index === dotCount;
-        return (
-          <span
-            key={index}
-            className="h-2 w-2 rounded-full bg-[#6a7480] transition-all duration-200 ease-in-out"
-            style={{
-              opacity: active ? 1 : 0.35,
-              transform: active ? "translateY(-2.5px) scale(1.15)" : "translateY(0) scale(1)",
-            }}
-          />
-        );
-      })}
+    <div className="typing-indicator flex h-4 items-center justify-center gap-1.5" aria-label="typing-indicator">
+      {[0, 1, 2].map((index) => (
+        <span
+          key={index}
+          className="typing-indicator__dot h-2 w-2 rounded-full bg-[#6a7480]"
+          style={{ animationDelay: `${index * 0.16}s` }}
+        />
+      ))}
     </div>
   );
 }
@@ -399,6 +381,7 @@ function ChatContainer() {
   const memoryBalanceRef = useRef<number | null>(null);
   const memoryBadgeAnimTimeoutRef = useRef<number | null>(null);
   const typingBlockedNoticeTimeoutRef = useRef<number | null>(null);
+  const viewportScrollRafRef = useRef<number | null>(null);
   const chatListSwipeStartYRef = useRef<number | null>(null);
   const chatListSwipeLastYRef = useRef<number | null>(null);
   const keepNativeChatOnNextCleanupRef = useRef(false);
@@ -432,6 +415,9 @@ function ChatContainer() {
       }
       if (typingBlockedNoticeTimeoutRef.current) {
         window.clearTimeout(typingBlockedNoticeTimeoutRef.current);
+      }
+      if (viewportScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(viewportScrollRafRef.current);
       }
     };
   }, []);
@@ -777,12 +763,20 @@ function ChatContainer() {
   useEffect(() => {
     if (!isComposerFocused) return;
     const onViewportChanged = () => {
-      scrollChatToBottom("auto");
+      if (viewportScrollRafRef.current !== null) return;
+      viewportScrollRafRef.current = window.requestAnimationFrame(() => {
+        viewportScrollRafRef.current = null;
+        scrollChatToBottom("auto");
+      });
     };
     window.addEventListener("resize", onViewportChanged);
     window.visualViewport?.addEventListener("resize", onViewportChanged);
     window.visualViewport?.addEventListener("scroll", onViewportChanged);
     return () => {
+      if (viewportScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(viewportScrollRafRef.current);
+        viewportScrollRafRef.current = null;
+      }
       window.removeEventListener("resize", onViewportChanged);
       window.visualViewport?.removeEventListener("resize", onViewportChanged);
       window.visualViewport?.removeEventListener("scroll", onViewportChanged);

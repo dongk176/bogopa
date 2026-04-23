@@ -362,6 +362,30 @@ div[class*="border"]:not(.chat-header-divider):not(.no-brand-border) {
   }
 }
 
+@keyframes typing-dot-wave {
+  0%, 60%, 100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2.5px) scale(1.12);
+  }
+}
+
+.typing-indicator__dot {
+  animation: typing-dot-wave 0.88s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-indicator__dot {
+    animation: none;
+    opacity: 0.65;
+    transform: none;
+  }
+}
+
 .hide-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;

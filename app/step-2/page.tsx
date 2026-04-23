@@ -371,6 +371,10 @@ function StepTwoPageContent() {
   const [isNicknameAttention, setIsNicknameAttention] = useState(false);
   const currentStep = viewMode === "relationship" ? 2 : 3;
   const progressWidthClass = viewMode === "relationship" ? "w-1/2" : "w-3/4";
+  const mobileTopPaddingClass =
+    viewMode === "form"
+      ? "pt-[calc(5.5rem+var(--native-safe-top))]"
+      : "pt-[calc(5rem+var(--native-safe-top))]";
   const forceRelationshipFromStep1 = searchParams.get("entry") === "step1";
   const forceFormFromStep4 = searchParams.get("entry") === "step4";
   const step1EntryNonce = searchParams.get("t") ?? "";
@@ -898,10 +902,10 @@ function StepTwoPageContent() {
       </header>
 
       <main
-        className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto overscroll-y-contain px-4 pb-36 pt-[calc(5rem+var(--native-safe-top))] [-webkit-overflow-scrolling:touch] md:items-center md:px-6 md:pb-12 md:pt-24"
+        className={`flex min-h-0 flex-1 items-start justify-center overflow-y-auto overscroll-y-contain px-4 pb-36 ${mobileTopPaddingClass} [-webkit-overflow-scrolling:touch] md:items-center md:px-6 md:pb-12 md:pt-24`}
         style={mobileFocusedMainStyle}
       >
-        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
+        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:border md:border-[#afb3ac]/20 md:bg-white md:p-12 md:shadow-none">
           <div className="absolute -right-10 -top-10 -z-0 hidden h-40 w-40 bg-[#cde6f4]/20 [border-radius:40%_60%_70%_30%/40%_50%_60%_50%] md:block" />
 
           <div className="relative z-10">
@@ -912,17 +916,17 @@ function StepTwoPageContent() {
                 }`}
               >
                 <div className="mb-8 text-center md:text-left">
-                  <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
+                  <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#2f342e] md:text-4xl">
                     기억 속 그 사람
                   </h1>
-                  <p className="text-sm text-[#f0f5f2]/80">먼저 관계를 선택해주세요.</p>
+                  <p className="text-sm text-[#655d5a]">먼저 관계를 선택해주세요.</p>
                 </div>
 
                 <div
                   ref={relationshipSectionRef}
                   className={`rounded-2xl transition-colors ${isRelationshipAttention ? "bg-[#3f2f2f]/15 outline outline-2 outline-[#ff7b7b]" : ""}`}
                 >
-                  <p className="mb-2 ml-1 text-left text-sm font-semibold text-[#f0f5f2]">
+                  <p className="mb-2 ml-1 text-left text-sm font-semibold text-[#2f342e]">
                     관계 <span className="text-[#ffb4ab]">*</span>
                   </p>
 
@@ -1068,7 +1072,7 @@ function StepTwoPageContent() {
             {viewMode === "form" ? (
             <div className={`transition-all duration-300 ease-out ${isFormEntering ? "translate-y-1 opacity-0" : "translate-y-0 opacity-100"}`}>
             <div className="mb-8 text-center md:text-left">
-              <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
+              <h1 className="font-headline mb-3 text-3xl font-bold tracking-tight text-[#2f342e] md:text-4xl">
                 기억 속 그 사람
               </h1>
             </div>
@@ -1108,12 +1112,12 @@ function StepTwoPageContent() {
                     <ShuffleIcon />
                   </button>
                 </div>
-                <p className="text-sm font-medium text-[#f0f5f2]">사진을 등록해주세요 (선택, 10MB 미만)</p>
+                <p className="text-sm font-medium text-[#655d5a]">사진을 등록해주세요 (선택, 10MB 미만)</p>
                 {imageError ? <p className="text-xs" style={REQUIRED_ERROR_TEXT_STYLE}>{imageError}</p> : null}
               </div>
 
               <div className="space-y-3">
-                <label className="ml-1 block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-name">
+                <label className="ml-1 block text-sm font-semibold text-[#2f342e]" htmlFor="persona-name">
                   {(finalRelationshipForValidation || "관계")}의 이름 또는 애칭 <span className="text-[#ffb4ab]">*</span>
                 </label>
                 <div className="group relative">
@@ -1149,7 +1153,7 @@ function StepTwoPageContent() {
 
               <div className="space-y-3">
                 <div className="ml-1 flex items-center justify-between">
-                  <label className="block text-sm font-semibold text-[#f0f5f2]" htmlFor="persona-user-nickname">
+                  <label className="block text-sm font-semibold text-[#2f342e]" htmlFor="persona-user-nickname">
                     {(finalRelationshipForValidation || "관계")}가 나를 불러주던 애칭 <span className="text-[#ffb4ab]">*</span>
                   </label>
                 </div>

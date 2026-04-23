@@ -29,13 +29,14 @@ const GOALS: Array<{ value: GoalValue; label: string; icon: string }> = [
   { value: "custom", label: "아무 말이나 편하게 나누고 싶어요", icon: "forum" },
 ];
 
-function GoalIcon({ name, active }: { name: string; active: boolean }) {
+function GoalIcon({ name, active, ready }: { name: string; active: boolean; ready: boolean }) {
   return (
     <span
-      className="material-symbols-outlined text-[22px] leading-none"
+      className="material-symbols-outlined inline-flex h-[22px] w-[22px] items-center justify-center text-[22px] leading-none transition-opacity duration-200 ease-out"
       style={{
         color: active ? "#f0f9ff" : "#4a626d",
         fontVariationSettings: "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24",
+        opacity: ready ? 1 : 0,
       }}
       aria-hidden="true"
     >
@@ -64,6 +65,7 @@ function SpinnerIcon() {
 export default function StepOnePage() {
   const router = useRouter();
   const [isNativeAppRuntime, setIsNativeAppRuntime] = useState(false);
+  const [isIconFontReady, setIsIconFontReady] = useState(false);
   const isInputFocused = useMobileInputFocus();
   const keyboardInsetExpr = isNativeAppRuntime
     ? "max(var(--bogopa-keyboard-height, 0px), 320px)"
@@ -115,6 +117,28 @@ export default function StepOnePage() {
 
   useEffect(() => {
     setIsNativeAppRuntime(document.documentElement.classList.contains("native-app"));
+  }, []);
+
+  useEffect(() => {
+    const fontSet = document.fonts;
+    if (!fontSet?.load) {
+      setIsIconFontReady(true);
+      return;
+    }
+
+    let canceled = false;
+    void fontSet
+      .load('400 22px "Material Symbols Outlined"', "sentiment_satisfied")
+      .then(() => {
+        if (!canceled) setIsIconFontReady(true);
+      })
+      .catch(() => {
+        if (!canceled) setIsIconFontReady(true);
+      });
+
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -192,12 +216,12 @@ export default function StepOnePage() {
         className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto overscroll-y-contain px-4 pb-36 pt-[calc(5rem+var(--native-safe-top))] [-webkit-overflow-scrolling:touch] md:items-center md:px-6 md:pb-12 md:pt-24"
         style={mobileFocusedMainStyle}
       >
-        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:bg-[#303733] md:p-12 md:shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
+        <div className="relative w-full max-w-xl overflow-visible rounded-none bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-[2rem] md:border md:border-[#afb3ac]/20 md:bg-white md:p-12 md:shadow-none">
           <div className="absolute -right-10 -top-10 -z-0 hidden h-40 w-40 bg-[#cde6f4]/20 [border-radius:40%_60%_70%_30%/40%_50%_60%_50%] md:block" />
 
           <div className="relative z-10">
             <div className="mb-8 text-center md:text-left">
-              <h1 className="font-headline text-3xl font-bold tracking-tight text-[#f0f5f2] md:text-4xl">
+              <h1 className="font-headline text-3xl font-bold tracking-tight text-[#2f342e] md:text-4xl">
                 이 대화를 통해
                 <br />
                 무엇을 바라고 있나요?
@@ -240,7 +264,7 @@ export default function StepOnePage() {
                             : "bg-[#e6e9e2] text-[#4a626d] opacity-90 group-hover:opacity-100"
                             }`}
                         >
-                          <GoalIcon name={item.icon} active={isActive} />
+                          <GoalIcon name={item.icon} active={isActive} ready={isIconFontReady} />
                         </span>
                         <p className={`text-base font-semibold md:text-lg ${isActive ? "text-[#f0f9ff]" : "text-[#2f342e]"}`}>{item.label}</p>
                       </div>
