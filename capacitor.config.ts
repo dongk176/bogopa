@@ -11,6 +11,7 @@ const config: CapacitorConfig = {
     url: process.env.CAPACITOR_SERVER_URL ?? "https://www.bogopa.co.kr",
     androidScheme: "https",
     allowNavigation: ["bogopa.co.kr", "*.bogopa.co.kr", "localhost", "127.0.0.1"],
+    errorPath: "offline.html",
   },
   plugins: {
     Keyboard: {

@@ -1,6 +1,11 @@
 import { getDbPool } from "./db";
 import { PersonaRuntime } from "@/types/persona";
 import { inferAvatarStorage } from "@/lib/avatar-storage";
+import type { SaveTurnAnalysisInput } from "@/lib/chat/turn-analysis/types";
+import {
+  STORED_ANALYSIS_CONFIDENCE,
+  STORED_ANALYSIS_RISK_LEVEL,
+} from "@/lib/chat/turn-analysis/constants";
 
 const CREATE_CHAT_TABLES_SQL = `
 CREATE SCHEMA IF NOT EXISTS bogopa;
@@ -35,6 +40,60 @@ CREATE TABLE IF NOT EXISTS bogopa.chat_messages (
   content TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'bogopa'
+      AND table_name = 'chat_turn_judgments'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'bogopa'
+      AND table_name = 'chat_turn_judgments_legacy'
+  ) THEN
+    ALTER TABLE bogopa.chat_turn_judgments RENAME TO chat_turn_judgments_legacy;
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS bogopa.chat_turn_analyses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES bogopa.chat_sessions(id) ON DELETE CASCADE,
+  user_message_id UUID NOT NULL REFERENCES bogopa.chat_messages(id) ON DELETE CASCADE,
+  assistant_message_id UUID REFERENCES bogopa.chat_messages(id) ON DELETE SET NULL,
+  user_id TEXT NOT NULL,
+  persona_id TEXT NOT NULL,
+  relation_group TEXT,
+  taxonomy_version TEXT NOT NULL DEFAULT 'v1.0',
+  topic TEXT,
+  topic_shift TEXT NOT NULL,
+  primary_intent TEXT NOT NULL,
+  emotion TEXT NOT NULL,
+  intensity INTEGER NOT NULL,
+  desired_response_mode TEXT,
+  unfinished_point TEXT,
+  text_quality TEXT NOT NULL,
+  risk_level TEXT NOT NULL,
+  confidence NUMERIC NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  raw_analysis JSONB NOT NULL DEFAULT '{}'::jsonb,
+  model TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_turn_analyses_session_created
+ON bogopa.chat_turn_analyses(session_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_turn_analyses_user_created
+ON bogopa.chat_turn_analyses(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_turn_analyses_primary_intent
+ON bogopa.chat_turn_analyses(primary_intent);
+
+CREATE INDEX IF NOT EXISTS idx_chat_turn_analyses_emotion
+ON bogopa.chat_turn_analyses(emotion);
 `;
 
 type ChatMemoryVectorInsertParams = {
@@ -114,6 +173,9 @@ export async function ensureChatTables() {
       await pool.query(CREATE_CHAT_TABLES_SQL);
       await pool.query(`ALTER TABLE IF EXISTS bogopa.personas ADD COLUMN IF NOT EXISTS avatar_source VARCHAR(24);`);
       await pool.query(`ALTER TABLE IF EXISTS bogopa.personas ADD COLUMN IF NOT EXISTS avatar_key TEXT;`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_turn_analyses DROP COLUMN IF EXISTS secondary_intent;`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_turn_analyses ADD COLUMN IF NOT EXISTS desired_response_mode TEXT;`);
+      await pool.query(`ALTER TABLE IF EXISTS bogopa.chat_turn_analyses ADD COLUMN IF NOT EXISTS unfinished_point TEXT;`);
       await pool.query(`
         UPDATE bogopa.personas
         SET avatar_source = 'default',
@@ -192,6 +254,10 @@ export async function ensureChatTables() {
   return ensurePromise;
 }
 
+export async function ensureChatTurnAnalysesTable() {
+  await ensureChatTables();
+}
+
 export async function savePersonaToDb(
   userId: string,
   personaId: string,
@@ -252,7 +318,33 @@ export async function getPersonasForUser(userId: string) {
       p.*, 
       s.id as session_id,
       s.updated_at as session_updated_at,
-      (SELECT m.content FROM bogopa.chat_messages m WHERE m.session_id = s.id ORDER BY m.created_at DESC LIMIT 1) as last_message_content
+      (
+        SELECT string_agg(m.content, ' ' ORDER BY m.created_at ASC)
+        FROM bogopa.chat_messages m
+        WHERE m.session_id = s.id
+          AND m.role = (
+            SELECT lm.role
+            FROM bogopa.chat_messages lm
+            WHERE lm.session_id = s.id
+            ORDER BY lm.created_at DESC, lm.id DESC
+            LIMIT 1
+          )
+          AND m.created_at > COALESCE(
+            (
+              SELECT MAX(prev.created_at)
+              FROM bogopa.chat_messages prev
+              WHERE prev.session_id = s.id
+                AND prev.role <> (
+                  SELECT lm.role
+                  FROM bogopa.chat_messages lm
+                  WHERE lm.session_id = s.id
+                  ORDER BY lm.created_at DESC, lm.id DESC
+                  LIMIT 1
+                )
+            ),
+            '-infinity'::timestamptz
+          )
+      ) as last_message_content
     FROM bogopa.personas p
     LEFT JOIN bogopa.chat_sessions s ON p.persona_id = s.persona_id AND s.user_id = p.user_id
     WHERE p.user_id = $1
@@ -325,6 +417,108 @@ export async function saveMessageToDb(sessionId: string, role: string, content: 
   return res.rows[0];
 }
 
+export async function saveTurnAnalysisToDb(input: SaveTurnAnalysisInput) {
+  await ensureChatTurnAnalysesTable();
+  const pool = getDbPool();
+
+  const res = await pool.query(
+    `
+    INSERT INTO bogopa.chat_turn_analyses (
+      session_id,
+      user_message_id,
+      assistant_message_id,
+      user_id,
+      persona_id,
+      relation_group,
+      taxonomy_version,
+      topic,
+      topic_shift,
+      primary_intent,
+      emotion,
+      intensity,
+      desired_response_mode,
+      unfinished_point,
+      text_quality,
+      risk_level,
+      confidence,
+      reason,
+      raw_analysis,
+      model
+    )
+    VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20
+    )
+    RETURNING *
+    `,
+    [
+      input.sessionId,
+      input.userMessageId,
+      input.assistantMessageId ?? null,
+      input.userId,
+      input.personaId,
+      input.relationGroup,
+      input.taxonomyVersion ?? "v1.0",
+      input.analysis.topic,
+      input.analysis.topicShift,
+      input.analysis.primaryIntent,
+      input.analysis.emotion,
+      input.analysis.intensity,
+      input.analysis.desiredResponseMode,
+      input.analysis.unfinishedPoint,
+      input.analysis.textQuality,
+      STORED_ANALYSIS_RISK_LEVEL,
+      STORED_ANALYSIS_CONFIDENCE,
+      input.analysis.reason,
+      JSON.stringify(input.rawAnalysis ?? {}),
+      input.model ?? null,
+    ],
+  );
+
+  return res.rows[0];
+}
+
+export async function updateTurnAnalysisAssistantMessageId(analysisId: string, assistantMessageId: string) {
+  await ensureChatTurnAnalysesTable();
+  const pool = getDbPool();
+
+  const res = await pool.query(
+    `
+    UPDATE bogopa.chat_turn_analyses
+    SET assistant_message_id = $2
+    WHERE id = $1
+    RETURNING *
+    `,
+    [analysisId, assistantMessageId],
+  );
+
+  return res.rows[0] || null;
+}
+
+export async function getLatestTurnAnalysisForSession(sessionId: string) {
+  await ensureChatTurnAnalysesTable();
+  const pool = getDbPool();
+  const res = await pool.query(
+    `
+    SELECT
+      topic,
+      topic_shift,
+      primary_intent,
+      emotion,
+      intensity,
+      desired_response_mode,
+      unfinished_point,
+      text_quality,
+      reason
+    FROM bogopa.chat_turn_analyses
+    WHERE session_id = $1
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [sessionId],
+  );
+  return res.rows[0] || null;
+}
+
 export async function saveAssistantGreetingToDb(sessionId: string, content: string) {
   await ensureChatTables();
   const pool = getDbPool();
@@ -357,7 +551,7 @@ export async function getMessagesForSession(sessionId: string) {
   await ensureChatTables();
   const pool = getDbPool();
   const res = await pool.query(
-    `SELECT id, role, content, created_at FROM bogopa.chat_messages WHERE session_id = $1 ORDER BY created_at ASC`,
+    `SELECT id, role, content, created_at FROM bogopa.chat_messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC`,
     [sessionId]
   );
   return res.rows.map(r => ({

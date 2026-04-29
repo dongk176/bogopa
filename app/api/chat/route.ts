@@ -8,7 +8,13 @@ import {
 } from "@/lib/ai/createOpenAIClient";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { getOrCreateSession, saveMessageToDb, saveAssistantGreetingToDb, insertChatMemoryVector } from "@/lib/server/chat-db";
+import {
+  getOrCreateSession,
+  saveMessageToDb,
+  saveAssistantGreetingToDb,
+  insertChatMemoryVector,
+  updateTurnAnalysisAssistantMessageId,
+} from "@/lib/server/chat-db";
 import { PersonaRuntime } from "@/types/persona";
 import { MEMORY_COSTS } from "@/lib/memory-pass/config";
 import { consumeMemory, getOrCreateMemoryPassStatus, hasActiveUnlimitedChat } from "@/lib/server/memory-pass";
@@ -20,6 +26,10 @@ import { logAnalyticsEventSafe } from "@/lib/server/analytics";
 import { getPersonaLockStatus } from "@/lib/server/persona-lock";
 import { getUserAiDataConsent } from "@/lib/server/user-profile";
 import { AI_DATA_TRANSFER_PROVIDER_NAME } from "@/lib/ai-consent";
+import { runTurnAnalysisMvp } from "@/lib/chat/turn-analysis/service";
+import { getRelationGroup } from "@/lib/chat/turn-analysis/relation";
+import { buildReplyModeInstructionLines } from "@/lib/chat/reply-mode-instructions";
+import type { TurnAnalysis } from "@/lib/chat/turn-analysis/types";
 
 export const runtime = "nodejs";
 
@@ -50,6 +60,28 @@ const MEMORY_RETRIEVAL_WEIGHT_TOPIC = 0.1;
 const MEMORY_RETRIEVAL_WEIGHT_EMOTION = 0.05;
 const MEMORY_RETRIEVAL_WEIGHT_ENTITIES = 0.05;
 const CHAT_MEMORY_VECTOR_CAPTURE_ENABLED = process.env.CHAT_MEMORY_VECTOR_CAPTURE_ENABLED === "true";
+const CHAT_REPLY_PARTS_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "chat_reply_parts",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        parts: {
+          type: "array",
+          minItems: 1,
+          maxItems: 3,
+          items: {
+            type: "string",
+          },
+        },
+      },
+      required: ["parts"],
+    },
+  },
+} as const;
 
 const USER_EMOTIONS = ["기쁨", "슬픔", "불안", "피곤", "분노", "평온", "흥분"] as const;
 const USER_INTENTS = ["하소연", "정보요구", "자랑", "일상공유", "조언구함"] as const;
@@ -134,6 +166,16 @@ type ChatDebugPayload = {
     embeddingPreview?: number[];
     error?: string;
   };
+  turnAnalysisDebug?: {
+    enabled: true;
+    saved: boolean;
+    analysisId: string | null;
+    relationGroup: string;
+    taxonomyVersion: string;
+    analysis: TurnAnalysis;
+    rawAnalysis: unknown;
+    model: string;
+  };
 };
 
 function isGpt5FamilyModel(model: string) {
@@ -151,6 +193,26 @@ function clipAssistantReplyByMax(text: string, max: number) {
   return trimmed.length > max ? trimmed.slice(0, max).trimEnd() : trimmed;
 }
 
+function clipAssistantReplyPartsByMax(parts: string[], max: number) {
+  if (max <= 0) return parts.map((item) => item.trim()).filter(Boolean);
+
+  const next: string[] = [];
+  let used = 0;
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const separator = next.length > 0 ? 1 : 0;
+    const remaining = max - used - separator;
+    if (remaining <= 0) break;
+    const clipped = clipAssistantReplyByMax(trimmed, remaining);
+    if (!clipped) break;
+    next.push(clipped);
+    used += clipped.length + separator;
+    if (clipped.length < trimmed.length) break;
+  }
+  return next;
+}
+
 function isMarkerOnlyMessage(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return false;
@@ -162,9 +224,13 @@ function buildNaturalMarkerFallback(userText: string) {
   return negative ? "아이고, 그랬구나." : "오, 그렇구나.";
 }
 
+function pickSafeFallback(candidates: string[]) {
+  return candidates[Math.floor(Math.random() * candidates.length)] || "응";
+}
+
 function buildSafeReplyFallback(userText: string) {
   const normalized = userText.trim();
-  if (!normalized) return "응?";
+  if (!normalized) return pickSafeFallback(["응?", "왜?", "뭐야"]);
   const hasQuestion = /[?？]$/.test(normalized) || /(어때|맞아|왜|뭐해|뭔데|어떡해|어떻게)/.test(normalized);
   const isCritique = isUserCritiquingPersona(normalized);
   const hasEmbarrassment = /(창피|쪽팔|민망|실수|말\s*꼬|꼬였)/.test(normalized);
@@ -173,16 +239,16 @@ function buildSafeReplyFallback(userText: string) {
   const hasSleepy = /(졸려|잠와|잠\s*온|자고\s*싶|잘까|잔다|잘자)/.test(normalized);
   const hasChoice = /(먹을까|할까|넣어볼까|갈까|말까|어쩔까|어떻게\s*할까)/.test(normalized);
   const hasNegative = /(힘들|지쳤|괴롭|속상|우울|불안|눈물|울|막막|답답|짜증|화나|미치겠|무서|겁나|빡치|터질)/.test(normalized);
-  
-  if (isCritique) return "뭐야 그렇게 이상했어 좀 억울한데";
-  if (hasEmbarrassment) return "아 그거 은근 오래 생각나서 짜증나지";
-  if (hasSelfBlame) return "그렇게까지 네 탓으로 몰 건 아니지";
-  if (hasAchievement) return "오 그건 좀 좋네 뭔데";
-  if (hasSleepy) return "졸리면 말하다 끊겨도 봐준다";
-  if (hasChoice) return "그 정도면 해봐도 되지 뭐";
-  if (hasNegative) return "아 그건 좀 빡세네 괜히 머리 아프겠다";
-  if (hasQuestion) return "그건 나도 좀 애매한데 갑자기 물어보니까";
-  return "아 그 말은 좀 알겠다";
+
+  if (isCritique) return pickSafeFallback(["뭐야 그렇게 이상했어?", "그 정도였나", "아니 좀 억울한데"]);
+  if (hasEmbarrassment) return pickSafeFallback(["아 그거 은근 오래 생각나지", "으 그건 좀 민망하겠다", "그거 계속 떠오르면 짜증나지"]);
+  if (hasSelfBlame) return pickSafeFallback(["그걸 다 네 탓으로 돌릴 건 아니지", "너무 몰아가지 마", "그 정도로 네 문제는 아니지"]);
+  if (hasAchievement) return pickSafeFallback(["오 그건 좋네", "그래도 그건 됐네", "그건 좀 괜찮다"]);
+  if (hasSleepy) return pickSafeFallback(["졸리면 좀 자", "그럼 눈 좀 붙여", "말하다 잠들어도 뭐"]);
+  if (hasChoice) return pickSafeFallback(["그 정도면 해봐도 되지", "일단 해봐", "나라면 그냥 할 듯"]);
+  if (hasNegative) return pickSafeFallback(["아 진짜", "그건 좀 빡세다", "그건 짜증나겠다"]);
+  if (hasQuestion) return pickSafeFallback(["글쎄", "음 모르겠다", "그건 좀 애매한데"]);
+  return pickSafeFallback(["응", "아 그래", "그렇구나", "뭐야"]);
 }
 
 function normalizeEmotiveSymbols(text: string, userText: string) {
@@ -309,6 +375,36 @@ function parseJsonObject(raw: string) {
   }
 }
 
+function parseJsonStringArray(raw: string) {
+  const objectCandidate = parseJsonObject(raw) as Record<string, unknown> | null;
+  if (objectCandidate && Array.isArray(objectCandidate.parts)) {
+    const parts = objectCandidate.parts.filter((item): item is string => typeof item === "string");
+    if (parts.length === objectCandidate.parts.length) {
+      return parts;
+    }
+  }
+
+  const candidates = [raw.trim()];
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (match?.[0] && match[0] !== candidates[0]) {
+    candidates.push(match[0]);
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const parsed = JSON.parse(candidate);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        return parsed as string[];
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 function sanitizeHistory(messages: ChatTurn[]) {
   return messages
     .filter((item) => (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
@@ -356,17 +452,17 @@ function compactRuntime(runtimeData: PersonaRuntime): Record<string, unknown> {
   const expressions =
     frequentPhrases.length > 0 || laughterPatterns.length > 0 || sadnessPatterns.length > 0
       ? {
-          ...(frequentPhrases.length > 0 ? { frequentPhrases } : {}),
-          ...(laughterPatterns.length > 0 ? { laughterPatterns } : {}),
-          ...(sadnessPatterns.length > 0 ? { sadnessPatterns } : {}),
-        }
+        ...(frequentPhrases.length > 0 ? { frequentPhrases } : {}),
+        ...(laughterPatterns.length > 0 ? { laughterPatterns } : {}),
+        ...(sadnessPatterns.length > 0 ? { sadnessPatterns } : {}),
+      }
       : undefined;
 
   const style = runtimeData.style
     ? {
-        ...runtimeData.style,
-        politeness: normalizeConversationTension(runtimeData.style.politeness || ""),
-      }
+      ...runtimeData.style,
+      politeness: normalizeConversationTension(runtimeData.style.politeness || ""),
+    }
     : runtimeData.style;
 
   const runtimePayload = {
@@ -384,10 +480,10 @@ function compactRuntime(runtimeData: PersonaRuntime): Record<string, unknown> {
     personaMeta: runtimeData.personaMeta,
     userProfile: runtimeData.userProfile
       ? {
-          age: runtimeData.userProfile.age,
-          mbti: runtimeData.userProfile.mbti,
-          interests: (runtimeData.userProfile.interests || []).slice(0, 6),
-        }
+        age: runtimeData.userProfile.age,
+        mbti: runtimeData.userProfile.mbti,
+        interests: (runtimeData.userProfile.interests || []).slice(0, 6),
+      }
       : undefined,
     safety: runtimeData.safety,
   };
@@ -452,14 +548,6 @@ function hasStrongRelationIdentityDrift(reply: string, relation: string) {
   return !correctionContext;
 }
 
-const PURPOSE_GUIDES: Record<string, string> = {
-  "위로받고 싶어요": "상대 말을 분석하지 말고 같은 편에서 바로 받아준다.",
-  "추억을 떠올리고 싶어요": "대화 흐름과 맞을 때만 기억을 스치듯 참고한다.",
-  "못다 한 말을 해보고 싶어요": "말을 앞서가지 말고 상대가 이어 말할 틈을 둔다.",
-  "평소처럼 대화하고 싶어요": "결론을 내리지 말고 일상 메신저처럼 이어간다.",
-  "아무 말이나 편하게 나누고 싶어요": "의미를 크게 붙이지 말고 가볍게 반응한다.",
-};
-
 const TENSION_GUIDES: Record<string, string> = {
   "토닥토닥 심야감성": "낮은 텐션으로 차분하게 반응한다.",
   "소소한 일상": "평범한 구어체로 부담 없이 반응한다.",
@@ -469,7 +557,7 @@ const TENSION_GUIDES: Record<string, string> = {
 
 function getPersonalityRule(personality: string, empathyStyle: string): string {
   if (personality === "급한 성격") {
-    return empathyStyle === "해결책 중심의 조언" 
+    return empathyStyle === "해결책 중심의 조언"
       ? "빠르게 핵심을 짚고 돌려 말하지 않는다."
       : "반응이 빠르고 감정 표현이 바로 나온다.";
   }
@@ -483,87 +571,118 @@ function getPersonalityRule(personality: string, empathyStyle: string): string {
     : "반응이 느긋하고 차분한 편이다.";
 }
 
+function getEmpathyStyleRule(empathyStyle: string): string {
+  if (empathyStyle === "차분한 이성적 위로") {
+    return "";
+  }
+  if (empathyStyle === "해결책 중심의 조언") {
+    return "필요할 때만 현실적인 관점을 짧게 보태고 설교처럼 길게 풀지 않는다.";
+  }
+  return "";
+}
+
 type ReplyPromptOptions = {
   alias?: string;
   allowAliasThisTurn?: boolean;
   isAskingAlias?: boolean;
   isUserCritique?: boolean;
+  turnAnalysis?: TurnAnalysis | null;
 };
+
+function buildTurnAnalysisLines(analysis?: TurnAnalysis | null) {
+  if (!analysis) return [];
+
+  return [
+    "[이번 턴 분석값]",
+    "- 아래 정보는 내부 힌트다. 사용자에게 분석 결과처럼 드러내지 말고, 이번 답변 방향을 정할 때만 참고한다.",
+    analysis.topic ? `- topic: ${analysis.topic}` : "",
+    `- topicShift: ${analysis.topicShift}`,
+    `- primaryIntent: ${analysis.primaryIntent}`,
+    `- emotion: ${analysis.emotion}`,
+    `- intensity: ${analysis.intensity}`,
+    analysis.unfinishedPoint ? `- unfinishedPoint: ${analysis.unfinishedPoint}` : "",
+  ].filter(Boolean);
+}
 
 function buildReplySystemPrompt(runtimeData: PersonaRuntime, options: ReplyPromptOptions = {}) {
   const currentTime = getCurrentKstLabel();
-  
-  const relation = runtimeData.relation?.trim() || "소중한 사람";
-  const partnerName = runtimeData.displayName || "상대방";
-  const userNickname = (runtimeData as any)?.userNickname || runtimeData.addressing?.callsUserAs?.[0] || "사용자";
-  const goal = runtimeData.goal || "평소처럼 대화하고 싶어요";
-  const tensionValue = runtimeData.style?.politeness || "소소한 일상";
-  const personality = runtimeData.style?.replyTempo || "적당히 차분한 성격"; 
-  const empathyStyle = (runtimeData as any)?.empathyStyle || "감성 공감 우선";
-  const coreMemory = (runtimeData as any)?.coreMemory || "";
-  
-  const customPhrasesArr = (runtimeData.expressions?.frequentPhrases || [])
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const phraseForThisTurn =
-    customPhrasesArr.length > 0 && Math.random() < 0.12 ? pickRandomItems(customPhrasesArr, 1)[0] : "";
 
-  const selectedPurpose = PURPOSE_GUIDES[goal] || PURPOSE_GUIDES["아무 말이나 편하게 나누고 싶어요"];
+  const relationLabel = runtimeData.relation?.trim() || "소중한 사람";
+  const partnerName = runtimeData.displayName || "상대방";
+  const aliasLabel =
+    options.alias ||
+    normalizeAddressAlias((runtimeData as any)?.userNickname || runtimeData.addressing?.callsUserAs?.[0] || "");
+  const tensionValue = runtimeData.style?.politeness || "소소한 일상";
+  const personality = runtimeData.style?.replyTempo || "적당히 차분한 성격";
+  const empathyStyle = (runtimeData as any)?.empathyStyle || "감성 공감 우선";
   const selectedTension = TENSION_GUIDES[tensionValue] || TENSION_GUIDES["소소한 일상"];
   const personalityRule = getPersonalityRule(personality, empathyStyle);
-  const isElderFamily = ["엄마", "아빠", "누나/언니", "형/오빠"].includes(relation);
+  const empathyRule = getEmpathyStyleRule(empathyStyle);
+  const isElderFamily = ["엄마", "아빠", "누나/언니", "형/오빠", "누나", "언니", "형", "오빠"].includes(relationLabel);
   const selfRefRule = isElderFamily
-    ? `자기 얘기를 꼭 해야 할 때는 '${relation}' 호칭을 우선하고, 어색하면 주어를 생략한다.`
+    ? `자기 얘기를 직접 해야 할 때는 '${relationLabel}' 같은 관계 호칭이 자연스럽다. 다만 한국어답게 주어를 자주 생략한다.`
     : `자기 얘기는 관계에 맞는 평범한 1인칭으로 말한다.`;
   const relationTexture = isElderFamily
     ? "감정 분석보다 생활감 있는 반응이나 농담으로 받아친다. 상대를 안심시키려고 결론 내리거나 조언으로 정리하지 않는다."
     : "관계에 맞는 거리감과 장난기를 유지한다.";
-
-  const referenceLines = [
-    phraseForThisTurn ? `- 말버릇 후보: ${phraseForThisTurn}` : "",
-    coreMemory ? `- 기억 참고: ${coreMemory}` : "",
-    !options.isAskingAlias && options.allowAliasThisTurn && options.alias ? `- 사용자 호칭: ${options.alias}` : "",
-  ].filter(Boolean);
-  const turnLines = [
-    options.isUserCritique ? "- 방금 사용자가 너를 지적하거나 평가했다. 고치겠다고 약속하지 말고 그 말 자체에 짧게 반응한다." : "",
-    options.isAskingAlias && options.alias ? `- 사용자가 자신을 네가 뭐라고 부르는지 물었다. 자기 호칭이나 관계명이 아니라 사용자 호칭 '${options.alias}'에 대해 답한다.` : "",
-  ].filter(Boolean);
+  const turnLines: string[] = [];
+  const analysisLines = buildTurnAnalysisLines(options.turnAnalysis);
+  const reactionInstructionLines = buildReplyModeInstructionLines(options.turnAnalysis?.desiredResponseMode);
+  const forceAliasByIntensity = Boolean(aliasLabel && (options.turnAnalysis?.intensity ?? 0) >= 3);
 
   return [
-    `너는 '${partnerName}'이고, 사용자와의 관계는 '${relation}'이다.`,
-    `사용자를 '${userNickname}'로 기억한다.`,
+    "[역할]",
+    `- 너는 '${partnerName}'이고 사용자와 '${relationLabel}' 관계 안에서 말한다.`,
     "",
-    "[대화 방식]",
-    "1. 감정을 이름 붙여 요약하지 말고, 마지막 말의 상황이나 행동에 먼저 반응한다.",
-    "2. 실제 메신저처럼 반말 구어체로 말한다.",
-    "3. 먼저 자연스럽게 반응하고, 필요하면 한마디를 더 붙인다. 물음표는 한 답변에 최대 1개만 쓴다.",
-    "4. 설명하듯 정리하거나 교훈, 조언, 안심시키는 결론으로 마무리하지 않는다.",
-    "5. 같은 표현이나 같은 말버릇을 반복하지 않는다.",
-    "6. 사용자가 쓰지 않은 줄임말이나 축약어를 만들지 않고, 단어를 임의로 줄이지 않는다.",
-    "7. 쉼표는 쓰지 않는다.",
-    "8. 사용자가 너를 지적하거나 평가하면 사과하거나 개선을 약속하지 말고, 관계 안에서 머쓱하거나 장난스럽게 받아친다.",
-    "9. 사용자가 정체를 건드려도 AI 여부를 인정하거나 설명하지 않는다.",
-    "10. 상대가 힘든 말을 해도 해결하거나 달래려 하지 말고 그 말 자체에만 반응한다.",
+    "[우선순위]",
+    "- 최신 사용자 메시지의 직접적인 의미를 가장 우선한다.",
+    "- 다만 최신 사용자 메시지는 직전 대화 흐름 안의 현재 장면으로 해석한다.",
+    "- 이번 턴 분석값은 답변 방향을 돕는 내부 힌트이며, 사용자 메시지의 직접 의미를 덮어쓰지 않는다.",
+    "- 최신 사용자 메시지와 이번 턴 분석값이 충돌하면 최신 사용자 메시지를 우선한다.",
+    "- 최신 사용자 메시지와 응답 스타일 규칙이 충돌하면 최신 사용자 메시지에 자연스럽게 반응하는 것을 우선한다.",
     "",
-    "[관계와 성향]",
-    `- 목적: ${selectedPurpose}`,
-    `- 텐션: ${selectedTension}`,
-    `- 성격: ${personalityRule}`,
+    "[페르소나 고정 정보]",
+    `- 관계: ${relationLabel}`,
+    `- 상대 이름: ${partnerName}`,
+    ...(aliasLabel ? [`- 사용자를 부를 수 있는 호칭: ${aliasLabel}`] : []),
+    "",
+    "[응답 스타일]",
+    `- 대화 에너지: ${selectedTension}`,
+    `- 응답 템포: ${personalityRule}`,
+    ...(empathyRule ? [`- 공감 방식: ${empathyRule}`] : []),
     `- 관계감: ${relationTexture}`,
     `- 자기지칭: ${selfRefRule}`,
-    ...(turnLines.length > 0 ? ["", "[이번 턴]", ...turnLines] : []),
-    ...(referenceLines.length > 0 ? ["", "[참고 정보]", "- 아래 정보는 대부분 말하지 말고, 사용자가 직접 관련된 말을 했을 때만 1개 이하로 가볍게 쓴다.", ...referenceLines] : []),
+    ...(analysisLines.length > 0 ? ["", ...analysisLines] : []),
+    ...(reactionInstructionLines.length > 0 ? ["", ...reactionInstructionLines] : []),
+    "",
+    "[응답 구조 및 출력 형식]",
+    '1. 모든 응답은 실제 메신저에서 전송 버튼을 나누어 누르는 것처럼 JSON 객체 {"parts":["덩어리1","덩어리2"]} 형식으로만 출력한다.',
+    "2. 각 덩어리는 독립적인 말풍선이 된다.",
+    "- 덩어리 1 (반응): 사용자의 마지막 말에 가장 먼저 닿는 한마디다. 맞장구, 짧은 편들기, 현재 메시지나 최근 흐름에 실제로 나온 소재에 붙은 작은 반응, 장난스러운 받아치기, 순간적인 공감처럼 실제 사람이 바로 보낼 만한 첫 반응으로 쓴다. 설명이나 정리를 먼저 시작하지 않는다. 맥락 없는 밥/물/잠/씻기/쉬기 같은 챙김을 갑자기 꺼내지 않는다. 사용자의 현재 메시지나 최근 2~3턴 안에 근거가 있는 소재에만 붙는다. (필수)",
+    "- 덩어리 2 (본론): 정말 한마디 더 필요한 경우에만 쓴다. 사용자가 더 말하고 싶어 할 단서를 명확히 줬을 때만 짧은 질문을 할 수 있다. 지친 턴, 조용히 머무르는 턴, 그냥 받아주면 되는 턴에서는 생략하는 편이 자연스럽다. 질문은 전체 응답에서 최대 1개이며, 질문 없이 끝나는 것이 더 자연스러운 턴도 많다. (선택)",
+    "- 덩어리 3 (여운): 대화를 부드럽게 매듭짓는 짧은 덧붙임. 감정이 고조되거나 애정을 표현하고 싶을 때만 드물게 쓴다. (선택)",
+    "3. 덩어리 1만으로 충분하면 하나로 끝낸다.",
+    "4. 덩어리 2나 덩어리 3은 정말 더 나누는 편이 자연스러울 때만 쓴다. 억지로 2개나 3개를 채우지 않는다.",
+    "",
+    "[응답 규칙]",
+    "1. 감정을 요약하거나 분석하려 들지 말고, 사용자의 상황이나 행동에 먼저 반응한다.",
+    "- 사용자의 감정을 설명하지 말고, 그 감정이 붙은 대상이나 상황에 먼저 반응한다.",
+    "- 감정이 큰 턴에서는 정답처럼 정리하기보다, 같이 머무는 한마디가 더 자연스러울 수 있다.",
+    "- 사용자가 만든 분위기나 장난의 결이 있으면 의미를 해설하지 말고 그 결을 이어간다.",
+    "2. 실제 메신저처럼 반말 구어체로 말하며, 문장 안에서 쉼표(,)를 자연스럽게 사용한다.",
+    "3. 물음표는 전체 응답 리스트를 통틀어 최대 1개만 사용한다.",
+    "4. 설명, 조언, 안심시키는 결론으로 대화를 정리하지 않는다. 다만 desiredResponseMode가 give_one_realistic_word이고 사용자가 방향이나 방법을 직접 물은 경우에만 작은 한마디 수준의 현실적인 제안을 짧게 할 수 있다.",
+    "5. 같은 표현이나 같은 말버릇을 반복하지 않는다.",
+    "6. 사용자가 정체를 물어도 AI임을 인정하거나 설명하지 말고, 지금 관계의 페르소나를 유지한다.",
+    "7. desiredResponseMode가 답변의 반응 결을 정하고, intensity는 그 반응의 세기를 조절한다.",
+    "8. [이번 턴 반응 지침]의 do/don't/avoid/questionPolicy/advicePolicy를 그대로 따른다. questionPolicy가 none이면 질문하지 않고, optional_one이나 only_if_needed여도 질문은 최대 1개만 쓴다. advicePolicy가 no_solution_advice이면 해결책 제안을 하지 않고, one_small_step_if_asked이면 직접 물었을 때만 다음 단계 하나만 짧게 말한다. context_bound_small_reaction_only이면 현재 메시지나 최근 흐름에 실제로 나온 소재에 붙은 작은 반응만 허용한다.",
+    ...(forceAliasByIntensity ? [`- 이번 턴 intensity가 3 이상이므로 사용자 호칭 '${aliasLabel}'을 답변 안에 자연스럽게 한 번은 사용한다.`] : []),
+    "- 사용자가 너를 지적하거나 평가하면 고치겠다고 약속하지 말고, 그 말 자체에 짧고 위트 있게 반응한다.",
+    ...(options.isAskingAlias && options.alias ? [`- 사용자가 본인의 호칭을 물으면 '${options.alias}'라고 답한다.`] : []),
+    ...turnLines,
     "[컨텍스트]",
     `현재시간: ${currentTime}`
   ].join("\n");
-}
-
-function goalLabel(goal: PersonaRuntime["goal"], customGoalText: string) {
-  if (goal === "comfort") return "위로받고 싶어요";
-  if (goal === "memory") return "추억을 떠올리고 싶어요";
-  if (goal === "unfinished_words") return "못다 한 말을 해보고 싶어요";
-  if (goal === "casual_talk") return "평소처럼 대화하고 싶어요";
-  return customGoalText || "직접 입력";
 }
 
 function sanitizeFirstGreeting(raw: string) {
@@ -673,6 +792,30 @@ function enforceAliasMentionLimit(text: string, alias: string, allowAlias: boole
     .trim();
 
   return next || trimmed;
+}
+
+function enforceAliasMentionLimitOnParts(parts: string[], alias: string, allowAlias: boolean) {
+  if (!alias) return parts.map((item) => item.trim()).filter(Boolean);
+  if (!allowAlias) {
+    return parts.map((item) => enforceAliasMentionLimit(item, alias, false)).filter(Boolean);
+  }
+
+  let seen = false;
+  return parts
+    .map((item) => {
+      const trimmed = item.trim();
+      if (!trimmed) return "";
+      const next = trimmed
+        .replace(aliasMentionPattern(alias), (match) => {
+          if (seen) return aliasToSecondPerson(match, alias);
+          seen = true;
+          return match;
+        })
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      return next || trimmed;
+    })
+    .filter(Boolean);
 }
 
 function resolveSelfReferenceLabel(runtimeData: PersonaRuntime) {
@@ -1104,7 +1247,6 @@ export async function POST(request: NextRequest) {
 
     if (action === "first_greeting") {
       const alias = normalizeAddressAlias((body.alias || (runtimeData as any)?.addressing?.callsUserAs?.[0] || "너").trim()) || "너";
-      const customGoalText = (runtimeData as any)?.customGoalText?.trim?.() || "";
       const toneSummary = (body.styleSummary || (runtimeData as any)?.style?.tone?.[0] || "").trim();
       const tension = normalizeConversationTension((runtimeData as any)?.style?.politeness || "");
       const relationHint = isParentRelation(runtimeData.relation || "")
@@ -1114,7 +1256,6 @@ export async function POST(request: NextRequest) {
       const firstGreetingContext = {
         relation: runtimeData.relation || "미지정",
         gender: runtimeData.gender === "male" ? "남성" : runtimeData.gender === "female" ? "여성" : "기타",
-        goal: goalLabel(runtimeData.goal, customGoalText),
         alias,
         conversationTensionGuide: getConversationTensionGuide((runtimeData as any)?.style?.politeness || ""),
         conversationTension: tension,
@@ -1135,7 +1276,7 @@ export async function POST(request: NextRequest) {
       const completion = await client.chat.completions.create({
         model: OPENAI_REPLY_MODEL,
         max_completion_tokens: 420,
-        ...(isGpt5FamilyModel(OPENAI_REPLY_MODEL) ? {} : { temperature: 0.9, frequency_penalty: 0.4 }),
+        ...(isGpt5FamilyModel(OPENAI_REPLY_MODEL) ? {} : { temperature: 0.9 }),
         messages: [
           {
             role: "system",
@@ -1215,16 +1356,16 @@ export async function POST(request: NextRequest) {
     const unlimitedChatStatus = await hasActiveUnlimitedChat(sessionUser.id);
     const consumed = unlimitedChatStatus.isActive
       ? {
-          ok: true as const,
-          balance: (await getOrCreateMemoryPassStatus(sessionUser.id)).memoryBalance,
-          bypassedByUnlimited: true,
-        }
+        ok: true as const,
+        balance: (await getOrCreateMemoryPassStatus(sessionUser.id)).memoryBalance,
+        bypassedByUnlimited: true,
+      }
       : await consumeMemory(sessionUser.id, MEMORY_COSTS.chat, {
-          reason: "chat_message",
-          detail: {
-            personaId: runtimeData.personaId,
-          },
-        });
+        reason: "chat_message",
+        detail: {
+          personaId: runtimeData.personaId,
+        },
+      });
     if (!consumed.ok) {
       await logAnalyticsEventSafe({
         userId: sessionUser.id,
@@ -1253,7 +1394,7 @@ export async function POST(request: NextRequest) {
     const alias = normalizeAddressAlias((runtimeData as any)?.addressing?.callsUserAs?.[0] || "");
     const isAskingAlias = alias ? isAskingUserAlias(lastUserMessage.content) : false;
     const isUserCritique = isUserCritiquingPersona(lastUserMessage.content);
-    const useAliasThisTurn = alias ? (isAskingAlias || Math.random() < 0.2) : false;
+    const sampledAliasThisTurn = alias ? (isAskingAlias || Math.random() < 0.2) : false;
     const queryMeta = inferQueryMetaByRule(lastUserMessage.content);
     const chatDebug: ChatDebugPayload = {
       retrieval: {
@@ -1278,17 +1419,79 @@ export async function POST(request: NextRequest) {
         inserted: false,
       },
     };
+    let savedUserMessage: { id?: string | null } | null = null;
+    let turnAnalysisResult:
+      | {
+          saved: boolean;
+          analysisId: string | null;
+          relationGroup: string;
+          taxonomyVersion: string;
+          analysis: TurnAnalysis;
+          rawAnalysis: unknown;
+          model: string;
+        }
+      | null = null;
 
-    const buildReply = (raw: string | null | undefined) => {
-      const reply = raw?.trim();
-      let next = clipAssistantReply(reply || "");
-      next = enforceAliasMentionLimit(next, alias, useAliasThisTurn);
-      next = normalizeEmotiveSymbols(next, lastUserMessage.content);
-      next = normalizeReplyLexicalArtifacts(next);
-      next = normalizeReplyPunctuation(next);
-      next = normalizeReplyEnding(next);
-      next = clipAssistantReplyByMax(next, replyCharMax);
-      return next;
+    if (sessionUser?.id && runtimeData.personaId && chatSessionId) {
+      try {
+        savedUserMessage = await saveMessageToDb(chatSessionId, "user", lastUserMessage.content);
+      } catch (error) {
+        console.error("[chat-api] failed to save user message before reply", error);
+      }
+
+      if (savedUserMessage?.id) {
+        try {
+          turnAnalysisResult = await runTurnAnalysisMvp({
+            client,
+            runtimeData,
+            relationGroup: getRelationGroup(runtimeData.relation || ""),
+            history,
+            currentUserMessageContent: lastUserMessage.content,
+            alias,
+            sessionId: chatSessionId,
+            userMessageId: savedUserMessage.id,
+            userId: sessionUser.id,
+            personaId: runtimeData.personaId,
+          });
+        } catch (error) {
+          console.error("[chat-api] turn analysis mvp failed", error);
+        }
+      }
+    }
+
+    if (process.env.NODE_ENV !== "production" && turnAnalysisResult) {
+      chatDebug.turnAnalysisDebug = {
+        enabled: true,
+        saved: turnAnalysisResult.saved,
+        analysisId: turnAnalysisResult.analysisId,
+        relationGroup: turnAnalysisResult.relationGroup,
+        taxonomyVersion: turnAnalysisResult.taxonomyVersion,
+        analysis: turnAnalysisResult.analysis,
+        rawAnalysis: turnAnalysisResult.rawAnalysis,
+        model: turnAnalysisResult.model,
+      };
+    }
+
+    const forceAliasThisTurn = alias ? (turnAnalysisResult?.analysis?.intensity ?? 0) >= 3 : false;
+    const useAliasThisTurn = alias ? (forceAliasThisTurn || sampledAliasThisTurn) : false;
+
+    const buildReplyPayload = (raw: string | null | undefined) => {
+      const reply = raw?.trim() || "";
+      const parsedParts = parseJsonStringArray(reply);
+      const seedParts = parsedParts && parsedParts.length > 0 ? parsedParts : [reply];
+      let parts = seedParts
+        .map((item) => clipAssistantReply(item || ""))
+        .map((item) => normalizeEmotiveSymbols(item, lastUserMessage.content))
+        .map((item) => normalizeReplyLexicalArtifacts(item))
+        .map((item) => normalizeReplyPunctuation(item))
+        .map((item) => normalizeReplyEnding(item))
+        .filter(Boolean);
+
+      parts = enforceAliasMentionLimitOnParts(parts, alias, useAliasThisTurn);
+      parts = clipAssistantReplyPartsByMax(parts, replyCharMax);
+
+      const text = parts.join(" ").replace(/\s{2,}/g, " ").trim();
+      return { parts, text };
     };
 
     const systemPrompt = buildReplySystemPrompt(runtimeData, {
@@ -1296,6 +1499,7 @@ export async function POST(request: NextRequest) {
       allowAliasThisTurn: useAliasThisTurn,
       isAskingAlias,
       isUserCritique,
+      turnAnalysis: turnAnalysisResult?.analysis || null,
     });
     chatDebug.prompt.systemPrompt = systemPrompt;
     const responseStartedAtMs = Date.now();
@@ -1303,60 +1507,41 @@ export async function POST(request: NextRequest) {
     const completion = await client.chat.completions.create({
       model: OPENAI_REPLY_MODEL,
       max_completion_tokens: 380,
-      ...(isGpt5FamilyModel(OPENAI_REPLY_MODEL) ? {} : { temperature: 0.9, frequency_penalty: 0.4, presence_penalty: 0.2 }),
+      response_format: CHAT_REPLY_PARTS_RESPONSE_FORMAT,
+      ...(isGpt5FamilyModel(OPENAI_REPLY_MODEL) ? {} : { temperature: 0.9 }),
       messages: [
         { role: "system", content: systemPrompt },
         ...history.map((item) => ({ role: item.role, content: item.content })),
       ],
     });
 
-    let finalReply = buildReply(completion.choices?.[0]?.message?.content);
-    const violatesRelationIdentityRule = hasStrongRelationIdentityDrift(finalReply, runtimeData.relation || "");
-    const violatesQuestionRule = hasTooManyQuestions(finalReply);
-    const violatesImprovementRule = hasImprovementPromise(finalReply);
-    const violatesGenericRule = isDeadGenericReply(finalReply);
-    const violatesCounselorRule = hasCounselorClosure(finalReply);
-    const violatesIdentityLeakRule = hasIdentityLeak(finalReply);
-    const violatesAliasRule = isAskingAlias ? hasAliasAnswerDrift(finalReply, alias, runtimeData.relation || "") : false;
-    const violatesPoliteToneRule = hasPoliteToneLeak(finalReply);
+    let finalReplyPayload = buildReplyPayload(completion.choices?.[0]?.message?.content);
+    let finalReplyParts = finalReplyPayload.parts;
+    let finalReply = finalReplyPayload.text;
 
-    if (!finalReply || violatesRelationIdentityRule || violatesQuestionRule || violatesImprovementRule || violatesGenericRule || violatesCounselorRule || violatesIdentityLeakRule || violatesAliasRule || violatesPoliteToneRule) {
+    if (!finalReply) {
       finalReply = "";
       chatDebug.prompt.retryTriggered = true;
-      const relationIdentityRule = `추가 규칙: 현재 관계는 "${runtimeData.relation || "지정된 관계"}"다. 사용자가 다른 호칭으로 불러도 그 관계를 유지하고, 필요하면 바로잡아라.`;
       const retryQualityRules = [
         "추가 규칙: 상대방의 마지막 말에 먼저 자연스럽게 대답하고, 사족을 붙이지 마라.",
-        relationIdentityRule,
-        violatesQuestionRule ? "추가 규칙: 이번 답변에서 물음표는 최대 1개만 써라." : "",
-        violatesImprovementRule ? "추가 규칙: 고치겠다거나 더 자연스럽게 하겠다는 식의 개선 약속으로 답하지 마라." : "",
-        violatesGenericRule ? "추가 규칙: 단독 맞장구로 끝내지 말고 방금 말에 맞는 반응을 한마디 더 붙여라." : "",
-        violatesCounselorRule ? "추가 규칙: 조언이나 위로로 정리하지 말고 방금 말에 대한 생활감 있는 반응만 해라." : "",
-        violatesIdentityLeakRule ? "추가 규칙: AI나 로봇이나 기계라는 말을 인정하거나 설명하지 말고, 관계 안에서 바로 받아쳐라." : "",
-        violatesAliasRule ? `추가 규칙: 사용자가 자신을 뭐라고 부르는지 물었다. 자기 호칭이 아니라 사용자 호칭 "${alias}"에 대해 답하라.` : "",
-        violatesPoliteToneRule ? "추가 규칙: 존댓말을 쓰지 말고 반말 구어체로만 답하라." : "",
       ].filter(Boolean);
       const retrySystemPrompt = `${systemPrompt}\n${retryQualityRules.join("\n")}`;
       chatDebug.prompt.retrySystemPrompt = retrySystemPrompt;
       const retryCompletion = await client.chat.completions.create({
         model: OPENAI_REPLY_MODEL,
         max_completion_tokens: 420,
-        ...(isGpt5FamilyModel(OPENAI_REPLY_MODEL) ? {} : { temperature: 0.9, frequency_penalty: 0.4, presence_penalty: 0.2 }),
+        response_format: CHAT_REPLY_PARTS_RESPONSE_FORMAT,
+        ...(isGpt5FamilyModel(OPENAI_REPLY_MODEL) ? {} : { temperature: 0.9 }),
         messages: [
           { role: "system", content: retrySystemPrompt },
           ...history.map((item) => ({ role: item.role, content: item.content })),
         ],
       });
-      const retryReply = buildReply(retryCompletion.choices?.[0]?.message?.content);
-      let retryFinalReply = retryReply;
-      const retryViolatesRelationIdentity = hasStrongRelationIdentityDrift(retryFinalReply, runtimeData.relation || "");
-      const retryViolatesQuestion = hasTooManyQuestions(retryFinalReply);
-      const retryViolatesImprovement = hasImprovementPromise(retryFinalReply);
-      const retryViolatesGeneric = isDeadGenericReply(retryFinalReply);
-      const retryViolatesCounselor = hasCounselorClosure(retryFinalReply);
-      const retryViolatesIdentityLeak = hasIdentityLeak(retryFinalReply);
-      const retryViolatesAlias = isAskingAlias ? hasAliasAnswerDrift(retryFinalReply, alias, runtimeData.relation || "") : false;
-      const retryViolatesPoliteTone = hasPoliteToneLeak(retryFinalReply);
-      if (retryFinalReply && !retryViolatesRelationIdentity && !retryViolatesQuestion && !retryViolatesImprovement && !retryViolatesGeneric && !retryViolatesCounselor && !retryViolatesIdentityLeak && !retryViolatesAlias && !retryViolatesPoliteTone) {
+      const retryReplyPayload = buildReplyPayload(retryCompletion.choices?.[0]?.message?.content);
+      const retryReplyParts = retryReplyPayload.parts;
+      let retryFinalReply = retryReplyPayload.text;
+      if (retryFinalReply) {
+        finalReplyParts = retryReplyParts;
         finalReply = retryFinalReply;
       }
     }
@@ -1366,7 +1551,8 @@ export async function POST(request: NextRequest) {
         personaId: runtimeData.personaId,
         relation: runtimeData.relation,
       });
-      finalReply = buildSafeReplyFallback(lastUserMessage.content);
+      finalReplyParts = [buildSafeReplyFallback(lastUserMessage.content)];
+      finalReply = finalReplyParts[0];
     }
 
     const responseTimeMs = Math.max(0, Date.now() - responseStartedAtMs);
@@ -1395,10 +1581,28 @@ export async function POST(request: NextRequest) {
           throw new Error("chat session missing");
         }
 
-        // Save user message (the last one in history)
-        const savedUserMessage = await saveMessageToDb(sessionIdForSave, "user", lastUserMessage.content);
-        // Save assistant reply
-        const savedAssistantMessage = await saveMessageToDb(sessionIdForSave, "assistant", finalReply);
+        if (!savedUserMessage?.id) {
+          savedUserMessage = await saveMessageToDb(sessionIdForSave, "user", lastUserMessage.content);
+        }
+        // Save assistant reply as split chat bubbles so refresh/session replay preserves the UI shape.
+        let savedAssistantMessage: { id?: string | null } | null = null;
+        for (const part of finalReplyParts) {
+          const savedPart = await saveMessageToDb(sessionIdForSave, "assistant", part);
+          if (!savedAssistantMessage?.id) {
+            savedAssistantMessage = savedPart;
+          }
+        }
+        if (!savedAssistantMessage?.id) {
+          savedAssistantMessage = await saveMessageToDb(sessionIdForSave, "assistant", finalReply);
+        }
+
+        if (turnAnalysisResult?.analysisId && savedAssistantMessage?.id) {
+          try {
+            await updateTurnAnalysisAssistantMessageId(turnAnalysisResult.analysisId, savedAssistantMessage.id);
+          } catch (error) {
+            console.error("[chat-api] failed to link assistant message to turn analysis", error);
+          }
+        }
 
         if (CHAT_MEMORY_VECTOR_CAPTURE_ENABLED) {
           try {
@@ -1470,6 +1674,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       reply: finalReply,
+      replyParts: finalReplyParts,
       memoryBalance: consumed.balance,
       consumedByUnlimitedPass: Boolean((consumed as { bypassedByUnlimited?: boolean }).bypassedByUnlimited),
       debug: chatDebug,

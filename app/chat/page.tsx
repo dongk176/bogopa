@@ -107,6 +107,26 @@ type ChatDebugPayload = {
     embeddingPreview?: number[];
     error?: string;
   };
+  turnAnalysisDebug?: {
+    enabled: true;
+    saved: boolean;
+    analysisId: string | null;
+    relationGroup: "mother" | "father" | "older_sister" | "older_brother" | "younger_sibling" | "romantic";
+    taxonomyVersion: string;
+    analysis: {
+      topic: string | null;
+      topicShift: "same_topic" | "soft_shift" | "hard_shift";
+      primaryIntent: string;
+      emotion: string;
+      intensity: number;
+      desiredResponseMode: string;
+      unfinishedPoint: string | null;
+      textQuality: string;
+      reason: string;
+    };
+    rawAnalysis: unknown;
+    model: string;
+  };
 };
 
 type Step3AvatarRaw = {
@@ -123,6 +143,10 @@ const CHAT_STATE_KEY_PREFIX = "bogopa_chat_state";
 const USER_INPUT_CHAR_LIMIT = 100;
 const RECENT_CONTEXT_MESSAGES = 8; // 4 turns
 const SHEET_CLOSE_SWIPE_THRESHOLD = 72;
+const ASSISTANT_PART_BASE_DELAY_MS = 900;
+const ASSISTANT_PART_CHAR_DELAY_MS = 35;
+const ASSISTANT_PART_MAX_EXTRA_DELAY_MS = 1600;
+const ASSISTANT_PART_PAUSE_MS = 1000;
 
 function toId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -165,11 +189,48 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
+function getAssistantPartDelayMs(text: string) {
+  const length = text.trim().length;
+  const variable = Math.min(length * ASSISTANT_PART_CHAR_DELAY_MS, ASSISTANT_PART_MAX_EXTRA_DELAY_MS);
+  return ASSISTANT_PART_BASE_DELAY_MS + variable;
+}
+
+function buildHistoryTurns(messages: ChatMessage[]) {
+  const turns: ChatTurn[] = [];
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const content = message.content.trim();
+    if (!content) continue;
+    const last = turns[turns.length - 1];
+    if (last && last.role === message.role) {
+      last.content = `${last.content} ${content}`.trim();
+      continue;
+    }
+    turns.push({ role: message.role, content });
+  }
+  return turns.slice(-RECENT_CONTEXT_MESSAGES);
+}
+
 function formatTime(iso: string) {
   return new Intl.DateTimeFormat("ko-KR", {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(iso));
+}
+
+function formatMinuteKey(iso: string) {
+  const date = new Date(iso);
+  return [
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    date.getHours(),
+    date.getMinutes(),
+  ].join("-");
+}
+
+function isSameMinute(a: string, b: string) {
+  return formatMinuteKey(a) === formatMinuteKey(b);
 }
 
 function formatDateLabel(iso: string) {
@@ -257,6 +318,21 @@ function DebugSection({ title, body }: { title: string; body: string }) {
     </section>
   );
 }
+
+const TURN_ANALYSIS_TOPIC_SHIFT_LABELS = {
+  same_topic: "같은 주제",
+  soft_shift: "부드러운 주제 전환",
+  hard_shift: "급격한 주제 전환",
+} as const;
+
+const TURN_ANALYSIS_RELATION_GROUP_LABELS = {
+  mother: "엄마",
+  father: "아빠",
+  older_sister: "누나/언니",
+  older_brother: "형/오빠",
+  younger_sibling: "동생",
+  romantic: "연인/배우자",
+} as const;
 
 
 async function fetchFirstGreeting(runtime: PersonaRuntime, alias: string) {
@@ -363,6 +439,7 @@ function ChatContainer() {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const initialMessageRequestIdRef = useRef(0);
   const isComposingRef = useRef(false);
+  const isReplySequenceActiveRef = useRef(false);
 
   useNativeSwipeBack(() => {
     router.push("/chat/list");
@@ -815,9 +892,34 @@ function ChatContainer() {
     return anchorCount * 10 + phraseCount;
   }, [runtime]);
 
-  const retrievalDebugText = useMemo(() => {
-    if (!chatDebug) return "아직 디버그 데이터가 없습니다.";
-    return JSON.stringify(chatDebug.retrieval, null, 2);
+  const turnAnalysisDebugText = useMemo(() => {
+    if (!chatDebug?.turnAnalysisDebug) return "아직 턴 분석 데이터가 없습니다.";
+
+    const { saved, analysisId, relationGroup, taxonomyVersion, analysis, rawAnalysis, model } =
+      chatDebug.turnAnalysisDebug;
+
+    const localizedPayload = {
+      사용_여부: "chat_turn_analyses",
+      저장_성공: saved,
+      분석_ID: analysisId,
+      관계_그룹: TURN_ANALYSIS_RELATION_GROUP_LABELS[relationGroup] || relationGroup,
+      분류_버전: taxonomyVersion,
+      모델: model,
+      분석_값: {
+        현재_장면: analysis.topic,
+        주제_전환: TURN_ANALYSIS_TOPIC_SHIFT_LABELS[analysis.topicShift] || analysis.topicShift,
+        주_의도: analysis.primaryIntent,
+        감정: analysis.emotion,
+        강도: analysis.intensity,
+        자연스러운_답변_방식: analysis.desiredResponseMode,
+        안_끝난_포인트: analysis.unfinishedPoint,
+        텍스트_품질: analysis.textQuality,
+        판단_근거: analysis.reason,
+      },
+      원본_분석값: rawAnalysis,
+    };
+
+    return JSON.stringify(localizedPayload, null, 2);
   }, [chatDebug]);
 
   const promptDebugText = useMemo(() => {
@@ -1043,7 +1145,7 @@ function ChatContainer() {
       setLockedPersonaName(runtime.displayName || activeChat.personaName || "이 기억");
       return;
     }
-    if (isTyping) {
+    if (isReplySequenceActiveRef.current) {
       showTypingBlockedNotice();
       return;
     }
@@ -1077,6 +1179,7 @@ function ChatContainer() {
     const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
     setInput("");
+    isReplySequenceActiveRef.current = true;
     setIsTyping(true);
     const startedAt = Date.now();
     let usedOptimisticSpend = false;
@@ -1089,10 +1192,7 @@ function ChatContainer() {
     }
 
     try {
-      const historyForReply: ChatTurn[] = nextMessages
-        .filter((message) => message.role === "user" || message.role === "assistant")
-        .map((message) => ({ role: message.role, content: message.content }))
-        .slice(-RECENT_CONTEXT_MESSAGES);
+      const historyForReply = buildHistoryTurns(nextMessages);
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -1145,31 +1245,51 @@ function ChatContainer() {
           await promptMoveToMemoryStore(runtime.personaId);
           return;
         }
+        throw new Error(body.error || "AI 응답을 생성하지 못했습니다.");
       } else {
         const payload = (await response.json()) as {
           reply?: string;
+          replyParts?: string[];
           memoryBalance?: number;
           debug?: ChatDebugPayload;
         };
         replyText = (payload.reply || "").trim();
+        const replyParts = Array.isArray(payload.replyParts)
+          ? payload.replyParts.map((item) => String(item || "").trim()).filter(Boolean)
+          : [];
+        if (!replyText && replyParts.length > 0) {
+          replyText = replyParts.join(" ").replace(/\s{2,}/g, " ").trim();
+        }
         if (typeof payload.memoryBalance === "number") {
           nextBalanceFromServer = payload.memoryBalance;
         }
         setChatDebug(payload.debug || null);
-      }
+        const displayParts = replyParts.length > 0 ? replyParts : (replyText ? [replyText] : []);
+        if (!replyText) {
+          throw new Error("AI 응답을 생성하지 못했습니다.");
+        }
 
-      if (!replyText) {
-        throw new Error("AI 응답을 생성하지 못했습니다.");
-      }
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < 650) {
+          await sleep(650 - elapsed);
+        }
 
-      const elapsed = Date.now() - startedAt;
-      if (elapsed < 650) {
-        await sleep(650 - elapsed);
+        for (let index = 0; index < displayParts.length; index += 1) {
+          const part = displayParts[index];
+          if (index > 0) {
+            setIsTyping(true);
+          }
+          await sleep(getAssistantPartDelayMs(part));
+          const aiAt = nowIso();
+          const aiMessage: ChatMessage = { id: toId(), role: "assistant", content: part, createdAt: aiAt };
+          setMessages((prev) => [...prev, aiMessage]);
+          const hasNextPart = index < displayParts.length - 1;
+          if (hasNextPart) {
+            setIsTyping(false);
+            await sleep(ASSISTANT_PART_PAUSE_MS);
+          }
+        }
       }
-
-      const aiAt = nowIso();
-      const aiMessage: ChatMessage = { id: toId(), role: "assistant", content: replyText, createdAt: aiAt };
-      setMessages((prev) => [...prev, aiMessage]);
 
       if (typeof nextBalanceFromServer === "number") {
         memoryBalanceRef.current = nextBalanceFromServer;
@@ -1181,6 +1301,7 @@ function ChatContainer() {
     } catch (error) {
       console.error("[chat] submission failed", error);
     } finally {
+      isReplySequenceActiveRef.current = false;
       setIsTyping(false);
     }
   }
@@ -1188,7 +1309,7 @@ function ChatContainer() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isComposingRef.current) return;
-    if (isTyping) {
+    if (isReplySequenceActiveRef.current) {
       showTypingBlockedNotice();
       return;
     }
@@ -1527,69 +1648,108 @@ function ChatContainer() {
 
           <section
             ref={chatScrollRef}
-            className="hide-scrollbar flex-1 space-y-8 overflow-y-auto px-2 pt-4 lg:pt-0"
+            className="hide-scrollbar flex-1 space-y-0 overflow-y-auto px-2 pt-4 lg:pt-0"
             style={chatSectionStyle}
           >
-            <div className="flex justify-center">
+            <div className="mb-6 flex justify-center">
               <span className="px-1 py-1 text-[11px] font-semibold tracking-wide text-[#2f342e]">
                 {dateLabel || formatDateLabel(nowIso())}
               </span>
             </div>
 
-            {messages.map((message) => {
+            {messages.map((message, index) => {
+              const previousMessage = messages[index - 1];
+              const nextMessage = messages[index + 1];
+              const sameRoleAsPrev = previousMessage?.role === message.role;
+              const sameRoleAsNext = nextMessage?.role === message.role;
+              const sameMinuteAsPrev = previousMessage ? isSameMinute(previousMessage.createdAt, message.createdAt) : false;
+              const sameMinuteAsNext = nextMessage ? isSameMinute(message.createdAt, nextMessage.createdAt) : false;
+              const continueMinuteGroupFromPrev = sameRoleAsPrev && sameMinuteAsPrev;
+              const continueMinuteGroupToNext = sameRoleAsNext && sameMinuteAsNext;
+              const isFirstInRoleRun = !sameRoleAsPrev;
+              const rowSpacingClass = !previousMessage
+                ? "mt-0"
+                : sameRoleAsPrev
+                  ? continueMinuteGroupFromPrev
+                    ? "mt-1.5"
+                    : "mt-3"
+                  : "mt-6";
+
               if (message.role === "assistant") {
+                const showIdentity = isFirstInRoleRun;
+                const showTime = !continueMinuteGroupToNext;
                 return (
-                  <div key={message.id} className="flex items-start gap-3">
-                    <div className="pt-1">
-                      <div className="h-8 w-8 overflow-hidden rounded-full">
-                        {showAvatarImage ? (
-                          <img
-                            src={avatarUrl || ""}
-                            alt="페르소나"
-                            className="h-full w-full object-cover"
-                            onError={() => setAvatarLoadError(true)}
-                          />
-                        ) : (
-                          <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
-                            <UserAvatarIcon />
-                          </div>
-                        )}
-                      </div>
+                  <div key={message.id} className={`${rowSpacingClass} flex items-end gap-2.5`}>
+                    <div className="w-10 shrink-0 self-start pt-0.5">
+                      {showIdentity ? (
+                        <div className="h-8 w-8 overflow-hidden rounded-full">
+                          {showAvatarImage ? (
+                            <img
+                              src={avatarUrl || ""}
+                              alt="페르소나"
+                              className="h-full w-full object-cover"
+                              onError={() => setAvatarLoadError(true)}
+                            />
+                          ) : (
+                            <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
+                              <UserAvatarIcon />
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="max-w-[85%]">
-                      <div className="rounded-3xl rounded-tl-sm bg-[#e3e8eb] p-5">
-                        <p className="whitespace-pre-line text-[15px] leading-relaxed text-[#2f342e]">{message.content}</p>
+                    <div className="max-w-[82%]">
+                      {showIdentity ? (
+                        <p className="mb-1 px-1 text-[13px] font-semibold leading-none text-[#2f342e]">
+                          {personaName}
+                        </p>
+                      ) : null}
+                      <div className="flex items-end gap-1.5">
+                        <div className="rounded-[1.15rem] rounded-tl-md bg-[#e3e8eb] px-4 py-2.5">
+                          <p className="whitespace-pre-line text-[15px] leading-[1.45] text-[#2f342e]">{message.content}</p>
+                        </div>
+                        {showTime ? (
+                          <span className="mb-0.5 block text-[11px] font-medium text-[#7c8592]">
+                            {formatTime(message.createdAt)}
+                          </span>
+                        ) : null}
                       </div>
-                      <span className="ml-1 mt-2 block text-[10px] text-[#2f342e]">{formatTime(message.createdAt)}</span>
                     </div>
                   </div>
                 );
               }
 
+              const showTime = !continueMinuteGroupToNext;
               return (
-                <div key={message.id} className="flex flex-col items-end gap-1">
-                  <div className="max-w-[85%]">
-                    <div className="rounded-3xl rounded-tr-sm bg-[#cde6f4] p-5 shadow-sm">
-                      <p className="text-[15px] font-medium leading-relaxed text-[#111827]">{message.content}</p>
+                <div key={message.id} className={`${rowSpacingClass} flex justify-end`}>
+                  <div className="flex max-w-[82%] items-end gap-1.5">
+                    {showTime ? (
+                      <span className="mb-0.5 block text-[11px] font-medium text-[#7c8592]">{formatTime(message.createdAt)}</span>
+                    ) : null}
+                    <div className="rounded-[1.15rem] rounded-tr-md bg-[#cde6f4] px-4 py-2.5 shadow-sm">
+                      <p className="text-[15px] font-medium leading-[1.45] text-[#111827]">{message.content}</p>
                     </div>
                   </div>
-                  <span className="mr-1 mt-1 text-[11px] font-medium text-[#64748b]">{formatTime(message.createdAt)}</span>
                 </div>
               );
             })}
 
             {isTyping && (
-              <div className="flex items-start gap-3">
-                <div className="h-8 w-8 overflow-hidden rounded-full">
-                  {showAvatarImage ? (
-                    <img src={avatarUrl || ""} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
-                      <UserAvatarIcon />
+              <div className="mt-3 flex items-end gap-2.5">
+                <div className="w-10 shrink-0 self-start pt-0.5">
+                  {messages[messages.length - 1]?.role === "assistant" ? null : (
+                    <div className="h-8 w-8 overflow-hidden rounded-full">
+                      {showAvatarImage ? (
+                        <img src={avatarUrl || ""} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center bg-[#e6e9e2] text-[#4a626d]">
+                          <UserAvatarIcon />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-                <div className="inline-flex w-fit items-center justify-center rounded-3xl rounded-tl-sm bg-[#e3e8eb] px-4 py-3 shadow-sm">
+                <div className="inline-flex w-fit items-center justify-center rounded-[1.15rem] rounded-tl-md bg-[#e3e8eb] px-4 py-2.5 shadow-sm">
                   <DotTyping />
                 </div>
               </div>
@@ -1640,7 +1800,7 @@ function ChatContainer() {
           <div className="rounded-2xl border border-[#d5e0e6] bg-[#eef5f9] px-4 py-3 text-xs font-semibold text-[#34505d]">
             디버그 패널 (데스크탑 전용)
           </div>
-          <DebugSection title="벡터 검색 결과" body={retrievalDebugText} />
+          <DebugSection title="사용자 응답 분석 결과" body={turnAnalysisDebugText} />
           <DebugSection title="일반 대화 입력 프롬프트" body={promptDebugText} />
           <DebugSection title="방금 저장된 벡터 메타" body={savedMemoryDebugText} />
         </aside>
